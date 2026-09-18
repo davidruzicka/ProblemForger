@@ -257,17 +257,31 @@ Examples include:
 
 Record the failed attempt and retry the same task/configuration once the infrastructure is healthy. Agent max-step exhaustion, agent-produced invalid patches, and tool failures caused by the agent remain task outcomes.
 
-Evaluator-stability probing is outcome-independent and mandatory for **every measured candidate patch**:
+Evaluator/task stability and candidate-patch stability are handled separately so an agent-produced flaky patch cannot remove an unfavorable task from the paired analysis.
 
-1. evaluate the candidate patch once in a fresh instance of the pinned environment;
-2. evaluate the exact same patch a second time in a separate fresh instance of the same pinned environment, regardless of the first result;
-3. compare the full required-test outcome vector (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test), not only the aggregate resolved/not-resolved bit;
-4. if the two vectors differ, run one third evaluation in another fresh instance;
-5. if any of the repeated required-test vectors differ, classify the **entire task** as `EVALUATOR_UNSTABLE`.
+### Task/evaluator preflight
 
-The exclusion unit is the whole task: exclude all A/B/C configurations and all repetitions for that task from the primary paired A→B and B→C analysis. Preserve and report every raw run/evaluator result, report the reduced task denominator, and do not replace the task with another candidate.
+Before any measured A/B/C agent run for a primary task:
 
-A one-off provider/container/evaluator infrastructure failure that produces no valid required-test vector is retried as an infrastructure retry and does not by itself trigger task exclusion. All primary paired comparisons use the same remaining common task set after any task-level evaluator-instability exclusions.
+1. evaluate the task's **unmodified pinned repository state** twice in separate fresh instances of the same pinned environment;
+2. compare the full required-test outcome vector (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test);
+3. if the two control vectors differ, run one third control evaluation in another fresh instance;
+4. if any control vectors differ, classify the task as `EVALUATOR_UNSTABLE` **before measured agent runs begin**.
+
+Only this patch-independent control instability may exclude a whole task. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs, report the reduced denominator, and do not replace the task.
+
+### Measured candidate patches
+
+For **every measured candidate patch**, regardless of its first outcome:
+
+1. evaluate the exact patch twice in separate fresh instances of the pinned environment;
+2. compare the full required-test outcome vectors;
+3. the run is scored **resolved** only if both vectors are identical and satisfy the end-to-end resolution criterion;
+4. if the two vectors differ, classify that candidate/run as `PATCH_UNSTABLE` and score the run as unresolved/failure; do **not** exclude the task or any paired runs.
+
+A third candidate-patch evaluation may be retained as diagnostic data but cannot change the frozen primary classification above.
+
+A one-off provider/container/evaluator infrastructure failure that produces no valid required-test vector is retried as an infrastructure retry and does not by itself trigger task exclusion or `PATCH_UNSTABLE`. All primary paired comparisons use the same common task set fixed after preflight task/evaluator exclusions.
 
 ## Later verifier/calibration split
 
