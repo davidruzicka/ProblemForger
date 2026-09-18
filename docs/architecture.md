@@ -16,9 +16,10 @@ Agent harness (HarnessX / Pi / ...)
   | application API                       | observation API
   |                                        |
   v                                        v
-ProblemGraph -> Governor -> domain events   TelemetrySink
-     ^             |
-     |             +-- evidence / verifier ports
+ProblemGraph -> Governor -> durable journal   TelemetrySink
+     ^             |              |
+     |             |              +-- graph-changing domain events
+     |             +-- proposal/decision audit records
      |
      +-- EventStore port
 ```
@@ -27,23 +28,30 @@ The worker/harness may propose changes. It does not own authoritative graph stat
 
 ProblemForger runs as a separate local process/service for the PoC. HarnessX and Pi use thin clients/adapters against the same service contract. This preserves a symmetric integration boundary even though HarnessX and the core are both Python.
 
-## Two event planes
+## Durable journal and observation plane
 
-ProblemForger explicitly separates:
+ProblemForger separates durable governance/audit history from optional harness telemetry.
 
-### Authoritative domain events
+### Durable run journal
 
-Domain events reconstruct the ProblemGraph and increment the graph stream version. Examples include committed node/edge changes, invalidations, and accepted evidence attachments.
+Every run has one append-only journal persisted through `EventStore`.
 
-They are persisted through `EventStore`.
+The journal contains two classes of durable records:
+
+- **governance audit records** — proposal receipt plus final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
+- **graph-changing domain events** — committed node/edge/evidence/lifecycle changes that reconstruct the ProblemGraph.
+
+Every journal record has a monotonic `journal_position`. Only graph-changing domain events advance the monotonic `graph_version`.
+
+A governance outcome is not returned to the harness as completed until its durable decision record has been appended. If a process fails after recording a proposal but before recording a final outcome, the journal exposes an incomplete proposal rather than silently losing it.
 
 ### Observation/telemetry events
 
-Harness lifecycle events, model calls, tool calls, token/cost measurements, and adapter diagnostics are useful for evaluation and UI, but they do **not** define authoritative graph state and do not increment graph version.
+Harness lifecycle events, model calls, tool calls, token/cost measurements, and adapter diagnostics are useful for evaluation and UI, but are not the governance audit log and are not required for graph replay.
 
-They flow through `TelemetrySink` and may reference domain events through correlation/causation identifiers.
+They flow through `TelemetrySink` and may reference durable journal records through correlation/causation identifiers.
 
-A domain event may also be mirrored to telemetry for observability, but telemetry must never become required for graph replay.
+Telemetry may be disabled without losing authoritative graph state or governance outcomes.
 
 See ADR 0006.
 
@@ -136,25 +144,29 @@ Core code receives implementations of ports, never raw provider configuration.
 
 Provider lookup is explicit. The PoC does not dynamically import arbitrary classes from configuration strings.
 
-## Event sourcing
+## Event sourcing and audit persistence
 
-The authoritative graph stream is run-scoped. Current graph state is a projection:
+The run journal is ordered by `journal_position`. Current graph state is the projection of only graph-changing records:
 
 ```text
-G_v = fold(domain_events[0:v])
+G_v = fold(graph_events where graph_version <= v)
 ```
 
-A mutation is committed with optimistic compare-and-append semantics:
+Graph-changing commits use optimistic compare-and-append against `graph_version`:
 
 ```text
-append(expected_version=v, events=[...])
-    -> new_version
+append_graph(expected_graph_version=v, audit_records=[...], graph_events=[...])
+    -> {last_journal_position, new_graph_version}
     OR VersionConflict
 ```
 
-One accepted mutation may emit multiple domain events, which must be appended atomically. Observation/telemetry events do not participate in `v`.
+Audit-only records can be appended without advancing `graph_version`.
 
-There is no requirement for a global event order across runs.
+For a successful commit, the final `MutationDecision(COMMIT)` audit record and all graph-changing events from that proposal must be durable as one atomic batch.
+
+For non-commit outcomes, the final decision record is appended durably before the service returns that outcome. If an optimistic graph append reports a version conflict, the application must append `MutationDecision(CONFLICT)` before returning `CONFLICT`; failure to persist that decision is a service/persistence failure, not a completed governance outcome.
+
+There is no required global order across independent runs.
 
 Snapshots may be added later as a derived optimization but may not become the source of truth.
 
