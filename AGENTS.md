@@ -32,7 +32,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Authoritative graph state is reconstructable from the graph-changing records in the durable journal.
 - Harness/model/tool observations are telemetry and must not be required for graph replay or auditability.
 - Every externally returned governance outcome (`COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`) must be durably recorded before the response is considered complete.
-- Durable proposal receipts must contain enough normalized/versioned input for restart recovery; processing claims use finite leases and monotonic fencing epochs so stale workers cannot finalize.
+- Durable proposal receipts must contain enough normalized/versioned input for restart recovery; processing claims use finite leases and monotonic fencing epochs so stale workers cannot finalize. Persisted lease deadlines use the restart-stable lease-time domain from `docs/protocol.md`, never raw process-monotonic timestamps.
 - Each run uses optimistic graph-version checks for graph-changing writes; stale writes fail explicitly rather than silently overwriting.
 - Mutation outcome, entity lifecycle, and evidence-derived verification status are separate concepts.
 - Evidence origin and verification method are separate metadata; no single evidence-strength enum defines truth.
@@ -79,9 +79,11 @@ For every behavioral change or bug fix:
 For research-facing changes:
 
 - preserve raw experimental data and configuration;
+- retain absolute UTC attempt/semantic-start/end timestamps and any provider/API/model revision metadata exposed by the provider;
 - record model/provider/version where possible;
 - record random seeds when applicable;
 - distinguish measured results from interpretation;
+- compute P6 per-resolution cost/latency only with the frozen numerator/denominator/attempt-inclusion/zero-denominator rules in `docs/evaluation.md`;
 - do not replace negative results with a more favorable metric after the fact;
 - do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
 - do not rerun or replace a measured P6 agent trajectory except when the frozen `docs/evaluation.md` infrastructure reason-code and attempt-budget rules mechanically authorize it;
