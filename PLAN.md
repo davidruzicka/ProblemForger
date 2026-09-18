@@ -89,8 +89,10 @@ See ADRs 0001–0009.
   - minimal native TUI status only.
 
 - [ ] **P6 — Baseline and graph/governance evaluation**
-  - freeze/hash `graph-intervention-v1`, `governance-policy-v1`, and executable `graph-metrics-v1` before exposing P6 tasks;
+  - freeze/hash `graph-intervention-v1`, `governance-policy-v1`, executable `graph-metrics-v1`, and `telemetry-metrics-v1` before exposing P6 tasks;
   - materialize the frozen task manifest only after those artifacts are fixed;
+  - run patch-independent preflight, then materialize/hash the deterministic complete A/B/C execution schedule before the first measured agent run;
+  - require a clean workspace, new HarnessX session, and distinct empty ProblemForger run/journal for every measured agent run;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
   - preserve the frozen graph intervention identically between B and C;
   - report task resolution, cost, latency, graph overhead, and propagation metrics;
