@@ -54,7 +54,7 @@ It is relevant evidence that calibrated edge confidence can be useful in graph-b
 GALAX uses step-wise graph/subgraph construction with a Graph Process Reward Model combining a pretrained GNN and schema checks.
 
 - Paper: https://arxiv.org/abs/2509.20935
-- ICLR 2026 version: https://openreview.net/
+- ICLR 2026: https://openreview.net/forum?id=ADFXCeYXvR
 
 It is a close precedent for learned process supervision over graph construction, although its application and graph semantics are biomedical knowledge/subgraph reasoning rather than general software-agent work state.
 
