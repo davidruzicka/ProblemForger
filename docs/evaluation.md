@@ -69,13 +69,15 @@ Token usage, billed cost, and wall time are measured outcomes rather than normal
 Use a deterministic subset of the public SWE-smith dataset:
 
 - dataset: `SWE-bench/SWE-smith`;
-- pinned dataset revision: `c3261078cb87400c0152f2d72c89d6269f3697db`;
+- pinned dataset revision: `ea6d7173829c7ec8fa16c22055699ff2e9188091`;
 - split: `train`;
 - selection seed namespace: `problemforger-p6-v1`.
 
 SWE-smith provides executable software-engineering tasks with failing/passing tests. It is public training data, so this experiment must **not** be presented as an uncontaminated measurement of frontier coding capability. Its purpose here is paired mechanism comparison under executable ground truth.
 
 ### Deterministic task selection
+
+At the pinned SWE-smith revision, `FAIL_TO_PASS` and `PASS_TO_PASS` are dataset list/sequence fields, not JSON-encoded strings. Selection code must validate that both fields decode/load as sequences of test identifiers before applying count filters; if the pinned schema does not match this expectation, materialization must fail rather than reinterpret string length as test count.
 
 Build the candidate set from the pinned snapshot using rows satisfying all of:
 
@@ -179,9 +181,29 @@ B:
 
 C:
 - exactly the same graph tools/instruction as B;
-- adds deterministic evidence/governance rules.
+- adds deterministic evidence/governance rules from a frozen, versioned governance-policy artifact.
 
-Any other prompt, tool, memory, sandbox, or model-setting difference invalidates the intended B→C comparison and must be documented as a new experiment version.
+### Governance-policy freeze gate for C
+
+The P0 document freezes the **experiment envelope**, but it does not pretend that the exact P3 governance policy already exists before it has been designed and validated.
+
+Before any measured P6 A/B/C run:
+
+1. P3 must produce a machine-readable or otherwise exact `governance-policy-v1` artifact that specifies:
+   - every deterministic check that can affect a mutation decision;
+   - what evidence each check consumes and the exact property it evaluates;
+   - decision precedence when checks disagree;
+   - the mapping from check results to `COMMIT`, `REJECT`, `RETRY`, or `ESCALATE`;
+   - protected-anchor behavior and any allowed exceptions;
+   - all configurable thresholds/limits relevant to the policy;
+2. the artifact must be version-controlled and its content hash recorded in the P6 run manifest;
+3. P3 policy development/validation must use separate development fixtures/tasks only;
+4. the 12 P6 primary tasks and 8 reserved holdout tasks must not be run, inspected for policy tuning, or used to change governance-policy-v1 before the policy is frozen;
+5. after the first measured P6 run, any governance-policy change creates a new experiment version and requires a complete new A/B/C comparison; results from different policy hashes must not be pooled as one v1 estimate.
+
+This freeze gate prevents the deterministic intervention from being selected after observing its performance on the measured task set while still allowing P3 to design the policy before P6.
+
+Any other prompt, tool, memory, sandbox, model-setting, or governance-policy difference invalidates the intended B→C comparison and must be documented as a new experiment version.
 
 ## Infrastructure failure policy
 
