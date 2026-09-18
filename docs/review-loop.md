@@ -4,7 +4,7 @@
 
 Use Codex review as an iterative quality gate without allowing the reviewer to silently redefine ProblemForger architecture or research methodology.
 
-The repository supports an opt-in `review-loop` label. When the automation is active on `main`, each relevant PR update requests a fresh Codex review.
+The repository supports an opt-in `review-loop` label. When the automation is active on `main`, each relevant PR update that produces a new head SHA requests a fresh Codex review, including updates authored by Codex/connector automation. The workflow itself only creates an issue comment and does not listen to issue-comment events, so no actor-level exclusion is needed to prevent recursion.
 
 ## Loop
 
