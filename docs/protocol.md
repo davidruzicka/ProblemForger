@@ -115,7 +115,8 @@ Conceptually:
 
 ```text
 get_graph(...)
-propose_mutation(expected_version, operations, evidence_refs)
+get_proposal(proposal_id)
+propose_mutation(proposal_id, expected_version, operations, evidence_refs)
 ```
 
 The exact tool names are harness-specific and are not part of the domain protocol.
