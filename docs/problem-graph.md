@@ -73,13 +73,16 @@ Do not encode proposal state, entity validity, and verification confidence in on
 
 ### Mutation outcome
 
-A mutation proposal can be:
+A mutation proposal attempt can be:
 
 - proposed;
 - committed;
 - rejected;
 - conflicted;
+- retry requested;
 - escalated.
+
+`retry requested` describes the outcome of the current proposal attempt. If the worker submits another attempt, that is a new proposal with its own identity/version context and should retain causal/provenance linkage to the earlier attempt rather than rewriting it as "retried".
 
 A proposal that is not committed is not part of authoritative graph state.
 
