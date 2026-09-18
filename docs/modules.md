@@ -55,10 +55,11 @@ current_graph_version(stream_id)
 Requirements:
 
 - every durable record has a monotonic per-run `journal_position`;
-- graph-changing records additionally carry/advance monotonic `graph_version`;
+- every graph-changing event carries a `graph_version`, but one atomic committed mutation batch advances the version only once;
+- all graph events in the same mutation batch share the same resulting `graph_version`;
 - audit-only records never advance `graph_version`;
 - graph compare-and-append is atomic;
-- a successful `COMMIT` persists its final decision audit record and all graph-changing events atomically;
+- a successful `COMMIT` persists its final decision audit record and all graph-changing events atomically, with one new graph version assigned to the complete batch;
 - `REJECT`, `RETRY`, `ESCALATE`, and returned `CONFLICT` outcomes are durably recorded before the service response completes;
 - proposal receipt is durable, so crashes can leave an explicit incomplete proposal rather than erasing history;
 - journal order is stable within a run;
@@ -183,7 +184,7 @@ For `EventStore`, tests must cover at least:
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;
 - ordered journal read;
-- atomic decision + multi-graph-event commit;
+- atomic decision + multi-graph-event commit with exactly one new graph version for the whole batch;
 - stale `expected_graph_version` conflict leaves graph events uncommitted;
 - a persisted conflict/reject/retry/escalate decision survives reload;
 - failed append leaves the journal/graph projection in the specified state;
