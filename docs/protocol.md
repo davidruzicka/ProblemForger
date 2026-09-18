@@ -62,6 +62,8 @@ A mutation request can yield outcomes such as:
 - `ESCALATE`;
 - `CONFLICT`.
 
+`RETRY` means that the current proposal attempt ended with a retry request. A later resubmission is a new proposal attempt with its own identity/version context and causal linkage to the prior attempt; the prior proposal is not mutated into a "retried" state.
+
 Harness-specific actions such as blocking a tool call are adapter behavior derived from these decisions; they are not themselves graph semantics.
 
 ## Harness capabilities
