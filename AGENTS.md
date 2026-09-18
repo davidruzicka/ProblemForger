@@ -86,6 +86,8 @@ For research-facing changes:
 - do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
 - do not rerun or replace a measured P6 agent trajectory except when the frozen `docs/evaluation.md` infrastructure reason-code and attempt-budget rules mechanically authorize it;
 - P6 task environments must execute immutable recorded image/content digests; never re-resolve mutable image tags during preflight, measured runs, or holdout use;
+- configuration A must not start ProblemForger or allocate a ProblemForger run/journal; use harness-neutral experiment/attempt IDs for A/B/C bookkeeping, while B/C get fresh ProblemForger run IDs per attempt;
+- retain the exact canonical candidate-patch bytes and SHA-256 for every measured attempt, and link every evaluator result to that digest;
 - enforce the frozen P6 semantic wall-clock boundary exactly: timer starts immediately before the first model request after successful setup; all trajectory provider/backoff/tool/ProblemForger time consumes it.
 - do not inspect or run P6 primary/holdout tasks while developing `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
 
