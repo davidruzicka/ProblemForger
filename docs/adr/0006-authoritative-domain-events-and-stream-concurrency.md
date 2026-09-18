@@ -28,7 +28,7 @@ The journal contains:
 
 Every durable journal record receives a monotonic per-run `journal_position`.
 
-Only graph-changing domain events advance the monotonic `graph_version`.
+Each successfully committed graph mutation batch advances the monotonic `graph_version` exactly once. All graph-changing domain events emitted by that atomic mutation share the same resulting `graph_version`; `journal_position` provides their total order within the journal.
 
 Harness/model/tool lifecycle observations remain a separate optional telemetry plane. They may reference journal records but are not required for graph replay or governance audit.
 
@@ -44,7 +44,7 @@ Proposal receipt is also durable. If the process terminates after a proposal is 
 
 ### Concurrency
 
-Graph-changing commits use optimistic comparison against `expected_graph_version`.
+Graph-changing commits use optimistic comparison against `expected_graph_version`. If the current graph version is `v`, one successful atomic mutation batch produces `new_graph_version = v + 1`, regardless of how many graph-changing events the mutation emits.
 
 Conceptually:
 
@@ -57,7 +57,7 @@ append_graph(stream_id, expected_graph_version, audit_records[], graph_events[])
   OR VersionConflict
 ```
 
-A successful `append_graph` atomically appends its audit and graph records.
+A successful `append_graph` atomically appends its audit and graph records, assigns the same `new_graph_version` to every graph-changing event in that batch, and makes that version addressable only after the complete batch is durable.
 
 Audit-only records can be appended independently and do not participate in graph-version comparison.
 
@@ -70,6 +70,7 @@ There is no required global order across independent run journals.
 - P6 blocked/retry/escalation/conflict metrics can be computed from durable data.
 - Tool/model observations cannot accidentally create graph-version conflicts.
 - `journal_position` and `graph_version` are distinct concepts and must not be conflated.
+- `graph_version` identifies committed graph states / atomic mutation batches, not individual graph events; no partial intermediate version of a committed mutation is addressable.
 - In-memory, SQLite, and future stores share the same journal/concurrency contract.
 - Future parallel workers can detect stale graph proposals.
 - The PoC may serialize actual governance execution internally while retaining the optimistic graph-write contract.
