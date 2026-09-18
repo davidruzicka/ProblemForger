@@ -40,7 +40,9 @@ A governance outcome is not considered externally completed until its final deci
 - For `REJECT`, `RETRY`, and `ESCALATE`, the final decision audit record is durably appended without advancing `graph_version`.
 - For `CONFLICT`, an optimistic graph append may first return `VersionConflict`; the application must then durably append `MutationDecision(CONFLICT)` before returning `CONFLICT` to the caller. If that audit append fails, the service returns a persistence/service failure instead of claiming a completed conflict outcome.
 
-Proposal receipt is also durable. If the process terminates after a proposal is recorded but before a final decision is persisted, replay exposes an incomplete proposal rather than erasing it.
+Proposal receipt is also durable. Each proposal has a client-generated `proposal_id` unique within the run and a canonical request hash. Recording that identity is atomic: the same `proposal_id` cannot create two proposal receipts or two commits.
+
+If the process terminates after a proposal is recorded but before a final decision is persisted, replay exposes an incomplete proposal rather than erasing it. A transport retry with the same proposal ID/request hash reuses that existing attempt; a retry with the same ID but different request hash is rejected as an idempotency conflict. A completed proposal replays its already-durable outcome rather than executing again.
 
 ### Concurrency
 
