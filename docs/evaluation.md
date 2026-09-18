@@ -83,18 +83,25 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - mapping to `COMMIT`, `REJECT`, `RETRY`, or `ESCALATE`;
    - protected-anchor behavior, exceptions, and thresholds;
 3. **`graph-metrics-v1`**
-   - executable or otherwise exact queries/rules for every reported graph/governance metric;
+   - executable or otherwise exact queries/rules for every **journal-derived** graph/governance metric;
    - the frozen decision reason codes considered a deterministic contradiction/block;
    - the exact edge types/directions and traversal rule used for downstream causal-dependency counts;
    - the evidence methods/scopes that qualify as later contradiction/invalidation;
    - time/version cutoffs, denominators, exclusions, and `UNKNOWN/UNRESOLVED` handling;
-   - any adjudication rule for non-machine-classifiable secondary analysis.
+   - any adjudication rule for non-machine-classifiable secondary analysis;
+4. **`telemetry-metrics-v1`**
+   - exact observation schema/fields required for P6 secondary overhead metrics;
+   - attribution rules for ProblemForger-added model tokens, tool calls, and latency;
+   - clock/latency boundaries and missing-observation handling;
+   - aggregation rules and denominators for telemetry-derived metrics.
 
-All three artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
+All four artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
 
-Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the three artifacts.
+Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the four artifacts.
 
 Primary graph/governance metrics must be mechanically reproducible from the durable run journal plus the frozen `graph-metrics-v1` artifact. Ambiguous cases that the frozen rule cannot classify are reported as `UNRESOLVED` and are not manually reassigned into primary metric buckets after results are known.
+
+Telemetry-derived secondary metrics must be reproducible from the required P6 telemetry plus `telemetry-metrics-v1`. Telemetry remains outside authoritative graph state; P6 simply requires the configured telemetry capture needed for those secondary measurements.
 
 Any change to one of these artifact hashes after the first measured run creates a new experiment version and requires a complete new A/B/C comparison. Results with different artifact hashes must not be pooled as one v1 estimate.
 
@@ -153,20 +160,50 @@ Candidates skipped by the primary family cap are therefore reconsidered by the h
 
 Materialization must fail rather than silently relax these rules if fewer than 12 primary or 8 holdout tasks can be selected.
 
-Only after `graph-intervention-v1`, `governance-policy-v1`, and `graph-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
+Only after `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
 
 Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
 
-### Repetitions and ordering
+### Repetitions, run isolation, and execution ordering
 
 For A/B/C:
 
-- 12 primary tasks;
+- 12 primary tasks before patch-independent preflight exclusions;
 - 3 independent runs per task per configuration;
-- 36 task-runs per configuration;
-- 108 measured runs total.
+- 36 task-runs per configuration before exclusions;
+- 108 measured runs total before exclusions.
 
-Within each task and replicate index, interleave/randomize A/B/C execution order using a stable recorded ordering seed. This reduces time/provider-drift confounding.
+Every measured **agent run** is isolated. Before starting a run:
+
+- restore the exact pinned pristine task repository state in a fresh writable workspace/container layer;
+- start a new HarnessX agent/session with no conversation, scratchpad, tool state, or mutable workspace inherited from any prior run;
+- allocate a distinct ProblemForger `run_id` backed by an empty durable journal;
+- do not import graph state, proposal history, telemetry state, or candidate patches from another configuration/replicate;
+- immutable base images and read-only dependency/download caches may be reused only if they cannot carry task-generated mutable state into the run.
+
+A run failing this reset contract is an infrastructure-invalid attempt and is rerun from a clean state; it is not scored as an agent outcome.
+
+Execution order is also frozen mechanically. Define the ordering seed namespace exactly as:
+
+```text
+problemforger-p6-order-v1
+```
+
+After patch-independent preflight exclusions are known, but **before the first measured agent run**, materialize the complete schedule for the remaining common task set:
+
+1. for every `(instance_id, replicate)` block, where `replicate ∈ {1,2,3}`, compute
+   ```text
+   block_key = SHA256("problemforger-p6-order-v1\0block\0" + instance_id + "\0" + replicate)
+   ```
+2. sort blocks by `(block_key, instance_id, replicate)`;
+3. within each block, for each `config ∈ {A,B,C}`, compute
+   ```text
+   config_key = SHA256("problemforger-p6-order-v1\0config\0" + instance_id + "\0" + replicate + "\0" + config)
+   ```
+4. sort A/B/C by `(config_key, config)` and execute those three measured runs consecutively in that order;
+5. concatenate all sorted blocks to form the global schedule.
+
+Write the complete schedule to a version-controlled or immutable run artifact and record its SHA-256 before execution starts. Do not reorder around provider performance, failures, or observed task outcomes; infrastructure retries retain the original schedule slot identity and are explicitly linked to it.
 
 A provider-side random seed is not assumed available.
 
@@ -234,7 +271,7 @@ With only 12 tasks before exclusions, this is a PoC effect estimate, not strong 
 - cost per resolved task;
 - latency per resolved task.
 
-### Graph/governance metrics
+### Journal-derived graph/governance metrics
 
 Primary graph/governance metrics are computed from the durable run journal using the frozen `graph-metrics-v1` rules. Analysts must not decide after seeing outcomes what counts as "decisive", "contradicted", or "causally dependent".
 
@@ -245,12 +282,22 @@ Report at least:
 - proposals blocked with one of the frozen deterministic-contradiction reason codes;
 - durable `RETRY` / `ESCALATE` / `CONFLICT` decision counts;
 - number of graph nodes/edges, durable journal records, and graph-changing events;
-- ProblemForger-added tokens/tool calls/latency where separable;
 - `UNRESOLVED` count for cases the frozen automatic rule cannot classify.
 
 Manual interpretation may be reported separately as qualitative/secondary analysis but may not silently alter primary machine-derived metric buckets.
 
 A universal false-positive/false-negative transition rate is **not** claimed for semantically ambiguous transitions without independent labels.
+
+### Telemetry-dependent overhead metrics
+
+The following are secondary metrics and require the P6 telemetry capture defined by frozen `telemetry-metrics-v1`:
+
+- ProblemForger-added model input/output/cache tokens where attributable;
+- ProblemForger-added tool calls;
+- ProblemForger/service/adapter latency according to the frozen timing boundaries;
+- related per-run overhead aggregates.
+
+These metrics are **not** derived from the authoritative journal and must not be copied into it merely to make the analysis convenient. Missing required telemetry makes the affected telemetry-derived metric unavailable/invalid according to `telemetry-metrics-v1`; it does not change graph correctness or replayability.
 
 ### Configuration parity
 
@@ -270,7 +317,7 @@ C:
 
 ### Intervention freeze and parity
 
-The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the three pre-P6 artifacts above must be frozen **before** the selected P6 tasks are exposed.
+The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the four pre-P6 artifacts above must be frozen **before** the selected P6 tasks are exposed.
 
 For B→C, the `graph-intervention-v1` hash must be identical. The only intentional B→C difference is activation of `governance-policy-v1`.
 
@@ -385,8 +432,9 @@ Record enough structured data to reproduce aggregate results:
 - run/configuration/replicate identifiers;
 - event schema versions;
 - full ProblemForger durable run journal, including proposal/decision audit records and graph-changing events;
-- `graph-intervention-v1`, `governance-policy-v1`, and `graph-metrics-v1` hashes;
-- observation/telemetry needed for non-authoritative usage/latency metrics;
+- `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` hashes;
+- execution-schedule artifact/hash;
+- required observation/telemetry needed for non-authoritative usage/latency metrics;
 - benchmark evaluator output.
 
 Do not store secrets or private/licensed source material in public traces.
