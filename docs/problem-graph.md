@@ -2,19 +2,21 @@
 
 ## Purpose
 
-The ProblemGraph is an explicit representation of the evolving problem state. It is not the harness execution graph and it is not a dump of the model's chain of thought.
+The ProblemGraph is an explicit representation of evolving problem state. It is not the harness execution graph and it is not a dump of model chain-of-thought.
+
+The graph exists to make goals, requirements, work units, artifacts, evidence, dependencies, and provenance explicit enough to govern and inspect.
 
 ## Minimal initial node categories
 
-The initial ontology should remain small:
+Keep the initial ontology small:
 
-- **RootGoal** — the user-level objective or immutable anchor;
+- **RootGoal** — the user-level objective or protected anchor;
 - **Requirement** — a constraint or condition that must remain satisfied;
 - **Task** — a bounded unit of work;
-- **Artifact** — code, patch, file, test, result, or other produced object;
-- **Evidence** — evidence relevant to a claim or transition.
+- **Artifact** — code, patch, file, test result, or other produced object;
+- **Evidence** — evidence relevant to a claim, entity, or proposed mutation.
 
-Additional types require demonstrated need.
+Additional node types require demonstrated need.
 
 ## Edges
 
@@ -24,55 +26,124 @@ Edges are typed and carry provenance. Candidate examples include:
 - `depends_on`;
 - `implements`;
 - `produces`;
-- `verified_by`;
+- `supported_by`;
 - `conflicts_with`;
-- `invalidates`.
+- `invalidates`;
+- `supersedes`.
 
-The exact initial edge set is a P1/P2 planning decision.
+The exact initial edge set is finalized during P1/P2 planning.
+
+## Agent interaction
+
+The initial PoC does not automatically serialize the entire graph into model context.
+
+The worker receives a small ProblemForger tool/API surface that can:
+
+- query current graph state or a bounded neighborhood;
+- propose node/edge mutations;
+- attach or reference evidence;
+- request the current graph version.
+
+The worker proposes semantic changes; it never writes authoritative graph state directly.
+
+This is intentionally simpler than introducing a separate context selector/planner subsystem before the core graph hypothesis has been measured.
+
+See ADR 0008.
 
 ## Mutation model
 
-The worker proposes mutations; it does not directly change authoritative state.
-
-A mutation must identify the graph version it was based on. The governor validates it before commit.
+A proposal identifies the authoritative graph version on which it was based.
 
 ```text
-G_t
- + proposed mutation(base_version=t)
- + evidence
+G_v
+ + proposed mutation(expected_version=v)
+ + evidence references
  -> governor
- -> commit/reject/retry/escalate
- -> G_(t+1) or unchanged G_t
+ -> commit / reject / retry / escalate / conflict
+ -> G_(v+n) or unchanged G_v
 ```
 
-## Lifecycle
+A single accepted mutation may produce multiple domain events and must commit them atomically.
 
-Do not collapse all "success" into one state.
+If `expected_version` is stale, the result is a version conflict rather than silent last-write-wins behavior.
 
-The initial model must be able to represent at least:
+## Separate state axes
+
+Do not encode proposal state, entity validity, and verification confidence in one enum.
+
+### Mutation outcome
+
+A mutation proposal can be:
 
 - proposed;
-- accepted/committed;
-- locally verified;
-- externally verified;
-- invalidated later.
+- committed;
+- rejected;
+- conflicted;
+- escalated.
 
-A later observation may invalidate an earlier accepted claim without rewriting the historical event.
+A proposal that is not committed is not part of authoritative graph state.
 
-## Evidence classes
+### Entity lifecycle
 
-Evidence strength/source must be explicit. At minimum distinguish:
+A committed graph entity is initially active and may later become:
 
-- **asserted** — produced by an agent/model;
-- **learned verification** — produced by a learned verifier/judge;
-- **observed** — external observed behavior;
-- **deterministic** — mechanically verified property.
+- superseded;
+- invalidated.
 
-These classes are not interchangeable.
+The PoC should avoid destructive deletion of historical entities. Later evidence invalidates/supersedes them through new domain events.
+
+### Verification state
+
+Verification is derived from attached evidence and policy; it is not the entity lifecycle.
+
+Useful derived UI/status terms may include:
+
+- unverified;
+- locally supported;
+- externally supported;
+- disputed.
+
+These are projections over evidence, not historical states that overwrite prior truth.
+
+See ADR 0007.
+
+## Evidence model
+
+Evidence source and verification method are orthogonal and must not be compressed into a single "strength" enum.
+
+At minimum an evidence record should be able to represent:
+
+### Origin
+
+Examples:
+
+- worker/model;
+- harness/tool/environment;
+- independent verifier;
+- human;
+- benchmark/evaluator.
+
+### Method
+
+Examples:
+
+- assertion;
+- deterministic check;
+- observed outcome;
+- learned judge;
+- human review.
+
+### Subject and result
+
+Evidence must identify what claim/entity/mutation it supports or contradicts and preserve enough result/provenance metadata to audit the decision.
+
+A passing test is strong evidence for the behavior that test covers; it is not automatically proof that the root goal is fully satisfied.
+
+See `docs/verification.md`.
 
 ## Anchors and drift
 
-Root goals and selected requirements may be anchors. Derived nodes must retain provenance back to them.
+Root goals and selected requirements may be protected anchors. Derived nodes must retain provenance back to them.
 
 Potential drift signals include:
 
@@ -80,12 +151,18 @@ Potential drift signals include:
 - repeated reversals/reopening;
 - mutation rate;
 - graph cycles where disallowed;
-- disagreement between verifiers;
+- verifier disagreement;
 - confidence decay;
 - later invalidation frequency.
 
-Drift metrics are hypotheses until evaluated.
+These are research hypotheses until evaluated.
 
-## Concurrency
+## Versioning and concurrency
 
-Parallel mutation support must use graph versions/conflict detection. The first implementation may serialize commits, but the event model must not assume silent last-write-wins behavior.
+Each ProblemForger run owns an authoritative domain-event stream with a monotonically increasing graph version.
+
+The PoC may serialize writes internally, but the `EventStore` contract uses optimistic compare-and-append so future parallel workers cannot silently overwrite each other.
+
+Observation/telemetry events do not increment graph version.
+
+See ADR 0006.
