@@ -81,10 +81,11 @@ On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durab
 
 Proposal execution uses a durable processing claim:
 
-- every active claim has an `owner_id`, monotonically increasing `claim_epoch`, and finite `lease_expires_at`;
+- every active claim has an `owner_id` unique to the service/worker incarnation, monotonically increasing `claim_epoch`, and finite `lease_expires_at`;
+- claim TTL and renewal cadence are versioned typed service configuration and use the injected clock so behavior is testable/reproducible;
 - the claimant renews the lease while evaluating;
 - an unclaimed proposal or a proposal whose claim lease has expired may be atomically claimed/reclaimed, incrementing `claim_epoch`;
-- every terminalization/finalization operation carries the claimant's expected `claim_epoch`;
+- every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`;
 - the EventStore/application boundary atomically rejects stale epochs with `STALE_CLAIM` before any graph mutation or final decision append;
 - governance evaluation before final append must not perform non-idempotent external side effects; any future side-effecting integration requires its own idempotency contract.
 
