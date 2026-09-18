@@ -96,7 +96,7 @@ See ADRs 0001–0009.
   - require a clean workspace and new HarnessX session for every measured agent attempt; B/C additionally get a distinct empty ProblemForger run/journal per attempt, while A never starts ProblemForger;
   - retain canonical exact candidate-patch bytes/digest (plus auditable workspace-diff/snapshot where available) for every attempt and link evaluator outputs to that digest;
   - retain complete harness-native raw trajectories as adapter/evaluation artifacts for audit and later P7/P8 dataset construction; keep them out of core and the authoritative journal;
-  - enforce the frozen pre-semantic infrastructure retry taxonomy and fixed attempt budgets; no post-hoc trajectory reruns;
+  - enforce the frozen pre-semantic infrastructure retry taxonomy and fixed attempt budgets; reset validation is pre-semantic and budgeted, pre-semantic nonretryable provider failures are scored deterministically, evaluator post-test no-vector outcomes are predeclared, and no post-hoc trajectory reruns are allowed;
   - resolve every selected benchmark image to an immutable digest/content identity before preflight and use only that identity thereafter;
   - enforce the frozen 30-minute semantic deadline from immediately before the first model request through all provider/backoff/tool/ProblemForger trajectory time;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
