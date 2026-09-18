@@ -229,7 +229,17 @@ Before starting an agent-run attempt:
 
 If B/C receives a clean whole-run replacement under the frozen retry policy, the replacement gets a new `attempt_id` and a new empty ProblemForger `run_id`/journal; it never reuses the failed attempt's ProblemForger state.
 
-A run failing this reset contract is an infrastructure-invalid attempt and is rerun from a clean state; it is not scored as an agent outcome.
+Immediately before the first model request, the frozen benchmark adapter performs a **pre-semantic reset validation**. At minimum it verifies:
+
+- the writable task workspace is at the expected pristine base state and contains no state inherited from another attempt;
+- the HarnessX session has no prior conversation/scratchpad/tool state and is bound to the current `attempt_id`;
+- configuration A has no ProblemForger process/run/journal;
+- configurations B/C have the current attempt's newly allocated ProblemForger `run_id` with an empty journal / initial graph state;
+- no writable cache, overlay, temporary directory, or benchmark-runner state reused by the attempt contains task-generated mutable state from another run.
+
+A reset-validation failure terminates the attempt **before any model request is issued** with reason `INFRA_RESET_VALIDATION`. It is eligible for clean replacement only under the frozen whole-agent-run replacement policy and therefore consumes the same maximum-attempt budget as every other retryable pre-semantic infrastructure failure.
+
+After the first semantic model response is accepted, reset/isolation concerns can never authorize regeneration of that trajectory. If later audit evidence demonstrates that a measured attempt actually violated the reset contract despite passing pre-semantic validation, classify the experiment `INVALID_EXPERIMENT_STATE`, stop launching new measured schedule slots, preserve all affected artifacts, and report no primary point estimate or confidence interval. Do not discard and regenerate the affected measured trajectory.
 
 Execution order is also frozen mechanically. Define the ordering seed namespace exactly as:
 
@@ -401,10 +411,12 @@ For each individual model call, including calls after semantic execution has beg
   - HTTP 408;
   - HTTP 429;
   - HTTP 500–599;
-- do not retry semantic/API validation failures, malformed successful responses already accepted into agent state, content/tool behavior, or ordinary 4xx responses other than 408/429;
+- do not retry semantic/API validation failures, malformed provider responses that do not produce an accepted semantic response, content/tool behavior, or ordinary 4xx responses other than 408/429;
 - all transport attempts and reason codes are retained in raw telemetry.
 
-Exhausting the per-call transport budget terminates that agent-run attempt.
+A nonretryable provider failure that occurs **before the run has accepted its first semantic model response** terminates the schedule slot as `PRE_SEMANTIC_PROVIDER_FAILURE`, is scored unresolved, and is **not** eligible for whole-run replacement. This includes API/request validation failures, malformed provider responses not accepted into agent state, and ordinary nonretryable 4xx responses. The specific provider/error code remains in raw data.
+
+Exhausting the transport budget on the **first** model call without any semantic response terminates the attempt as `INFRA_FIRST_PROVIDER_CALL` and is eligible for whole-run replacement under the fixed attempt budget. Exhausting a later model call's transport budget after semantic execution has begun terminates the slot as unresolved `RUN_INTERRUPTED`; it is not a whole-run retry trigger.
 
 ### Whole-agent-run replacement
 
@@ -414,6 +426,7 @@ A failed agent-run attempt is eligible for a clean whole-run replacement **only 
 - `INFRA_CONTAINER_START` — benchmark/container runtime image pull/create/start failure before task delivery;
 - `INFRA_HARNESS_START` — HarnessX process/session startup failure before task delivery;
 - `INFRA_PROBLEMFORGER_START` — B/C ProblemForger process or health-check startup failure before task delivery;
+- `INFRA_RESET_VALIDATION` — the mandatory pre-semantic clean-state/reset validation failed before the first model request;
 - `INFRA_FIRST_PROVIDER_CALL` — the first model call exhausted the provider-call transport budget without producing a semantic response.
 
 Each schedule slot has **at most 3 whole-run attempts total**: one initial attempt plus at most 2 clean replacements. Every replacement must satisfy the same clean-state isolation contract and retains the same schedule-slot identity; prior invalid attempts remain in raw data.
@@ -436,7 +449,9 @@ For each required control/candidate evaluation repetition:
   - `EVAL_CONTAINER_START`;
   - `EVAL_EVALUATOR_START`;
 - once candidate/control repository tests have started executing, evaluator/test failure is not retrospectively reclassified as retryable infrastructure merely because no valid vector was produced;
-- if the 3-attempt evaluator budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point estimate or confidence interval.
+- if a **control/preflight** evaluation has started repository tests and terminates without a complete required-test vector, classify that task `EVALUATOR_INVALID`; this is a patch-independent task-level preflight exclusion and is never retried or replaced;
+- if a **measured candidate-patch** evaluation has started repository tests and terminates without a complete required-test vector, record that evaluation repetition as `EVALUATION_INCOMPLETE`; the measured run is unresolved regardless of its other evaluator repetition, and the missing-vector repetition is never retried;
+- if the 3-attempt pre-test evaluator infrastructure budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point estimate or confidence interval.
 
 Infrastructure-invalid attempts are reported separately from valid agent outcomes in cost/latency accounting; they are never silently deleted.
 
@@ -446,27 +461,30 @@ Evaluator/task stability and candidate-patch stability are handled separately be
 
 Before any measured A/B/C agent run for a primary task:
 
-1. evaluate the task's **unmodified pinned repository state** twice in separate fresh instances of the same pinned environment;
-2. compare the full required-test outcome vector (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test);
-3. both control vectors must be identical **and** match the benchmark's expected baseline contract:
+1. evaluate the task's **unmodified pinned repository state** twice in separate fresh instances of the same pinned environment, subject to the frozen evaluator policy above;
+2. if either required control evaluation starts repository tests but terminates without a complete required-test vector, classify the task `EVALUATOR_INVALID` and stop that task's preflight; do not retry, replace, or hand-adjudicate it;
+3. otherwise compare the two full required-test outcome vectors (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test);
+4. both control vectors must be identical **and** match the benchmark's expected baseline contract:
    - every required `FAIL_TO_PASS` test is failing;
    - every required `PASS_TO_PASS` test is passing;
-4. if the two vectors differ, run one third control evaluation in another fresh instance;
-5. if any control vectors differ, classify the task as `EVALUATOR_UNSTABLE`;
-6. if the stable control vector does not match the expected baseline contract, classify the task as `BASELINE_INVALID`.
+5. if the two valid vectors differ, run one third control evaluation in another fresh instance;
+6. if that third evaluation starts tests but yields no complete vector, classify the task `EVALUATOR_INVALID`;
+7. if all produced vectors are complete but any of the repeated required-test vectors differ, classify the task as `EVALUATOR_UNSTABLE`;
+8. if the stable complete control vector does not match the expected baseline contract, classify the task as `BASELINE_INVALID`.
 
-`EVALUATOR_UNSTABLE` and `BASELINE_INVALID` are patch-independent preflight exclusions applied **before measured agent runs begin**. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs and exclusion reason, report the reduced denominator, and do not replace the task.
+`EVALUATOR_INVALID`, `EVALUATOR_UNSTABLE`, and `BASELINE_INVALID` are patch-independent preflight exclusions applied **before measured agent runs begin**. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs and exclusion reason, report the reduced denominator, and do not replace the task.
 
 ### Measured candidate patches
 
 For **every measured candidate patch**, regardless of its first outcome:
 
-1. evaluate the exact patch twice in separate fresh instances of the pinned environment;
-2. compare the full required-test outcome vectors;
-3. the run is scored **resolved** only if both vectors are identical and satisfy the end-to-end resolution criterion;
-4. if the two vectors differ, classify that candidate/run as `PATCH_UNSTABLE` and score the run as unresolved/failure; do **not** exclude the task or any paired runs.
+1. execute the two mandatory evaluator repetitions in separate fresh instances of the pinned environment, subject to the frozen evaluator policy above;
+2. if either repetition starts repository tests but terminates without a complete required-test vector, classify the candidate/run `EVALUATION_INCOMPLETE` and score it unresolved; the other mandatory repetition may still be retained/executed for audit, but cannot rescue the primary classification;
+3. only when both repetitions produced complete vectors, compare the full required-test outcome vectors;
+4. the run is scored **resolved** only if both complete vectors are identical and satisfy the end-to-end resolution criterion;
+5. if both vectors are complete but differ, classify that candidate/run as `PATCH_UNSTABLE` and score the run as unresolved/failure; do **not** exclude the task or any paired runs.
 
-A third candidate-patch evaluation may be retained as diagnostic data but cannot change the frozen primary classification above.
+A third candidate-patch evaluation may be retained as diagnostic data only when both mandatory evaluations produced complete vectors; it cannot change the frozen primary classification above.
 
 Evaluator attempts follow the frozen infrastructure-retry budget above. Retryable pre-test infrastructure failure does not by itself trigger task exclusion or `PATCH_UNSTABLE`; exhaustion makes the experiment `INCOMPLETE_INFRASTRUCTURE` rather than allowing post-hoc task replacement. All primary paired comparisons use the same common task set fixed after preflight task/evaluator exclusions.
 
@@ -548,7 +566,7 @@ For every schedule slot and every whole-run attempt, retain:
   - every agent-issued tool/subprocess call and its arguments;
   - every tool/subprocess result returned to the agent, including stdout/stderr/exit status or structured error;
   - ProblemForger client requests/responses for B/C as seen by the adapter;
-  - retry/transport attempt reason codes and whether each model attempt produced a semantic response;
+  - pre-semantic reset-validation result/reason plus retry/transport attempt reason codes and whether each model attempt produced a semantic response;
   - monotonic offsets from semantic-timer start for model request start/end, retry/backoff intervals, tool start/end, ProblemForger calls, HarnessX step transitions, and terminal/deadline event;
   - terminal reason and observed step count;
 - the **exact candidate patch bytes submitted to evaluation**, stored as an immutable artifact, plus `sha256(candidate_patch_bytes)`;
