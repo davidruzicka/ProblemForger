@@ -16,13 +16,16 @@ Used by the harness/worker to interact with ProblemForger.
 
 Initial operations should cover:
 
-- start/create a run;
-- get run metadata and current graph version;
-- query graph state or a bounded subgraph;
-- propose a graph mutation against `expected_version`;
-- attach/reference evidence through a governed mutation;
-- query a mutation proposal by `proposal_id`;
-- retrieve/replay the resulting governor decision.
+- start/create a run and return its `run_id`;
+- get run metadata and current graph version by explicit `run_id`;
+- query graph state or a bounded subgraph by explicit `run_id`;
+- propose a graph mutation against `expected_graph_version` with explicit `run_id`;
+- attach/reference evidence through a governed mutation for explicit `run_id`;
+- query a mutation proposal by explicit `(run_id, proposal_id)`;
+- retrieve/replay the resulting governor decision;
+- read a bounded durable governance/audit timeline for a run, ordered by `journal_position`, so observers can inspect proposal receipts and non-commit outcomes without relying on optional telemetry.
+
+All run-scoped v1 commands and queries carry `run_id` explicitly. There is no ambient/session-selected run context in the domain/application protocol; a transport may maintain connections or sessions, but it must not infer or override the target run. Missing/unknown/mismatched `run_id` is an explicit protocol error.
 
 The exact wire schema is finalized in P1.
 
@@ -127,12 +130,13 @@ For the first A/B/C ablation, adapters should expose the same ProblemForger grap
 Conceptually:
 
 ```text
-get_graph(...)
-get_proposal(proposal_id)
-propose_mutation(proposal_id, expected_version, operations, evidence_refs)
+get_graph(run_id, ...)
+get_proposal(run_id, proposal_id)
+get_audit_timeline(run_id, after_journal_position?, limit?)
+propose_mutation(run_id, proposal_id, expected_graph_version, operations, evidence_refs)
 ```
 
-The exact tool names are harness-specific and are not part of the domain protocol.
+The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are not: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller.
 
 Configuration B commits proposals after schema/version/core-invariant checks only.
 
