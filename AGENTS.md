@@ -41,7 +41,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Core code must not import or instantiate concrete providers.
 - Concrete providers are selected through typed configuration and an explicit registry/composition root.
 - Provider-specific configuration must not leak into core/domain code.
-- In-memory and SQLite are initial persistence adapters, not special cases.
+- In-memory and SQLite implement the same EventStore port, but durability is an explicit capability: memory is ephemeral/test-only, while normal service execution requires a durable provider such as SQLite.
 - Prefer mechanically reproducible or external evidence over worker self-assessment when they address the same claim, but keep evidence scope explicit.
 - Verifier output is evidence, not ground truth.
 - Root goals, anchors, governor policy, audit history, and verification thresholds must not be silently mutable by the worker agent.
