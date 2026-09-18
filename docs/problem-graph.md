@@ -164,9 +164,9 @@ These are research hypotheses until evaluated.
 
 Each ProblemForger run owns an append-only durable journal.
 
-Every durable record advances per-run `journal_position`. Only graph-changing domain events advance `graph_version`; proposal/decision audit records do not.
+Every durable record advances per-run `journal_position`. Each committed mutation batch advances `graph_version` exactly once; all graph-changing events emitted by that mutation share the same resulting version. Proposal/decision audit records do not advance graph version.
 
-The PoC may serialize governance internally, but graph-changing writes use optimistic `expected_graph_version` checks so future parallel workers cannot silently overwrite each other.
+The PoC may serialize governance internally, but graph-changing writes use optimistic `expected_graph_version` checks so future parallel workers cannot silently overwrite each other. A successful mutation from version `v` produces only complete state `v + 1`; no intermediate event-prefix state is addressable.
 
 Observation/telemetry events remain outside the durable governance journal and do not increment graph version.
 
