@@ -4,7 +4,7 @@
 
 ProblemForger is a research prototype for making long-running AI-agent work more explicit, observable, and locally verifiable.
 
-The core idea is to keep an **externally governed, versioned problem graph** outside the worker model. The model may propose graph mutations, produce artifacts, and suggest progress, but it does not own authoritative state. A governor combines deterministic evidence and learned verification before changes are committed.
+The core idea is to keep an **externally governed, versioned problem graph** outside the worker model. The model may propose graph mutations, produce artifacts, and suggest progress, but it does not own authoritative state. A governor combines explicit evidence and policy before changes are committed; learned verification and calibrated routing are later experimental layers.
 
 ProblemForger is intended to be a **harness-neutral reliability layer**, not another agent framework.
 
@@ -29,7 +29,7 @@ The PoC is deliberately incremental:
 1. explicit problem graph;
 2. event-sourced authoritative state;
 3. governed graph mutations;
-4. deterministic evidence;
+4. deterministic/external evidence;
 5. learned verification;
 6. calibrated confidence and abstention;
 7. model suitability estimation and routing;
@@ -41,32 +41,28 @@ Each layer must be evaluated separately before later layers are allowed to hide 
 ## Architecture at a glance
 
 ```text
-                 Agent harness
-              (HarnessX / Pi / ...)
-                       |
-                  thin adapter
-                       |
-                 versioned API
-                       |
-                ProblemForger Core
-          +------------+-------------+
-          |            |             |
-     ProblemGraph   Governor      Event log
-          |            |
-          |       +----+---------+
-          |       |              |
-          |  deterministic    learned
-          |    evidence       verifier
-          |                       |
-          +-----------+-----------+
-                      |
-             commit / reject /
-             retry / escalate
+              Agent harness
+           (HarnessX / Pi / ...)
+                    |
+               thin adapter
+                    |
+          versioned local service API
+                    |
+             ProblemForger
+       +------------+------------+
+       |                         |
+ authoritative graph        observations
+       |                         |
+ ProblemGraph -> Governor    TelemetrySink
+       |           |
+       |           +-- evidence/verifier ports
+       |
+    EventStore
 ```
 
-Replaceable infrastructure and policies are accessed through explicit ports. Concrete providers are loaded from typed configuration. The core must not know whether persistence is backed by memory, SQLite, PostgreSQL, or another implementation.
+Authoritative graph-domain events are deliberately separate from harness/model/tool telemetry. Replaceable infrastructure and policies are accessed through explicit ports. Concrete providers are loaded from typed configuration. The core must not know whether persistence is backed by memory, SQLite, PostgreSQL, or another implementation.
 
-See [PLAN.md](PLAN.md) and [docs/architecture.md](docs/architecture.md).
+See [PLAN.md](PLAN.md), the [P0 audit](docs/p0-audit.md), and [architecture](docs/architecture.md).
 
 ## Repository status
 
@@ -76,6 +72,7 @@ This repository is in the **specification and PoC stage**. Claims about reliabil
 
 - [PLAN.md](PLAN.md) — roadmap, phases, and exit criteria.
 - [AGENTS.md](AGENTS.md) — rules for AI-assisted implementation.
+- [P0 specification audit](docs/p0-audit.md)
 - [Vision](docs/vision.md)
 - [Architecture](docs/architecture.md)
 - [Ports, adapters, and modules](docs/modules.md)
