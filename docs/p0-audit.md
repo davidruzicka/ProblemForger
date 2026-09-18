@@ -43,7 +43,7 @@ Resolution: evidence origin, method, scope/subject, result, provenance, and opti
 
 The architecture defined a ProblemGraph but not how an agent would actually query or mutate it without hidden prompt/context machinery.
 
-Resolution: the initial PoC exposes explicit graph query and versioned mutation tools/API. Automatic context selection is deferred.
+Resolution: the initial PoC exposes explicit graph query and versioned mutation tools/API. Every run-scoped operation carries explicit `run_id`; there is no ambient session-selected run. The application read API also exposes bounded durable governance/audit timeline records for observers. Automatic context selection is deferred.
 
 ### The first ablation was not sufficiently isolated
 
@@ -119,7 +119,7 @@ Key properties:
 
 - pinned HarnessX revision;
 - one fixed model/configuration across A/B/C;
-- deterministic SWE-smith task selection from a verified pinned dataset revision with explicit list-field schema validation;
+- deterministic SWE-smith task selection from a verified pinned dataset revision with explicit list-field and repository-identity schema validation; malformed `repo` data fails materialization;
 - a frozen `benchmark-adapter-v1` bridges SWE-smith/train into the pinned HarnessX runtime identically for A/B/C, bypassing HarnessX's built-in SWE-bench Verified/test defaults;
 - 12 primary tasks, 3 repetitions, 3 configurations = 108 measured runs;
 - 8 additional task-level holdout tasks reserved for later verifier/calibration work;
@@ -138,7 +138,7 @@ Key properties:
 - provider/evaluator retry eligibility, machine-readable infrastructure reason classes, whole-run replacement eligibility, and maximum attempt counts are frozen; mandatory reset validation happens before the first model request and uses the same attempt budget, pre-semantic nonretryable provider failures have a fixed unresolved outcome, and a trajectory is never regenerated after its first semantic model response;
 - evaluator failures after repository tests start but before a complete required-test vector are explicitly classified: patch-independent controls become `EVALUATOR_INVALID` exclusions, while measured candidate runs become unresolved `EVALUATION_INCOMPLETE`;
 - every materialized primary/holdout task resolves to a verified immutable image/content digest before preflight; mutable tags are never re-resolved during P6 or later holdout use;
-- the 30-minute semantic deadline starts immediately before the first model request after setup, includes all provider/backoff/tool/ProblemForger trajectory time, and freezes/evaluates the current workspace at deadline;
+- the 30-minute semantic deadline starts immediately before the first model request after setup, includes all provider/backoff/tool/ProblemForger trajectory time, freezes/evaluates the current workspace at deadline, and takes precedence over provider retry/replacement classification;
 - journal-derived graph metrics and telemetry-derived overhead metrics are specified separately; P6 freezes `telemetry-metrics-v1` and requires the corresponding telemetry capture;
 - if fewer than 8 of the planned 12 primary tasks survive patch-independent preflight, P6 reports `INSUFFICIENT_VALID_TASKS` and does not run/estimate the primary A/B/C experiment;
 - P6 is explicitly not presented as a frontier coding-capability benchmark.
