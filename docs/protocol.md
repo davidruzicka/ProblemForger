@@ -93,7 +93,7 @@ Subsequent submissions follow these rules:
 
 - same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata; do not re-run governance or mutate the graph;
 - same `proposal_id` + same canonical request hash + proposal has an active, unexpired processing claim → return `PENDING` with current recovery metadata; do not create a second proposal attempt;
-- same `proposal_id` + same canonical request hash + proposal is incomplete and unclaimed/claim-expired → the service may atomically acquire a new recovery claim and resume governance from the durable normalized request;
+- same `proposal_id` + same canonical request hash + proposal is incomplete and unclaimed/claim-expired → a mutation resubmission must attempt to atomically acquire a new recovery claim; the winner resumes governance from the durable normalized request under the new epoch, while a loser observes the new active claim and returns `PENDING`;
 - same `proposal_id` + different canonical request hash → return `IDEMPOTENCY_CONFLICT`; do not evaluate or mutate;
 - unknown `proposal_id` → treat as a new proposal submission.
 
