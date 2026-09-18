@@ -117,6 +117,8 @@ Concrete implementations of ports include:
 
 Harness integrations are adapters to the service protocol, not provider modules inside the core.
 
+Harness-specific **raw trajectory archives** used for experiment reproducibility are also adapter/evaluation concerns, not core concerns. HarnessX and Pi may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
+
 Provider-specific configuration belongs to the provider module.
 
 ### Composition root and configuration
