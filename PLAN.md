@@ -95,6 +95,8 @@ See ADRs 0001–0009.
   - run patch-independent preflight, then materialize/hash the deterministic complete A/B/C execution schedule before the first measured agent run;
   - require a clean workspace, new HarnessX session, and distinct empty ProblemForger run/journal for every measured agent run;
   - enforce the frozen pre-semantic infrastructure retry taxonomy and fixed attempt budgets; no post-hoc trajectory reruns;
+  - resolve every selected benchmark image to an immutable digest/content identity before preflight and use only that identity thereafter;
+  - enforce the frozen 30-minute semantic deadline from immediately before the first model request through all provider/backoff/tool/ProblemForger trajectory time;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
   - preserve the frozen graph intervention identically between B and C;
   - report task resolution, cost, latency, graph overhead, and propagation metrics;
