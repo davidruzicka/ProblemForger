@@ -110,7 +110,7 @@ Do not add `ModelProvider` or `ContextSelector` to the initial core. The harness
 
 Concrete implementations of ports include:
 
-- event store: memory, SQLite, later PostgreSQL;
+- event store: memory (ephemeral/test-only), SQLite (durable), later PostgreSQL;
 - telemetry: null/recording/JSONL or another sink;
 - verifier: later LLM judge or learned model;
 - calibration/routing: later experimental modules.
