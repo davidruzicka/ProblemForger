@@ -55,7 +55,7 @@ See ADRs 0001–0009.
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
   - durable run-journal envelope, audit records, graph-version semantics, and optimistic append contract;
-  - `EventStore` port + in-memory adapter/contract tests;
+  - `EventStore` port + ephemeral in-memory adapter + durable SQLite adapter/contract tests;
   - typed provider configuration and explicit module registry/composition root;
   - observation/telemetry contract;
   - local service transport decision and protocol skeleton;
@@ -66,8 +66,7 @@ See ADRs 0001–0009.
   - deterministic replay/projection;
   - graph versions and provenance;
   - entity invalidation/supersession semantics;
-  - SQLite event-store adapter through the same contract;
-  - provider-agnostic persistence tests.
+  - provider-agnostic replay/projection tests over the EventStore contract.
 
 - [ ] **P3 — Governed mutations and deterministic evidence**
   - proposed vs committed mutations;
