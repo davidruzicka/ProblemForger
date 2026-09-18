@@ -28,7 +28,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Harness adapters contain translation/integration logic only, never domain policy.
 - The worker model is not the authority for graph state.
 - Each run has an append-only durable run journal. Governance proposals/outcomes and graph-changing domain events are durable records; harness/model/tool observations remain optional telemetry.
-- Every durable journal record has a monotonic `journal_position`; only graph-changing domain events advance `graph_version`.
+- Every durable journal record has a monotonic `journal_position`; each committed mutation batch advances `graph_version` exactly once, and all graph-changing events in that batch share the resulting version.
 - Authoritative graph state is reconstructable from the graph-changing records in the durable journal.
 - Harness/model/tool observations are telemetry and must not be required for graph replay or auditability.
 - Every externally returned governance outcome (`COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`) must be durably recorded before the response is considered complete.
