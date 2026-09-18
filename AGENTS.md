@@ -46,7 +46,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Prefer mechanically reproducible or external evidence over worker self-assessment when they address the same claim, but keep evidence scope explicit.
 - Verifier output is evidence, not ground truth.
 - Root goals, anchors, governor policy, audit history, and verification thresholds must not be silently mutable by the worker agent.
-- UI is an observer of telemetry/projections and must not be required for correctness.
+- UI is an observer of optional telemetry, graph projections, and read-only durable governance/audit projections; it must not be required for correctness or access EventStore directly.
 - Do not build a generic plugin framework unless a real requirement justifies it.
 
 ## Scope discipline
@@ -91,8 +91,9 @@ For research-facing changes:
 - configuration A must not start ProblemForger or allocate a ProblemForger run/journal; use harness-neutral experiment/attempt IDs for A/B/C bookkeeping, while B/C get fresh ProblemForger run IDs per attempt;
 - retain the exact canonical candidate-patch bytes and SHA-256 for every measured attempt, and link every evaluator result to that digest;
 - retain the complete harness-native raw trajectory for every measured attempt as an adapter-owned content-addressed artifact; do not add HarnessX/Pi trajectory types to ProblemForger core, EventStore, or the authoritative journal; only normalized observations cross `TelemetrySink`;
-- enforce the frozen P6 semantic wall-clock boundary exactly: timer starts immediately before the first model request after successful setup; all trajectory provider/backoff/tool/ProblemForger time consumes it.
+- enforce the frozen P6 semantic wall-clock boundary exactly: timer starts immediately before the first model request after successful setup; all trajectory provider/backoff/tool/ProblemForger time consumes it, and deadline expiry takes precedence over provider retry/replacement classifications.
 - do not inspect or run P6 primary/holdout tasks while developing `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
+- all run-scoped protocol/tool operations must carry explicit `run_id`; do not introduce an ambient/session-selected run context.
 
 ## Issues and planning
 
