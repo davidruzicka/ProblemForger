@@ -19,13 +19,13 @@ The original protocol listed graph mutations together with model/tool/harness li
 
 If every event changed graph version, replay and concurrency semantics would depend on the harness.
 
-Resolution: authoritative domain events and observation telemetry are now separate planes. Only domain events reconstruct graph state.
+Resolution: each run now has a durable journal containing governance audit records plus graph-changing domain events, while harness/model/tool observations remain optional telemetry. Only graph-changing records reconstruct graph state; all returned governance outcomes remain durable across restart.
 
 ### EventStore concurrency semantics were underspecified
 
 "Append-only event log" did not define atomicity, stream scope, or stale writers.
 
-Resolution: each run owns an optimistic event stream. One accepted mutation may append multiple events atomically using `expected_version`; stale writes return a conflict.
+Resolution: each run owns an append-only durable journal with separate `journal_position` and `graph_version`. Graph-changing writes use optimistic `expected_graph_version`; audit-only records do not advance graph version. Proposal receipt and every externally returned governance outcome are durable.
 
 ### Graph lifecycle mixed unrelated state dimensions
 
@@ -137,7 +137,7 @@ The following are deliberately deferred and must not be silently decided inside 
 
 1. **Local service transport.** P1 includes a bounded spike comparing practical Python/TypeScript options. The selected transport requires an ADR.
 2. **Exact initial graph node/edge schema.** P1 defines the command/wire contracts; P2 finalizes the minimal graph schema under ADR/spec constraints.
-3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 20 IDs are materialized and hashed before the first measured run from the pinned dataset; they are not hand-picked.
+3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 20 IDs are materialized and hashed only after the graph intervention, governance policy, and graph metric rules are frozen; they are not hand-picked or used for artifact development.
 4. **P8 calibration dataset size.** The eight reserved P6 tasks are only an initial task-level holdout. P8 must expand it before making calibration claims.
 5. **P11 external-validity benchmark.** It is intentionally re-audited close to P11 because coding benchmarks are changing quickly.
 
