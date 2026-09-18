@@ -55,7 +55,7 @@ See ADRs 0001–0009.
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
   - durable run-journal envelope, audit records, graph-version semantics, and optimistic append contract;
-  - `EventStore` port + ephemeral in-memory adapter + durable SQLite adapter/contract tests;
+  - `EventStore` port + ephemeral in-memory adapter + durable SQLite adapter/contract tests, including idempotent proposal recovery with fenced processing claims;
   - typed provider configuration and explicit module registry/composition root;
   - observation/telemetry contract;
   - local service transport decision and protocol skeleton;
@@ -89,8 +89,9 @@ See ADRs 0001–0009.
   - minimal native TUI status only.
 
 - [ ] **P6 — Baseline and graph/governance evaluation**
-  - freeze/hash `graph-intervention-v1`, `governance-policy-v1`, executable `graph-metrics-v1`, and `telemetry-metrics-v1` before exposing P6 tasks;
+  - freeze/hash `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, executable `graph-metrics-v1`, and `telemetry-metrics-v1` before exposing P6 tasks;
   - materialize the frozen task manifest only after those artifacts are fixed;
+  - use the same frozen benchmark adapter for A/B/C; do not rely on HarnessX's built-in SWE-bench Verified/test defaults;
   - run patch-independent preflight, then materialize/hash the deterministic complete A/B/C execution schedule before the first measured agent run;
   - require a clean workspace, new HarnessX session, and distinct empty ProblemForger run/journal for every measured agent run;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
