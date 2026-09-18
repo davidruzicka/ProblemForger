@@ -88,6 +88,7 @@ For research-facing changes:
 - P6 task environments must execute immutable recorded image/content digests; never re-resolve mutable image tags during preflight, measured runs, or holdout use;
 - configuration A must not start ProblemForger or allocate a ProblemForger run/journal; use harness-neutral experiment/attempt IDs for A/B/C bookkeeping, while B/C get fresh ProblemForger run IDs per attempt;
 - retain the exact canonical candidate-patch bytes and SHA-256 for every measured attempt, and link every evaluator result to that digest;
+- retain the complete harness-native raw trajectory for every measured attempt as an adapter-owned content-addressed artifact; do not add HarnessX/Pi trajectory types to ProblemForger core, EventStore, or the authoritative journal; only normalized observations cross `TelemetrySink`;
 - enforce the frozen P6 semantic wall-clock boundary exactly: timer starts immediately before the first model request after successful setup; all trajectory provider/backoff/tool/ProblemForger time consumes it.
 - do not inspect or run P6 primary/holdout tasks while developing `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
 
