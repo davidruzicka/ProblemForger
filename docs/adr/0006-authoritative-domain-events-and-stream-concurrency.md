@@ -42,7 +42,13 @@ A governance outcome is not considered externally completed until its final deci
 
 Proposal receipt is also durable. Each proposal has a client-generated `proposal_id` unique within the run and a canonical request hash. Recording that identity is atomic: the same `proposal_id` cannot create two proposal receipts or two commits.
 
-If the process terminates after a proposal is recorded but before a final decision is persisted, replay exposes an incomplete proposal rather than erasing it. A transport retry with the same proposal ID/request hash reuses that existing attempt; a retry with the same ID but different request hash is rejected as an idempotency conflict. A completed proposal replays its already-durable outcome rather than executing again.
+If the process terminates after a proposal is recorded but before a final decision is persisted, replay exposes an incomplete proposal rather than erasing it. The durable receipt stores the complete normalized request, not only its hash, so recovery does not depend on transient client state.
+
+Incomplete proposals are processed under a durable lease/claim with `owner_id`, monotonic `claim_epoch`, and finite expiry. A new worker may atomically claim an unclaimed/expired proposal and increments the epoch. Final decision append or graph commit must atomically validate the current claim epoch; a stale worker receives `STALE_CLAIM` and cannot append a decision or mutate graph state.
+
+If safe resumption is impossible because the producing schema/policy/runtime is unavailable or the durable request is invalid, the current claimant may append terminal operational status `ABANDONED` with a reason. This is not a governance outcome and never changes graph state.
+
+A transport retry with the same proposal ID/request hash reuses that existing attempt; a retry with the same ID but different request hash is rejected as an idempotency conflict. A completed proposal replays its already-durable outcome rather than executing again.
 
 ### Concurrency
 
@@ -74,5 +80,5 @@ There is no required global order across independent run journals.
 - `journal_position` and `graph_version` are distinct concepts and must not be conflated.
 - `graph_version` identifies committed graph states / atomic mutation batches, not individual graph events; no partial intermediate version of a committed mutation is addressable.
 - In-memory, SQLite, and future stores share the same semantic journal/concurrency contract; only durability-capable providers are valid for normal service execution and restart guarantees.
-- Future parallel workers can detect stale graph proposals.
+- Future parallel workers can detect stale graph proposals and stale proposal-processing claims.
 - The PoC may serialize actual governance execution internally while retaining the optimistic graph-write contract.
