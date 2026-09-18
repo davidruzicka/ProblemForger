@@ -58,11 +58,28 @@ If this exact provider/model becomes unavailable before the first measured run, 
 Per valid measured run:
 
 - maximum 60 HarnessX agent steps;
-- maximum wall-clock time: 30 minutes;
+- maximum **semantic wall-clock budget**: 30 minutes;
 - no configuration-specific retry allowance;
 - provider transport/rate-limit retries follow the frozen infrastructure-retry policy below and do not create extra semantic agent steps.
 
-Token usage, billed cost, and wall time are measured outcomes rather than normalized away. Added graph context/tool calls must pay their actual overhead.
+The 30-minute semantic deadline is enforced identically for A/B/C:
+
+1. workspace restoration, benchmark/container setup, HarnessX session construction, and (for B/C) ProblemForger process startup/health checks happen in the **setup phase before** the semantic timer starts; setup uses the separately frozen benchmark-adapter infrastructure timeouts/retry rules;
+2. after setup succeeds and the task/prompt is fully rendered, start a monotonic 30-minute timer **immediately before issuing the first model request**;
+3. from that instant, all elapsed time consumes the same deadline, including provider request latency, rate-limit/backoff sleeps, provider-call retries, HarnessX processing, ProblemForger graph/service calls, agent-invoked tool/subprocess execution, agent-invoked tests, and any agent/runtime waits;
+4. the semantic timer ends when HarnessX reaches a terminal run result or the deadline expires, whichever occurs first;
+5. every provider/tool/service operation started during semantic execution must be bounded by the remaining semantic deadline; no new semantic action may start after the deadline;
+6. on deadline expiry, terminate/cancel outstanding semantic activity best-effort, freeze the current workspace, and extract the workspace diff. That frozen diff is evaluated normally; the run records exit reason `WALL_CLOCK_EXHAUSTED`. No model/tool action after the deadline may improve the candidate patch.
+
+This boundary intentionally gives A/B/C the same agent-interaction budget rather than charging B/C for one-time service startup. ProblemForger calls **during** the trajectory do consume the 30-minute budget, so graph/governance overhead can affect task resolution.
+
+Latency reporting remains end-to-end rather than hiding setup cost. Record separately:
+
+- setup latency before the semantic timer;
+- semantic-run latency from first model request to terminal/deadline;
+- total schedule-slot latency including infrastructure-invalid attempts and clean replacements.
+
+Token usage, billed cost, and all latency components are measured outcomes rather than normalized away. Added graph context/tool calls must pay their actual overhead.
 
 ### Pre-P6 frozen artifacts
 
@@ -74,7 +91,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - schema normalization/validation, preserving `FAIL_TO_PASS` and `PASS_TO_PASS` as sequences rather than JSON/string lengths;
    - exact task/prompt rendering shared by A/B/C, including deterministic rendering of failing-test identifiers;
    - exact workspace setup, patch extraction, and result serialization shared by A/B/C;
-   - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task `image_name`/container-resolution policy;
+   - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task immutable-image resolution/cache policy;
    - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
    - no ProblemForger graph/governance behavior;
@@ -172,7 +189,17 @@ Candidates skipped by the primary family cap are therefore reconsidered by the h
 
 Materialization must fail rather than silently relax these rules if fewer than 12 primary or 8 holdout tasks can be selected.
 
-Only after `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks. For those materialized tasks, also record the exact resolved benchmark `image_name` values and, where the runtime exposes immutable image digests, those digests before preflight begins.
+Only after `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
+
+For **every** materialized primary and holdout task, resolve its dataset `image_name` to an immutable content identity **before preflight**:
+
+- preferred form: the platform-specific OCI image manifest reference `repository@sha256:<digest>` for the frozen execution platform;
+- acceptable alternative: an archived/mirrored image artifact addressed and verified by a cryptographic content digest, with the restore procedure frozen in `benchmark-adapter-v1`;
+- mutable tags/names alone are never execution identities.
+
+The task manifest records the original `image_name`, execution platform, immutable digest/content identity, and content-addressed mirror/cache reference where used. Materialization must fail if any selected task cannot be resolved and verified to an immutable execution identity.
+
+All preflight evaluations, A/B/C measured runs, repeated candidate evaluations, and later reserved-holdout use must execute the recorded immutable identity, never re-resolve the original mutable tag. If the immutable content later becomes unavailable, treat that as infrastructure unavailability; do not fall back to a mutable tag or newly resolved image.
 
 Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
 
