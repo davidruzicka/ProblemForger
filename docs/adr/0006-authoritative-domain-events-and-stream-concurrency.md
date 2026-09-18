@@ -1,4 +1,4 @@
-# ADR 0006: Separate authoritative domain events from observations and use optimistic run-scoped streams
+# ADR 0006: Persist governance audit and graph events in a run-scoped journal
 
 - Status: Accepted
 - Date: 2026-09-18
@@ -7,32 +7,69 @@
 
 The bootstrap design listed graph mutations, model calls, tool calls, and harness lifecycle events together. If all of these increment graph version or are required for replay, authoritative state becomes coupled to harness implementation details.
 
+The first audit separated committed graph events from optional telemetry, but that left a second problem: non-commit governance outcomes such as `REJECT`, `RETRY`, `ESCALATE`, and `CONFLICT` would not be durably recorded. A restart could therefore erase mutation/audit history and invalidate evaluation metrics.
+
 Parallel workers also need a clear conflict model.
 
 ## Decision
 
-Each ProblemForger run owns one authoritative domain-event stream.
+Each ProblemForger run owns one append-only **durable run journal** persisted through `EventStore`.
 
-Only committed domain changes appear in that stream and increment its monotonically increasing graph version.
+The journal contains:
 
-Harness/model/tool lifecycle information is observation telemetry. It may reference domain events but is not required to reconstruct the graph.
+1. **governance audit records**
+   - proposal receipt;
+   - final governance decision and reason metadata;
+   - these records are durable but do not change graph state;
 
-The EventStore contract uses optimistic compare-and-append:
+2. **graph-changing domain events**
+   - committed node/edge/evidence/lifecycle changes;
+   - these records reconstruct the ProblemGraph.
+
+Every durable journal record receives a monotonic per-run `journal_position`.
+
+Only graph-changing domain events advance the monotonic `graph_version`.
+
+Harness/model/tool lifecycle observations remain a separate optional telemetry plane. They may reference journal records but are not required for graph replay or governance audit.
+
+### Durability of outcomes
+
+A governance outcome is not considered externally completed until its final decision record is durably appended.
+
+- For `COMMIT`, the `MutationDecision(COMMIT)` audit record and all graph-changing events produced by that proposal are appended atomically.
+- For `REJECT`, `RETRY`, and `ESCALATE`, the final decision audit record is durably appended without advancing `graph_version`.
+- For `CONFLICT`, an optimistic graph append may first return `VersionConflict`; the application must then durably append `MutationDecision(CONFLICT)` before returning `CONFLICT` to the caller. If that audit append fails, the service returns a persistence/service failure instead of claiming a completed conflict outcome.
+
+Proposal receipt is also durable. If the process terminates after a proposal is recorded but before a final decision is persisted, replay exposes an incomplete proposal rather than erasing it.
+
+### Concurrency
+
+Graph-changing commits use optimistic comparison against `expected_graph_version`.
+
+Conceptually:
 
 ```text
-append(stream_id, expected_version, events[])
-  -> new_version
+append_audit(stream_id, records[])
+  -> last_journal_position
+
+append_graph(stream_id, expected_graph_version, audit_records[], graph_events[])
+  -> {last_journal_position, new_graph_version}
   OR VersionConflict
 ```
 
-All events emitted for one accepted mutation are appended atomically.
+A successful `append_graph` atomically appends its audit and graph records.
 
-There is no required global order across independent run streams.
+Audit-only records can be appended independently and do not participate in graph-version comparison.
+
+There is no required global order across independent run journals.
 
 ## Consequences
 
 - Graph replay is independent of harness telemetry completeness.
-- Tool/model events cannot accidentally create graph-version conflicts.
-- In-memory, SQLite, and future stores share the same concurrency contract.
-- Future parallel workers can detect stale proposals.
-- The PoC may serialize actual commits internally while retaining the optimistic API.
+- Every returned governance outcome survives restart.
+- P6 blocked/retry/escalation/conflict metrics can be computed from durable data.
+- Tool/model observations cannot accidentally create graph-version conflicts.
+- `journal_position` and `graph_version` are distinct concepts and must not be conflated.
+- In-memory, SQLite, and future stores share the same journal/concurrency contract.
+- Future parallel workers can detect stale graph proposals.
+- The PoC may serialize actual governance execution internally while retaining the optimistic graph-write contract.
