@@ -38,16 +38,28 @@ Owns persistence of each run's durable journal: governance audit records plus gr
 Conceptual contract:
 
 ```text
-record_proposal(stream_id, proposal_id, request_hash, receipt_record)
+record_proposal(stream_id, proposal_id, request_hash, normalized_request, receipt_record)
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
 
-append_audit(stream_id, records[])
-    -> last_journal_position
+claim_proposal(stream_id, proposal_id, owner_id, lease_until)
+    -> CLAIMED {claim_epoch}
+    | BUSY {claim_epoch, lease_until}
+    | FINAL
+    | ABANDONED
 
-append_graph(stream_id, expected_graph_version, audit_records[], graph_events[])
+renew_claim(stream_id, proposal_id, owner_id, claim_epoch, lease_until)
+    -> RENEWED
+    | STALE_CLAIM
+
+append_audit(stream_id, records[], proposal_id?, expected_claim_epoch?)
+    -> last_journal_position
+    | STALE_CLAIM
+
+append_graph(stream_id, expected_graph_version, audit_records[], graph_events[], proposal_id?, expected_claim_epoch?)
     -> {last_journal_position, new_graph_version}
     | VersionConflict
+    | STALE_CLAIM
 
 read_journal(stream_id, after_journal_position?)
     -> ordered durable records
@@ -59,8 +71,13 @@ current_graph_version(stream_id)
 Requirements:
 
 - `proposal_id` is unique within a run and claimed atomically with its canonical request hash;
+- the durable proposal receipt stores the complete normalized/versioned request required for restart recovery;
 - duplicate same-ID/same-hash submissions resolve to the existing proposal state/outcome, never a second mutation;
 - duplicate same-ID/different-hash submissions are detectable as idempotency conflicts;
+- proposal processing claims use finite leases plus monotonic `claim_epoch` fencing;
+- an unclaimed/expired incomplete proposal can be atomically reclaimed after restart;
+- final decision/graph append for a proposal validates `expected_claim_epoch` atomically and rejects stale workers before any write;
+- unrecoverable incomplete proposals can be terminally marked `ABANDONED` without graph mutation;
 - every durable record has a monotonic per-run `journal_position`;
 - every graph-changing event carries a `graph_version`, but one atomic committed mutation batch advances the version only once;
 - all graph events in the same mutation batch share the same resulting `graph_version`;
@@ -191,6 +208,10 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - atomic proposal-ID claim;
 - duplicate same-ID/same-hash recovery without duplicate receipt/commit;
 - duplicate same-ID/different-hash idempotency conflict;
+- crash-after-receipt recovery using a new claim epoch;
+- concurrent recovery claim where only one worker owns the current epoch;
+- stale-worker finalization/graph append rejected with no partial writes;
+- terminal `ABANDONED` recovery status without graph mutation;
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;
 - ordered journal read;
