@@ -15,7 +15,7 @@ Represent three separate concerns.
 
 ### Mutation outcome
 
-A proposal can be committed, rejected, conflicted, retried, or escalated.
+A proposal attempt can be committed, rejected, conflicted, have a retry requested, or be escalated. A subsequent retry is a new proposal attempt linked by causation/provenance; the earlier proposal is not rewritten.
 
 ### Entity lifecycle
 
