@@ -60,7 +60,7 @@ G_v
  + evidence references
  -> governor
  -> commit / reject / retry / escalate / conflict
- -> G_(v+n) or unchanged G_v
+ -> G_(v+1) or unchanged G_v
 ```
 
 A single accepted mutation may produce multiple domain events and must commit them atomically.
@@ -71,20 +71,27 @@ If `expected_version` is stale, the result is a version conflict rather than sil
 
 Do not encode proposal state, entity validity, and verification confidence in one enum.
 
+### Proposal receipt / pending state
+
+Receiving a proposal is not a governance outcome.
+
+The durable journal records a proposal receipt with its proposal identity, expected graph version, operations/evidence references, provenance, and a pending/no-final-decision status until a terminal governance decision is recorded.
+
+A crash may therefore leave a durably recorded proposal with no final decision; this is an incomplete attempt, not a completed outcome.
+
 ### Mutation outcome
 
-A mutation proposal attempt can be:
+A completed mutation proposal attempt has exactly one final governance outcome:
 
-- proposed;
 - committed;
 - rejected;
 - conflicted;
 - retry requested;
 - escalated.
 
-`retry requested` describes the outcome of the current proposal attempt. If the worker submits another attempt, that is a new proposal with its own identity/version context and should retain causal/provenance linkage to the earlier attempt rather than rewriting it as "retried".
+`retry requested` describes the final outcome of the current proposal attempt. If the worker submits another attempt, that is a new proposal with its own identity/version context and should retain causal/provenance linkage to the earlier attempt rather than rewriting it as "retried".
 
-A proposal that is not committed is not part of authoritative graph state, but its proposal/decision audit records remain durable in the run journal.
+A proposal that is not committed is not part of authoritative graph state, but its proposal receipt and final decision records remain durable in the run journal.
 
 ### Entity lifecycle
 
