@@ -66,9 +66,18 @@ Token usage, billed cost, and wall time are measured outcomes rather than normal
 
 ### Pre-P6 frozen artifacts
 
-Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, three version-controlled artifacts must be frozen:
+Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, five version-controlled artifacts must be frozen:
 
-1. **`graph-intervention-v1`**
+1. **`benchmark-adapter-v1`**
+   - exact code/configuration that bridges the pinned SWE-smith task source into the pinned HarnessX runtime;
+   - direct loading of dataset `SWE-bench/SWE-smith` at the pinned revision and `train` split;
+   - schema normalization/validation, preserving `FAIL_TO_PASS` and `PASS_TO_PASS` as sequences rather than JSON/string lengths;
+   - exact task/prompt rendering shared by A/B/C, including deterministic rendering of failing-test identifiers;
+   - exact workspace setup, patch extraction, and result serialization shared by A/B/C;
+   - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency version and relevant evaluator/container image digests;
+   - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
+   - no ProblemForger graph/governance behavior;
+2. **`graph-intervention-v1`**
    - exact agent-visible ProblemForger tool/API schemas;
    - exact graph-use system/user instruction additions;
    - graph schema/version used by B and C;
@@ -76,28 +85,28 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - graph-query defaults, bounds, serialization/context formatting, and mutation operation schema;
    - HarnessX adapter mapping that can affect agent-visible behavior;
    - relevant service/protocol versions;
-2. **`governance-policy-v1`**
+3. **`governance-policy-v1`**
    - every deterministic check that can affect C;
    - evidence consumed and the exact property each check evaluates;
    - decision precedence;
    - mapping to `COMMIT`, `REJECT`, `RETRY`, or `ESCALATE`;
    - protected-anchor behavior, exceptions, and thresholds;
-3. **`graph-metrics-v1`**
+4. **`graph-metrics-v1`**
    - executable or otherwise exact queries/rules for every **journal-derived** graph/governance metric;
    - the frozen decision reason codes considered a deterministic contradiction/block;
    - the exact edge types/directions and traversal rule used for downstream causal-dependency counts;
    - the evidence methods/scopes that qualify as later contradiction/invalidation;
    - time/version cutoffs, denominators, exclusions, and `UNKNOWN/UNRESOLVED` handling;
    - any adjudication rule for non-machine-classifiable secondary analysis;
-4. **`telemetry-metrics-v1`**
+5. **`telemetry-metrics-v1`**
    - exact observation schema/fields required for P6 secondary overhead metrics;
    - attribution rules for ProblemForger-added model tokens, tool calls, and latency;
    - clock/latency boundaries and missing-observation handling;
    - aggregation rules and denominators for telemetry-derived metrics.
 
-All four artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
+All five artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
 
-Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the four artifacts.
+Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the five artifacts.
 
 Primary graph/governance metrics must be mechanically reproducible from the durable run journal plus the frozen `graph-metrics-v1` artifact. Ambiguous cases that the frozen rule cannot classify are reported as `UNRESOLVED` and are not manually reassigned into primary metric buckets after results are known.
 
@@ -115,6 +124,8 @@ Use a deterministic subset of the public SWE-smith dataset:
 - selection seed namespace: `problemforger-p6-v1`.
 
 SWE-smith provides executable software-engineering tasks with failing/passing tests. It is public training data, so this experiment must **not** be presented as an uncontaminated measurement of frontier coding capability. Its purpose here is paired mechanism comparison under executable ground truth.
+
+The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target `princeton-nlp/SWE-bench_Verified` / `test`; they are therefore **not** the P6 benchmark runner. P6 uses the frozen `benchmark-adapter-v1` to feed SWE-smith/`train` tasks into the pinned HarnessX runtime and to invoke evaluation consistently. The same benchmark adapter hash is mandatory for A, B, and C.
 
 ### Deterministic task selection
 
@@ -160,7 +171,7 @@ Candidates skipped by the primary family cap are therefore reconsidered by the h
 
 Materialization must fail rather than silently relax these rules if fewer than 12 primary or 8 holdout tasks can be selected.
 
-Only after `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
+Only after `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
 
 Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
 
@@ -242,9 +253,12 @@ d_i(B-A) = r_i(B) - r_i(A)
 d_i(C-B) = r_i(C) - r_i(B)
 ```
 
-The reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
+Let `N` be the number of primary tasks retained after patch-independent preflight exclusions.
 
-The 95% confidence interval is a **percentile task bootstrap** with these frozen parameters:
+- If `N < 8` (fewer than two thirds of the planned 12-task primary set), classify the experiment as `INSUFFICIENT_VALID_TASKS`. Do not start measured A/B/C agent runs, do not report a primary point estimate, and do not compute a primary confidence interval. Preserve/report the manifest, all preflight outputs, exclusions, and the retained-task count.
+- If `8 <= N <= 12`, proceed with the frozen measured experiment. The reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
+
+The 95% confidence interval for a proceeding experiment is a **percentile task bootstrap** with these frozen parameters:
 
 - resampling unit: task;
 - each sampled task retains all 3 repetitions for every compared configuration;
@@ -302,26 +316,30 @@ These metrics are **not** derived from the authoritative journal and must not be
 ### Configuration parity
 
 A:
-- unmodified pinned HarnessX SWE task setup;
+- pinned HarnessX runtime/harness behavior at the declared revision;
+- frozen `benchmark-adapter-v1` for SWE-smith task loading, task rendering, workspace setup, patch extraction, and evaluator invocation;
 - no ProblemForger graph tools/instructions.
 
 B:
-- exactly the agent-visible surface captured by frozen `graph-intervention-v1`;
+- exactly the same pinned HarnessX runtime and frozen `benchmark-adapter-v1` as A;
+- adds exactly the agent-visible surface captured by frozen `graph-intervention-v1`;
 - durable run journal + event-sourced graph;
 - only the schema/version/core-invariant behavior declared in that artifact;
 - otherwise permissive mutation acceptance.
 
 C:
-- exactly the same frozen `graph-intervention-v1` as B;
+- exactly the same pinned HarnessX runtime, `benchmark-adapter-v1`, and `graph-intervention-v1` as B;
 - adds only frozen `governance-policy-v1`.
+
+The benchmark adapter is experimental plumbing, not the treatment. Any adapter behavior that can influence the task prompt, workspace state, patch extraction, or evaluator result must therefore be identical across A/B/C and frozen before selected P6 tasks are exposed.
 
 ### Intervention freeze and parity
 
-The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the four pre-P6 artifacts above must be frozen **before** the selected P6 tasks are exposed.
+The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the five pre-P6 artifacts above must be frozen **before** the selected P6 tasks are exposed.
 
 For B→C, the `graph-intervention-v1` hash must be identical. The only intentional B→C difference is activation of `governance-policy-v1`.
 
-Any other prompt, tool, memory, sandbox, model setting, graph-surface artifact, governance-policy artifact, or primary metric-rule difference invalidates the intended comparison and must be documented as a new experiment version.
+Any other benchmark-adapter, prompt, tool, memory, sandbox, model setting, graph-surface artifact, governance-policy artifact, or primary metric-rule difference invalidates the intended comparison and must be documented as a new experiment version.
 
 ## Infrastructure failure policy
 
@@ -432,7 +450,7 @@ Record enough structured data to reproduce aggregate results:
 - run/configuration/replicate identifiers;
 - event schema versions;
 - full ProblemForger durable run journal, including proposal/decision audit records and graph-changing events;
-- `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` hashes;
+- `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` hashes;
 - execution-schedule artifact/hash;
 - required observation/telemetry needed for non-authoritative usage/latency metrics;
 - benchmark evaluator output.
