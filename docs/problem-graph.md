@@ -84,7 +84,7 @@ A mutation proposal attempt can be:
 
 `retry requested` describes the outcome of the current proposal attempt. If the worker submits another attempt, that is a new proposal with its own identity/version context and should retain causal/provenance linkage to the earlier attempt rather than rewriting it as "retried".
 
-A proposal that is not committed is not part of authoritative graph state.
+A proposal that is not committed is not part of authoritative graph state, but its proposal/decision audit records remain durable in the run journal.
 
 ### Entity lifecycle
 
@@ -162,10 +162,12 @@ These are research hypotheses until evaluated.
 
 ## Versioning and concurrency
 
-Each ProblemForger run owns an authoritative domain-event stream with a monotonically increasing graph version.
+Each ProblemForger run owns an append-only durable journal.
 
-The PoC may serialize writes internally, but the `EventStore` contract uses optimistic compare-and-append so future parallel workers cannot silently overwrite each other.
+Every durable record advances per-run `journal_position`. Only graph-changing domain events advance `graph_version`; proposal/decision audit records do not.
 
-Observation/telemetry events do not increment graph version.
+The PoC may serialize governance internally, but graph-changing writes use optimistic `expected_graph_version` checks so future parallel workers cannot silently overwrite each other.
+
+Observation/telemetry events remain outside the durable governance journal and do not increment graph version.
 
 See ADR 0006.
