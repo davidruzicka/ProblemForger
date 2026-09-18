@@ -31,8 +31,8 @@ The P0 audit established these implementation constraints:
 
 - ProblemForger core runs as a separate Python 3.12+ local process/service.
 - HarnessX and Pi use the same versioned service boundary through thin adapters.
-- Authoritative graph domain events are separate from harness/model/tool telemetry.
-- Each run has its own optimistic, versioned authoritative event stream.
+- Each run has an append-only durable journal for governance audit records and graph-changing domain events, separate from harness/model/tool telemetry.
+- The journal has monotonic `journal_position`; only graph-changing records advance optimistic `graph_version`.
 - Mutation outcome, entity lifecycle, and verification status are separate concepts.
 - Evidence origin and verification method are orthogonal metadata.
 - The first PoC exposes explicit graph query/mutation tools; it does not introduce an automatic context selector.
@@ -54,7 +54,7 @@ See ADRs 0001–0009.
 
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
-  - authoritative event envelope and optimistic stream contract;
+  - durable run-journal envelope, audit records, graph-version semantics, and optimistic append contract;
   - `EventStore` port + in-memory adapter/contract tests;
   - typed provider configuration and explicit module registry/composition root;
   - observation/telemetry contract;
@@ -90,8 +90,10 @@ See ADRs 0001–0009.
   - minimal native TUI status only.
 
 - [ ] **P6 — Baseline and graph/governance evaluation**
+  - freeze/hash `graph-intervention-v1`, `governance-policy-v1`, and executable `graph-metrics-v1` before exposing P6 tasks;
+  - materialize the frozen task manifest only after those artifacts are fixed;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
-  - preserve prompt/tool parity between B and C;
+  - preserve the frozen graph intervention identically between B and C;
   - report task resolution, cost, latency, graph overhead, and propagation metrics;
   - retain null/negative results.
 
@@ -133,8 +135,9 @@ See ADRs 0001–0009.
 The PoC is complete when:
 
 - the same core/service runs through at least HarnessX and Pi adapters;
-- authoritative graph state is replayable from domain events;
-- harness telemetry is not required for graph replay;
+- authoritative graph state is replayable from graph-changing durable journal records;
+- every governance proposal/outcome needed for audit/evaluation survives restart;
+- harness telemetry is not required for graph replay or governance audit;
 - graph mutations cannot be silently committed by the worker model;
 - deterministic evidence and learned evidence are represented separately;
 - at least one controlled benchmark compares the planned ablations;
