@@ -77,7 +77,7 @@ Resolution: `docs/evaluation.md` now contains a versioned P6 mechanism experimen
 
 ## Architectural decisions added
 
-- ADR 0006 — authoritative domain events vs observations; run-scoped optimistic streams.
+- ADR 0006 — durable run journal for governance audit + graph events, separate from optional telemetry; optimistic graph-version writes.
 - ADR 0007 — separate mutation outcome, entity lifecycle, verification, and evidence dimensions.
 - ADR 0008 — explicit agent-facing graph API for the initial PoC.
 - ADR 0009 — same separate local service boundary for HarnessX and Pi.
