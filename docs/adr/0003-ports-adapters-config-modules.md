@@ -19,7 +19,8 @@ The initial module mechanism is intentionally small; no generic plugin ecosystem
 
 ## Consequences
 
-- SQLite and memory exercise the same event-store contract.
+- SQLite and memory exercise the same semantic EventStore contract, but durability is an explicit provider capability.
+- Memory is ephemeral/test-only; SQLite is the first durable provider accepted by normal service composition.
 - Future PostgreSQL replacement should not require domain changes.
 - Tests can use in-memory providers.
 - Provider boundaries require explicit contracts early.
