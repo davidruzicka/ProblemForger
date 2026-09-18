@@ -44,6 +44,8 @@ jobs:
 
             const alreadyRequested = comments.some(
               (comment) =>
+                comment.user?.type === 'Bot' &&
+                comment.user?.login === 'github-actions[bot]' &&
                 comment.body?.includes(marker) &&
                 comment.body?.includes(headSha),
             );
