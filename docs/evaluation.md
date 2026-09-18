@@ -130,12 +130,28 @@ For every candidate compute:
 rank = SHA256("problemforger-p6-v1\0" + instance_id)
 ```
 
-Sort ascending by hexadecimal `rank`.
+Sort ascending by the tuple `(rank, instance_id)` so even a theoretical hash collision has a deterministic tie-break.
 
-Greedily select:
+Select the two sets with two explicit scans:
 
-- first 12 tasks, with at most 2 tasks per repository family: **P6 primary set**;
-- next 8 eligible tasks under the same cap: **reserved task-level holdout** for later verifier/calibration work.
+1. **Primary scan**
+   - scan the sorted candidate list from the beginning;
+   - select a candidate if its repository family currently has fewer than 2 selected primary tasks;
+   - otherwise skip it for the primary set;
+   - stop after selecting 12 primary tasks;
+   - record the set of repository families represented in the primary set.
+
+2. **Holdout scan**
+   - start a fresh scan from the beginning of the same sorted candidate list;
+   - exclude every primary task;
+   - exclude every candidate whose repository family appears in the primary set, making the holdout repository-family-disjoint from primary;
+   - maintain a new holdout-only family counter, reset to zero at the start of this scan;
+   - select a candidate if its holdout family count is below 2;
+   - stop after selecting 8 holdout tasks.
+
+Candidates skipped by the primary family cap are therefore reconsidered by the holdout scan only if their repository family is not represented in primary; in practice, any candidate from a primary family remains excluded from holdout by the family-disjoint rule.
+
+Materialization must fail rather than silently relax these rules if fewer than 12 primary or 8 holdout tasks can be selected.
 
 Only after `graph-intervention-v1`, `governance-policy-v1`, and `graph-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
 
@@ -241,7 +257,15 @@ Examples include:
 
 Record the failed attempt and retry the same task/configuration once the infrastructure is healthy. Agent max-step exhaustion, agent-produced invalid patches, and tool failures caused by the agent remain task outcomes.
 
-If benchmark tests themselves are unstable across identical patch/environment reruns, mark the run/task as evaluator-unstable and report the exclusion; do not substitute a friendlier task after results are known.
+If benchmark evaluation appears nondeterministic for a task, use this frozen stability rule:
+
+1. rerun the evaluator for the **same candidate patch** in a fresh instance of the same pinned environment;
+2. if the required-test outcome disagrees with the original evaluation, run one additional fresh evaluator repetition for that same patch/environment;
+3. if the repeated evaluations are not identical, classify the **entire task** as `EVALUATOR_UNSTABLE`.
+
+The exclusion unit is the whole task: exclude all A/B/C configurations and all repetitions for that task from the primary paired A→B and B→C analysis. Preserve and report every raw run/evaluator result, report the reduced task denominator, and do not replace the task with another candidate.
+
+A one-off provider/container/evaluator infrastructure failure that does not produce a contradictory test outcome is retried as an infrastructure retry and does not by itself trigger task exclusion. All primary paired comparisons use the same remaining common task set after any task-level evaluator-instability exclusions.
 
 ## Later verifier/calibration split
 
