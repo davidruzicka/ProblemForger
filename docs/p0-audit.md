@@ -119,7 +119,7 @@ Key properties:
 
 - pinned HarnessX revision;
 - one fixed model/configuration across A/B/C;
-- deterministic SWE-smith task selection from a pinned dataset revision;
+- deterministic SWE-smith task selection from a verified pinned dataset revision with explicit list-field schema validation;
 - 12 primary tasks, 3 repetitions, 3 configurations = 108 measured runs;
 - 8 additional task-level holdout tasks reserved for later verifier/calibration work;
 - benchmark executable result is end-to-end ground truth;
