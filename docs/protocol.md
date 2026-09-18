@@ -21,7 +21,8 @@ Initial operations should cover:
 - query graph state or a bounded subgraph;
 - propose a graph mutation against `expected_version`;
 - attach/reference evidence through a governed mutation;
-- retrieve the resulting governor decision.
+- query a mutation proposal by `proposal_id`;
+- retrieve/replay the resulting governor decision.
 
 The exact wire schema is finalized in P1.
 
@@ -70,7 +71,28 @@ A mutation request can yield outcomes such as:
 
 `RETRY` means that the current proposal attempt ended with a retry request. A later resubmission is a new proposal attempt with its own identity/version context and causal linkage to the prior attempt; the prior proposal is not mutated into a "retried" state.
 
-The service must persist the final decision record before returning a completed governance outcome to the harness. Harness-specific actions such as blocking a tool call are adapter behavior derived from these decisions; they are not themselves graph semantics.
+The service must persist the final decision record before returning a completed governance outcome to the harness.
+
+### Proposal identity, idempotency, and recovery
+
+Every mutation command carries a client-generated `proposal_id` that is unique within the ProblemForger run and acts as the idempotency key for transport retries.
+
+On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the proposal receipt together with a canonical request hash covering the mutation payload, expected graph version, and evidence references.
+
+Subsequent submissions follow these rules:
+
+- same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata; do not re-run governance or mutate the graph;
+- same `proposal_id` + same canonical request hash + proposal still pending/incomplete → return a `PENDING` recovery response pointing at the existing proposal; do not create a second proposal attempt;
+- same `proposal_id` + different canonical request hash → return `IDEMPOTENCY_CONFLICT`; do not evaluate or mutate;
+- unknown `proposal_id` → treat as a new proposal submission.
+
+The command/query plane exposes a proposal-status query keyed by `(run_id, proposal_id)` returning `NOT_FOUND`, `PENDING`, or the durable final governance outcome plus relevant `journal_position` / graph-version metadata.
+
+A client retry caused by timeout, cancellation, connection loss, or a lost response reuses the **same** `proposal_id`. This is distinct from the governance outcome `RETRY`: if the governor requests a semantic retry, the worker creates a **new** proposal with a new `proposal_id` and a causation/provenance link to the prior attempt.
+
+The uniqueness/idempotency claim must be enforced atomically by the durable EventStore/application boundary so concurrent duplicate submissions cannot both commit.
+
+Harness-specific actions such as blocking a tool call are adapter behavior derived from these decisions; they are not themselves graph semantics.
 
 ## Harness capabilities
 
