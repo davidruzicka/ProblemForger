@@ -127,8 +127,9 @@ Key properties:
 - B→C measures deterministic governance with graph interface/prompt parity;
 - cost, latency, token, graph-overhead, invalidation, and propagation metrics are retained;
 - infrastructure failures are separated from agent failures;
-- each primary task gets a patch-independent evaluator preflight; only control-state instability can exclude the whole task;
+- each primary task gets a patch-independent evaluator preflight; the stable baseline must exactly satisfy FAIL_TO_PASS=failing and PASS_TO_PASS=passing, otherwise it is excluded as `BASELINE_INVALID`;
 - every measured candidate patch is evaluated twice in fresh pinned environments, and candidate-specific disagreement is scored as `PATCH_UNSTABLE` failure rather than removing the task;
+- primary B−A/C−B estimates use a frozen per-task estimator and a 100,000-iteration percentile task bootstrap with fixed PCG64 seed;
 - P6 is explicitly not presented as a frontier coding-capability benchmark.
 
 ## Unresolved decisions
