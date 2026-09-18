@@ -27,9 +27,12 @@ Do not silently override a higher-authority source. If an implementation need co
 - ProblemForger core/application logic runs behind the same separate local service boundary for HarnessX and Pi.
 - Harness adapters contain translation/integration logic only, never domain policy.
 - The worker model is not the authority for graph state.
-- Authoritative graph state is reconstructable from append-only **domain events**.
-- Harness/model/tool observations are telemetry and must not be required for graph replay or increment graph version.
-- Each run has its own optimistic authoritative event stream; stale writes fail explicitly rather than silently overwriting.
+- Each run has an append-only durable run journal. Governance proposals/outcomes and graph-changing domain events are durable records; harness/model/tool observations remain optional telemetry.
+- Every durable journal record has a monotonic `journal_position`; only graph-changing domain events advance `graph_version`.
+- Authoritative graph state is reconstructable from the graph-changing records in the durable journal.
+- Harness/model/tool observations are telemetry and must not be required for graph replay or auditability.
+- Every externally returned governance outcome (`COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`) must be durably recorded before the response is considered complete.
+- Each run uses optimistic graph-version checks for graph-changing writes; stale writes fail explicitly rather than silently overwriting.
 - Mutation outcome, entity lifecycle, and evidence-derived verification status are separate concepts.
 - Evidence origin and verification method are separate metadata; no single evidence-strength enum defines truth.
 - The initial PoC uses explicit graph query/mutation tools rather than an automatic context selector.
@@ -79,7 +82,8 @@ For research-facing changes:
 - record random seeds when applicable;
 - distinguish measured results from interpretation;
 - do not replace negative results with a more favorable metric after the fact;
-- do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract.
+- do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
+- do not inspect or run P6 primary/holdout tasks while developing `graph-intervention-v1`, `governance-policy-v1`, or `graph-metrics-v1`; freeze and hash those artifacts first.
 
 ## Issues and planning
 
