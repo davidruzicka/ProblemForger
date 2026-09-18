@@ -33,29 +33,37 @@ P1 should define only capabilities already required by the PoC architecture:
 
 ### EventStore
 
-Owns persistence of authoritative run-scoped domain-event streams.
+Owns persistence of each run's durable journal: governance audit records plus graph-changing domain events.
 
 Conceptual contract:
 
 ```text
-append(stream_id, expected_version, events[])
-    -> new_version
+append_audit(stream_id, records[])
+    -> last_journal_position
+
+append_graph(stream_id, expected_graph_version, audit_records[], graph_events[])
+    -> {last_journal_position, new_graph_version}
     | VersionConflict
 
-read(stream_id, after_version?)
-    -> ordered domain events
+read_journal(stream_id, after_journal_position?)
+    -> ordered durable records
 
-current_version(stream_id)
-    -> version
+current_graph_version(stream_id)
+    -> graph_version
 ```
 
 Requirements:
 
-- compare-and-append is atomic;
-- multiple events emitted by one accepted mutation are committed atomically;
-- event order is stable within a run stream;
+- every durable record has a monotonic per-run `journal_position`;
+- graph-changing records additionally carry/advance monotonic `graph_version`;
+- audit-only records never advance `graph_version`;
+- graph compare-and-append is atomic;
+- a successful `COMMIT` persists its final decision audit record and all graph-changing events atomically;
+- `REJECT`, `RETRY`, `ESCALATE`, and returned `CONFLICT` outcomes are durably recorded before the service response completes;
+- proposal receipt is durable, so crashes can leave an explicit incomplete proposal rather than erasing history;
+- journal order is stable within a run;
 - no global ordering across runs is required;
-- stored payload/schema metadata is sufficient for deterministic replay;
+- stored payload/schema metadata is sufficient for deterministic graph replay and governance audit;
 - append-only history is never rewritten by later invalidation.
 
 The in-memory provider is introduced in P1. SQLite follows in P2 and must pass the same contract suite.
@@ -66,10 +74,10 @@ Receives non-authoritative observations such as harness/model/tool events, cost/
 
 Telemetry:
 
-- may reference domain events through correlation/causation IDs;
+- may reference durable journal records through correlation/causation IDs;
 - does not increment graph version;
-- is not required to reconstruct graph state;
-- can be disabled without changing domain correctness.
+- is not required to reconstruct graph state or governance decisions;
+- can be disabled without changing domain correctness or auditability.
 
 A recording/in-memory or JSONL sink may be used initially.
 
@@ -171,12 +179,15 @@ Every provider of the same port runs the same behavioral contract suite.
 
 For `EventStore`, tests must cover at least:
 
-- empty stream/version semantics;
-- ordered append/read;
-- atomic multi-event append;
-- stale `expected_version` conflict;
-- failed append leaves stream unchanged;
-- independent run streams;
-- byte/semantic fidelity sufficient for deterministic replay.
+- empty journal/`graph_version` semantics;
+- monotonic `journal_position` across audit and graph records;
+- audit-only append leaves `graph_version` unchanged;
+- ordered journal read;
+- atomic decision + multi-graph-event commit;
+- stale `expected_graph_version` conflict leaves graph events uncommitted;
+- a persisted conflict/reject/retry/escalate decision survives reload;
+- failed append leaves the journal/graph projection in the specified state;
+- independent run journals;
+- byte/semantic fidelity sufficient for deterministic replay and governance audit.
 
 Provider-specific tests may add performance/error cases but cannot replace the common contract suite.
