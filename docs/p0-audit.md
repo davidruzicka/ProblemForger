@@ -25,7 +25,7 @@ Resolution: each run now has a durable journal containing governance audit recor
 
 "Append-only event log" did not define atomicity, stream scope, or stale writers.
 
-Resolution: each run owns an append-only durable journal with separate `journal_position` and `graph_version`. Graph-changing writes use optimistic `expected_graph_version`; audit-only records do not advance graph version. Proposal receipt and every externally returned governance outcome are durable.
+Resolution: each run owns an append-only durable journal with separate `journal_position` and `graph_version`. Graph-changing writes use optimistic `expected_graph_version`; each atomic committed mutation advances graph version exactly once even when it emits multiple graph events, while audit-only records do not advance graph version. Proposal receipt and every externally returned governance outcome are durable.
 
 ### Graph lifecycle mixed unrelated state dimensions
 
@@ -127,6 +127,7 @@ Key properties:
 - B→C measures deterministic governance with graph interface/prompt parity;
 - cost, latency, token, graph-overhead, invalidation, and propagation metrics are retained;
 - infrastructure failures are separated from agent failures;
+- every measured candidate patch is evaluated twice in fresh pinned environments, with a third evaluation on disagreement and whole-task exclusion for confirmed evaluator instability;
 - P6 is explicitly not presented as a frontier coding-capability benchmark.
 
 ## Unresolved decisions
