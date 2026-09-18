@@ -55,7 +55,7 @@ See ADRs 0001–0009.
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
   - durable run-journal envelope, audit records, graph-version semantics, and optimistic append contract;
-  - `EventStore` port + ephemeral in-memory adapter + durable SQLite adapter/contract tests, including idempotent proposal recovery with fenced processing claims;
+  - `EventStore` port + ephemeral in-memory adapter + durable SQLite adapter/contract tests, including idempotent proposal recovery with fenced processing claims and restart-stable persisted lease-clock semantics;
   - typed provider configuration and explicit module registry/composition root;
   - observation/telemetry contract;
   - local service transport decision and protocol skeleton;
@@ -101,7 +101,7 @@ See ADRs 0001–0009.
   - enforce the frozen 30-minute semantic deadline from immediately before the first model request through all provider/backoff/tool/ProblemForger trajectory time; deadline expiry overrides provider retry/replacement classification;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
   - preserve the frozen graph intervention identically between B and C;
-  - report task resolution, cost, latency, graph overhead, and propagation metrics;
+  - report task resolution, cost, latency, graph overhead, and propagation metrics using the frozen per-resolution aggregation rules; retain absolute attempt times and exposed provider revision metadata;
   - retain null/negative results.
 
 - [ ] **P7 — Learned verifier**
