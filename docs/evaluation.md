@@ -64,6 +64,40 @@ Per run:
 
 Token usage, billed cost, and wall time are measured outcomes rather than normalized away. Added graph context/tool calls must pay their actual overhead.
 
+### Pre-P6 frozen artifacts
+
+Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, three version-controlled artifacts must be frozen:
+
+1. **`graph-intervention-v1`**
+   - exact agent-visible ProblemForger tool/API schemas;
+   - exact graph-use system/user instruction additions;
+   - graph schema/version used by B and C;
+   - core schema/version invariants active in both B and C;
+   - graph-query defaults, bounds, serialization/context formatting, and mutation operation schema;
+   - HarnessX adapter mapping that can affect agent-visible behavior;
+   - relevant service/protocol versions;
+2. **`governance-policy-v1`**
+   - every deterministic check that can affect C;
+   - evidence consumed and the exact property each check evaluates;
+   - decision precedence;
+   - mapping to `COMMIT`, `REJECT`, `RETRY`, or `ESCALATE`;
+   - protected-anchor behavior, exceptions, and thresholds;
+3. **`graph-metrics-v1`**
+   - executable or otherwise exact queries/rules for every reported graph/governance metric;
+   - the frozen decision reason codes considered a deterministic contradiction/block;
+   - the exact edge types/directions and traversal rule used for downstream causal-dependency counts;
+   - the evidence methods/scopes that qualify as later contradiction/invalidation;
+   - time/version cutoffs, denominators, exclusions, and `UNKNOWN/UNRESOLVED` handling;
+   - any adjudication rule for non-machine-classifiable secondary analysis.
+
+All three artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
+
+Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the three artifacts.
+
+Primary graph/governance metrics must be mechanically reproducible from the durable run journal plus the frozen `graph-metrics-v1` artifact. Ambiguous cases that the frozen rule cannot classify are reported as `UNRESOLVED` and are not manually reassigned into primary metric buckets after results are known.
+
+Any change to one of these artifact hashes after the first measured run creates a new experiment version and requires a complete new A/B/C comparison. Results with different artifact hashes must not be pooled as one v1 estimate.
+
 ### Task source
 
 Use a deterministic subset of the public SWE-smith dataset:
@@ -103,9 +137,9 @@ Greedily select:
 - first 12 tasks, with at most 2 tasks per repository family: **P6 primary set**;
 - next 8 eligible tasks under the same cap: **reserved task-level holdout** for later verifier/calibration work.
 
-Before the first measured run, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
+Only after `graph-intervention-v1`, `governance-policy-v1`, and `graph-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
 
-Do not inspect gold patches when deciding inclusion beyond fields listed above.
+Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
 
 ### Repetitions and ordering
 
@@ -154,16 +188,19 @@ With only 12 tasks, this is a PoC effect estimate, not strong population-level e
 
 ### Graph/governance metrics
 
-Only label a transition "wrong" when later evidence makes that claim defensible.
+Primary graph/governance metrics are computed from the durable run journal using the frozen `graph-metrics-v1` rules. Analysts must not decide after seeing outcomes what counts as "decisive", "contradicted", or "causally dependent".
 
 Report at least:
 
-- committed mutations later contradicted by decisive deterministic/external evidence;
-- number of downstream committed mutations causally dependent on an eventually invalidated entity before invalidation;
-- proposals blocked by a decisive deterministic contradiction;
-- retries/escalations/conflicts;
-- number of graph nodes/edges/events;
-- ProblemForger-added tokens/tool calls/latency where separable.
+- committed mutations later classified as contradicted by the exact frozen evidence/scope rule;
+- downstream committed mutations reachable by the frozen causal-dependency traversal from an entity that is later invalidated/contradicted, subject to the frozen time/version cutoff;
+- proposals blocked with one of the frozen deterministic-contradiction reason codes;
+- durable `RETRY` / `ESCALATE` / `CONFLICT` decision counts;
+- number of graph nodes/edges, durable journal records, and graph-changing events;
+- ProblemForger-added tokens/tool calls/latency where separable;
+- `UNRESOLVED` count for cases the frozen automatic rule cannot classify.
+
+Manual interpretation may be reported separately as qualitative/secondary analysis but may not silently alter primary machine-derived metric buckets.
 
 A universal false-positive/false-negative transition rate is **not** claimed for semantically ambiguous transitions without independent labels.
 
@@ -174,36 +211,22 @@ A:
 - no ProblemForger graph tools/instructions.
 
 B:
-- ProblemForger graph tools and minimal graph-use instruction;
-- authoritative event-sourced graph;
-- schema/version/core-invariant checks;
+- exactly the agent-visible surface captured by frozen `graph-intervention-v1`;
+- durable run journal + event-sourced graph;
+- only the schema/version/core-invariant behavior declared in that artifact;
 - otherwise permissive mutation acceptance.
 
 C:
-- exactly the same graph tools/instruction as B;
-- adds deterministic evidence/governance rules from a frozen, versioned governance-policy artifact.
+- exactly the same frozen `graph-intervention-v1` as B;
+- adds only frozen `governance-policy-v1`.
 
-### Governance-policy freeze gate for C
+### Intervention freeze and parity
 
-The P0 document freezes the **experiment envelope**, but it does not pretend that the exact P3 governance policy already exists before it has been designed and validated.
+The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the three pre-P6 artifacts above must be frozen **before** the selected P6 tasks are exposed.
 
-Before any measured P6 A/B/C run:
+For B→C, the `graph-intervention-v1` hash must be identical. The only intentional B→C difference is activation of `governance-policy-v1`.
 
-1. P3 must produce a machine-readable or otherwise exact `governance-policy-v1` artifact that specifies:
-   - every deterministic check that can affect a mutation decision;
-   - what evidence each check consumes and the exact property it evaluates;
-   - decision precedence when checks disagree;
-   - the mapping from check results to `COMMIT`, `REJECT`, `RETRY`, or `ESCALATE`;
-   - protected-anchor behavior and any allowed exceptions;
-   - all configurable thresholds/limits relevant to the policy;
-2. the artifact must be version-controlled and its content hash recorded in the P6 run manifest;
-3. P3 policy development/validation must use separate development fixtures/tasks only;
-4. the 12 P6 primary tasks and 8 reserved holdout tasks must not be run, inspected for policy tuning, or used to change governance-policy-v1 before the policy is frozen;
-5. after the first measured P6 run, any governance-policy change creates a new experiment version and requires a complete new A/B/C comparison; results from different policy hashes must not be pooled as one v1 estimate.
-
-This freeze gate prevents the deterministic intervention from being selected after observing its performance on the measured task set while still allowing P3 to design the policy before P6.
-
-Any other prompt, tool, memory, sandbox, model-setting, or governance-policy difference invalidates the intended B→C comparison and must be documented as a new experiment version.
+Any other prompt, tool, memory, sandbox, model setting, graph-surface artifact, governance-policy artifact, or primary metric-rule difference invalidates the intended comparison and must be documented as a new experiment version.
 
 ## Infrastructure failure policy
 
@@ -285,8 +308,9 @@ Record enough structured data to reproduce aggregate results:
 - task-manifest hash;
 - run/configuration/replicate identifiers;
 - event schema versions;
-- full ProblemForger domain-event stream;
-- observation/telemetry needed for metrics;
+- full ProblemForger durable run journal, including proposal/decision audit records and graph-changing events;
+- `graph-intervention-v1`, `governance-policy-v1`, and `graph-metrics-v1` hashes;
+- observation/telemetry needed for non-authoritative usage/latency metrics;
 - benchmark evaluator output.
 
 Do not store secrets or private/licensed source material in public traces.
