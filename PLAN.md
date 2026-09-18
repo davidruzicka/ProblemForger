@@ -94,6 +94,7 @@ See ADRs 0001–0009.
   - use the same frozen benchmark adapter for A/B/C; do not rely on HarnessX's built-in SWE-bench Verified/test defaults;
   - run patch-independent preflight, then materialize/hash the deterministic complete A/B/C execution schedule before the first measured agent run;
   - require a clean workspace, new HarnessX session, and distinct empty ProblemForger run/journal for every measured agent run;
+  - enforce the frozen pre-semantic infrastructure retry taxonomy and fixed attempt budgets; no post-hoc trajectory reruns;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
   - preserve the frozen graph intervention identically between B and C;
   - report task resolution, cost, latency, graph overhead, and propagation metrics;
