@@ -83,7 +83,7 @@ For research-facing changes:
 - distinguish measured results from interpretation;
 - do not replace negative results with a more favorable metric after the fact;
 - do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
-- do not inspect or run P6 primary/holdout tasks while developing `graph-intervention-v1`, `governance-policy-v1`, or `graph-metrics-v1`; freeze and hash those artifacts first.
+- do not inspect or run P6 primary/holdout tasks while developing `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
 
 ## Issues and planning
 
