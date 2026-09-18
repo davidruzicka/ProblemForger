@@ -65,7 +65,7 @@ Contains:
 - graph mutation semantics;
 - entity lifecycle and provenance;
 - governance policy interfaces;
-- authoritative domain event definitions;
+- durable governance audit-record and graph-domain-event definitions;
 - pure replay/projection logic.
 
 It must not depend on SQLite, PostgreSQL, a specific model API, HarnessX, Pi, a UI framework, or provider-specific settings.
