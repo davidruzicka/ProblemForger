@@ -187,10 +187,42 @@ Report:
 
 - per-task resolution across repetitions;
 - paired percentage-point difference;
-- bootstrap 95% confidence interval resampling at the **task** level;
+- bootstrap 95% confidence interval using the frozen procedure below;
 - all raw task-run outcomes.
 
-With only 12 tasks, this is a PoC effect estimate, not strong population-level evidence. Avoid binary "significant/not significant" claims.
+### Frozen primary effect estimator and bootstrap
+
+For each task `i` remaining after preflight exclusions and each configuration `X ∈ {A,B,C}`, compute:
+
+```text
+r_i(X) = mean of the 3 binary resolved indicators for task i under X
+```
+
+Define paired task effects:
+
+```text
+d_i(B-A) = r_i(B) - r_i(A)
+d_i(C-B) = r_i(C) - r_i(B)
+```
+
+The reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
+
+The 95% confidence interval is a **percentile task bootstrap** with these frozen parameters:
+
+- resampling unit: task;
+- each sampled task retains all 3 repetitions for every compared configuration;
+- bootstrap sample size: the number `N` of included tasks after preflight exclusions;
+- sampling: `N` tasks with replacement;
+- recompute `r_i`, paired `d_i`, and the mean paired effect for each resample;
+- iterations: 100,000;
+- RNG: NumPy `Generator(PCG64)`;
+- seed: `0x505246365F423031`;
+- interval: empirical 2.5th and 97.5th percentiles using NumPy `quantile(..., method="linear")`;
+- no BCa/basic/studentized alternative is substituted for the primary analysis.
+
+If the implementation language differs, it must reproduce this procedure and seed semantics exactly or use a checked-in reference implementation/output fixture.
+
+With only 12 tasks before exclusions, this is a PoC effect estimate, not strong population-level evidence. Avoid binary "significant/not significant" claims.
 
 ### Secondary end-to-end metrics
 
@@ -265,10 +297,14 @@ Before any measured A/B/C agent run for a primary task:
 
 1. evaluate the task's **unmodified pinned repository state** twice in separate fresh instances of the same pinned environment;
 2. compare the full required-test outcome vector (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test);
-3. if the two control vectors differ, run one third control evaluation in another fresh instance;
-4. if any control vectors differ, classify the task as `EVALUATOR_UNSTABLE` **before measured agent runs begin**.
+3. both control vectors must be identical **and** match the benchmark's expected baseline contract:
+   - every required `FAIL_TO_PASS` test is failing;
+   - every required `PASS_TO_PASS` test is passing;
+4. if the two vectors differ, run one third control evaluation in another fresh instance;
+5. if any control vectors differ, classify the task as `EVALUATOR_UNSTABLE`;
+6. if the stable control vector does not match the expected baseline contract, classify the task as `BASELINE_INVALID`.
 
-Only this patch-independent control instability may exclude a whole task. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs, report the reduced denominator, and do not replace the task.
+`EVALUATOR_UNSTABLE` and `BASELINE_INVALID` are patch-independent preflight exclusions applied **before measured agent runs begin**. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs and exclusion reason, report the reduced denominator, and do not replace the task.
 
 ### Measured candidate patches
 
