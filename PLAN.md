@@ -93,7 +93,8 @@ See ADRs 0001–0009.
   - materialize the frozen task manifest only after those artifacts are fixed;
   - use the same frozen benchmark adapter for A/B/C; do not rely on HarnessX's built-in SWE-bench Verified/test defaults;
   - run patch-independent preflight, then materialize/hash the deterministic complete A/B/C execution schedule before the first measured agent run;
-  - require a clean workspace, new HarnessX session, and distinct empty ProblemForger run/journal for every measured agent run;
+  - require a clean workspace and new HarnessX session for every measured agent attempt; B/C additionally get a distinct empty ProblemForger run/journal per attempt, while A never starts ProblemForger;
+  - retain canonical exact candidate-patch bytes/digest (plus auditable workspace-diff/snapshot where available) for every attempt and link evaluator outputs to that digest;
   - enforce the frozen pre-semantic infrastructure retry taxonomy and fixed attempt budgets; no post-hoc trajectory reruns;
   - resolve every selected benchmark image to an immutable digest/content identity before preflight and use only that identity thereafter;
   - enforce the frozen 30-minute semantic deadline from immediately before the first model request through all provider/backoff/tool/ProblemForger trajectory time;
