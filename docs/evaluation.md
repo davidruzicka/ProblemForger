@@ -90,7 +90,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - direct loading of dataset `SWE-bench/SWE-smith` at the pinned revision and `train` split;
    - schema normalization/validation, preserving `FAIL_TO_PASS` and `PASS_TO_PASS` as sequences rather than JSON/string lengths;
    - exact task/prompt rendering shared by A/B/C, including deterministic rendering of failing-test identifiers;
-   - exact workspace setup/startup procedure and finite setup/startup timeouts, patch extraction, and result serialization shared by A/B/C;
+   - exact workspace setup/startup procedure and finite setup/startup timeouts, patch extraction, result serialization, and complete harness-specific raw trajectory capture/serialization shared by A/B/C;
    - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task immutable-image resolution/cache policy;
    - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
@@ -539,12 +539,33 @@ For every schedule slot and every whole-run attempt, retain:
 - event/protocol schema versions;
 - for B/C, the ProblemForger `run_id` and full durable run journal for that attempt; for A, an explicit `problemforger_run_id = null` / no-journal marker;
 - `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` hashes;
-- required observation/telemetry needed for non-authoritative usage/latency metrics;
+- required **normalized harness-independent observation/telemetry** needed for non-authoritative usage/latency metrics;
+- a **complete per-attempt raw harness trajectory artifact**, captured and owned by the harness/evaluation adapter, stored immutably/content-addressed with its schema version and SHA-256;
+- for HarnessX P6 runs, that raw trajectory must preserve in execution order:
+  - HarnessX step index and event type;
+  - the complete semantic model request content visible to the model, including system/user/assistant/tool-context messages and effective model-call settings;
+  - every provider response or response fragment that HarnessX accepted into agent state, with exact assistant/tool-call content;
+  - every agent-issued tool/subprocess call and its arguments;
+  - every tool/subprocess result returned to the agent, including stdout/stderr/exit status or structured error;
+  - ProblemForger client requests/responses for B/C as seen by the adapter;
+  - retry/transport attempt reason codes and whether each model attempt produced a semantic response;
+  - monotonic offsets from semantic-timer start for model request start/end, retry/backoff intervals, tool start/end, ProblemForger calls, HarnessX step transitions, and terminal/deadline event;
+  - terminal reason and observed step count;
 - the **exact candidate patch bytes submitted to evaluation**, stored as an immutable artifact, plus `sha256(candidate_patch_bytes)`;
 - if the attempt terminates before producing/submitting a patch, record an explicit no-candidate status and the SHA-256 of the canonical empty byte string rather than omitting the field;
 - where workspace creation succeeded, retain a frozen final-workspace-diff artifact (or equivalent content-addressed workspace snapshot) and its SHA-256 so patch extraction can be audited independently;
 - every evaluator attempt/output linked to the exact candidate-patch SHA-256 it evaluated.
 
 The benchmark adapter must define one canonical candidate-patch byte representation. The exact retained bytes—not a regenerated diff—are the bytes passed to every repeated evaluator invocation for that measured run. A repeated evaluator result is invalid if its recorded patch digest does not exactly match the run's canonical candidate-patch digest.
+
+Raw trajectory artifacts are deliberately **outside the ProblemForger core contract**:
+
+- ProblemForger core types, ProblemGraph, GraphGovernor, EventStore, and the durable run journal do not know or depend on the HarnessX trajectory schema;
+- the raw trajectory is not written into the authoritative ProblemForger journal and is not required for graph replay or governance audit;
+- `TelemetrySink` continues to receive only harness-neutral normalized observations;
+- a future Pi adapter may retain a different Pi-native raw trajectory schema without changing ProblemForger core;
+- any P7/P8 training dataset that combines HarnessX/Pi histories is produced by a separate offline normalization pipeline from these adapter-owned artifacts, not by adding harness-specific types to core.
+
+Trajectory capture must be semantically complete while excluding credentials and transport secrets. Redaction may remove only data that was not visible to the model/agent and did not affect its behavior, such as API keys, authorization headers, cookies, or unrelated provider-account metadata. If sensitive task/model/tool content itself is part of the semantic trajectory, preserve it in access-controlled storage rather than replacing it with a behavior-changing public redaction.
 
 Artifact storage may be access-controlled when redistribution of source-derived content is restricted, but the experiment record must retain the immutable content digest and enough authorized storage metadata to retrieve the exact artifact. Do not store secrets or private/licensed source material in public traces.
