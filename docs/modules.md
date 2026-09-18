@@ -4,7 +4,7 @@
 
 Replaceable infrastructure and policies are modules behind stable APIs/ports. Concrete implementations are selected by typed configuration and assembled at one composition root.
 
-SQLite and in-memory persistence are the initial `EventStore` providers. They are ordinary adapters behind the same contract; future PostgreSQL or remote implementations must not require graph-domain changes.
+SQLite and in-memory persistence are the initial `EventStore` providers behind the same port, but they have different durability capabilities. `MemoryEventStore` is explicitly ephemeral/test-only; SQLite is the first durable service provider. Future PostgreSQL or remote implementations must not require graph-domain changes.
 
 See ADR 0003 and ADR 0006.
 
@@ -67,7 +67,7 @@ Requirements:
 - stored payload/schema metadata is sufficient for deterministic graph replay and governance audit;
 - append-only history is never rewritten by later invalidation.
 
-The in-memory provider is introduced in P1. SQLite follows in P2 and must pass the same contract suite.
+Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service where ADR 0006 promises restart durability. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart.
 
 ### TelemetrySink
 
@@ -114,8 +114,8 @@ src/problemforger/
     telemetry.py
   modules/
     persistence/
-      memory/
-      sqlite/            # P2
+      memory/            # ephemeral/test-only
+      sqlite/            # first durable provider, P1
       postgres/          # later
     telemetry/
   config/
@@ -178,7 +178,7 @@ The registry itself belongs to application/configuration wiring, not domain code
 
 Every provider of the same port runs the same behavioral contract suite.
 
-For `EventStore`, tests must cover at least:
+For `EventStore`, all providers run a common semantic contract suite covering at least:
 
 - empty journal/`graph_version` semantics;
 - monotonic `journal_position` across audit and graph records;
@@ -186,9 +186,13 @@ For `EventStore`, tests must cover at least:
 - ordered journal read;
 - atomic decision + multi-graph-event commit with exactly one new graph version for the whole batch;
 - stale `expected_graph_version` conflict leaves graph events uncommitted;
-- a persisted conflict/reject/retry/escalate decision survives reload;
+- a conflict/reject/retry/escalate decision remains queryable for the lifetime represented by the provider;
 - failed append leaves the journal/graph projection in the specified state;
 - independent run journals;
 - byte/semantic fidelity sufficient for deterministic replay and governance audit.
 
-Provider-specific tests may add performance/error cases but cannot replace the common contract suite.
+Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history.
+
+`MemoryEventStore` does **not** claim that durability contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
+
+Provider-specific tests may add performance/error cases but cannot replace the applicable common suites.
