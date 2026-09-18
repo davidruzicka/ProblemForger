@@ -212,13 +212,22 @@ For A/B/C:
 - 36 task-runs per configuration before exclusions;
 - 108 measured runs total before exclusions.
 
-Every measured **agent run** is isolated. Before starting a run:
+Every measured **agent run** is isolated. Experiment orchestration uses identifiers that are independent of ProblemForger:
+
+- every frozen schedule slot has an `experiment_run_id`;
+- every whole-run attempt for that slot has a distinct `attempt_id`;
+- A/B/C all use those orchestration identifiers for raw-data linkage.
+
+Before starting an agent-run attempt:
 
 - restore the exact pinned pristine task repository state in a fresh writable workspace/container layer;
 - start a new HarnessX agent/session with no conversation, scratchpad, tool state, or mutable workspace inherited from any prior run;
-- allocate a distinct ProblemForger `run_id` backed by an empty durable journal;
-- do not import graph state, proposal history, telemetry state, or candidate patches from another configuration/replicate;
+- for **B and C only**, start/use ProblemForger and allocate a distinct ProblemForger `run_id` backed by an empty durable journal for that attempt;
+- for **A**, do **not** start ProblemForger, allocate a ProblemForger run, or create a ProblemForger journal; baseline bookkeeping remains solely in the experiment runner/benchmark adapter;
+- do not import graph state, proposal history, telemetry state, candidate patches, or mutable benchmark-runner state from another configuration/replicate/attempt;
 - immutable base images and read-only dependency/download caches may be reused only if they cannot carry task-generated mutable state into the run.
+
+If B/C receives a clean whole-run replacement under the frozen retry policy, the replacement gets a new `attempt_id` and a new empty ProblemForger `run_id`/journal; it never reuses the failed attempt's ProblemForger state.
 
 A run failing this reset contract is an infrastructure-invalid attempt and is rerun from a clean state; it is not scored as an agent outcome.
 
@@ -517,19 +526,25 @@ Track explicitly:
 
 ## Raw data and reproducibility
 
-Record enough structured data to reproduce aggregate results:
+Record enough structured data to independently reconstruct and re-evaluate every reported run.
 
-- repository commit;
+For every schedule slot and every whole-run attempt, retain:
+
+- `experiment_run_id`, `attempt_id`, task/configuration/replicate, and attempt ordinal/status;
+- repository/base commit and immutable benchmark image/content identity;
 - effective redacted configuration;
 - harness version/commit;
 - provider/model identifier and relevant settings;
-- task-manifest hash;
-- run/configuration/replicate identifiers;
-- event schema versions;
-- full ProblemForger durable run journal, including proposal/decision audit records and graph-changing events;
+- task-manifest hash and execution-schedule artifact/hash;
+- event/protocol schema versions;
+- for B/C, the ProblemForger `run_id` and full durable run journal for that attempt; for A, an explicit `problemforger_run_id = null` / no-journal marker;
 - `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` hashes;
-- execution-schedule artifact/hash;
 - required observation/telemetry needed for non-authoritative usage/latency metrics;
-- benchmark evaluator output.
+- the **exact candidate patch bytes submitted to evaluation**, stored as an immutable artifact, plus `sha256(candidate_patch_bytes)`;
+- if the attempt terminates before producing/submitting a patch, record an explicit no-candidate status and the SHA-256 of the canonical empty byte string rather than omitting the field;
+- where workspace creation succeeded, retain a frozen final-workspace-diff artifact (or equivalent content-addressed workspace snapshot) and its SHA-256 so patch extraction can be audited independently;
+- every evaluator attempt/output linked to the exact candidate-patch SHA-256 it evaluated.
 
-Do not store secrets or private/licensed source material in public traces.
+The benchmark adapter must define one canonical candidate-patch byte representation. The exact retained bytes—not a regenerated diff—are the bytes passed to every repeated evaluator invocation for that measured run. A repeated evaluator result is invalid if its recorded patch digest does not exactly match the run's canonical candidate-patch digest.
+
+Artifact storage may be access-controlled when redistribution of source-derived content is restricted, but the experiment record must retain the immutable content digest and enough authorized storage metadata to retrieve the exact artifact. Do not store secrets or private/licensed source material in public traces.
