@@ -37,18 +37,24 @@ Used for non-authoritative harness telemetry such as:
 
 Observation events may be stored/exported for evaluation and UI, but they do not alter graph state or graph version.
 
-### Authoritative domain events
+### Durable governance/journal records
 
-Committed graph changes are emitted by ProblemForger itself after successful governance and `EventStore` append.
+ProblemForger durably records mutation proposals and final governance decisions in the run journal.
+
+Every completed mutation request therefore leaves durable audit history, including `REJECT`, `RETRY`, `ESCALATE`, and `CONFLICT`.
+
+Committed graph changes are additional graph-changing domain events in the same journal.
 
 Examples:
 
+- mutation proposal recorded;
+- mutation decision recorded;
 - node committed;
 - edge committed;
 - evidence attached;
 - entity invalidated/superseded.
 
-Harnesses do not submit authoritative domain events directly.
+Harnesses do not submit durable journal records directly; they submit commands. ProblemForger creates the corresponding audit/domain records.
 
 See ADR 0006.
 
@@ -64,7 +70,7 @@ A mutation request can yield outcomes such as:
 
 `RETRY` means that the current proposal attempt ended with a retry request. A later resubmission is a new proposal attempt with its own identity/version context and causal linkage to the prior attempt; the prior proposal is not mutated into a "retried" state.
 
-Harness-specific actions such as blocking a tool call are adapter behavior derived from these decisions; they are not themselves graph semantics.
+The service must persist the final decision record before returning a completed governance outcome to the harness. Harness-specific actions such as blocking a tool call are adapter behavior derived from these decisions; they are not themselves graph semantics.
 
 ## Harness capabilities
 
