@@ -21,8 +21,7 @@ jobs:
   request-review:
     if: >-
       github.event.pull_request.draft == false &&
-      contains(github.event.pull_request.labels.*.name, 'review-loop') &&
-      github.actor != 'chatgpt-codex-connector[bot]'
+      contains(github.event.pull_request.labels.*.name, 'review-loop')
     runs-on: ubuntu-latest
     steps:
       - name: Request Codex review
