@@ -69,7 +69,8 @@ The 30-minute semantic deadline is enforced identically for A/B/C:
 3. from that instant, all elapsed time consumes the same deadline, including provider request latency, rate-limit/backoff sleeps, provider-call retries, HarnessX processing, ProblemForger graph/service calls, agent-invoked tool/subprocess execution, agent-invoked tests, and any agent/runtime waits;
 4. the semantic timer ends when HarnessX reaches a terminal run result or the deadline expires, whichever occurs first;
 5. every provider/tool/service operation started during semantic execution must be bounded by the remaining semantic deadline; no new semantic action may start after the deadline;
-6. on deadline expiry, terminate/cancel outstanding semantic activity best-effort, freeze the current workspace, and extract the workspace diff. That frozen diff is evaluated normally; the run records exit reason `WALL_CLOCK_EXHAUSTED`. No model/tool action after the deadline may improve the candidate patch.
+6. on deadline expiry, terminate/cancel outstanding semantic activity best-effort, freeze the current workspace, and extract the workspace diff. That frozen diff is evaluated normally; the run records exit reason `WALL_CLOCK_EXHAUSTED`. No model/tool action after the deadline may improve the candidate patch;
+7. **semantic deadline expiry has precedence over provider retry classification**. If the remaining semantic deadline reaches zero during a provider attempt or retry/backoff interval—including the first model call—the run is `WALL_CLOCK_EXHAUSTED`, is not eligible for whole-run replacement, and follows the frozen-diff evaluation rule above. `INFRA_FIRST_PROVIDER_CALL` applies only when the first-call transport retry budget is exhausted while the semantic deadline still has positive remaining time.
 
 This boundary intentionally gives A/B/C the same agent-interaction budget rather than charging B/C for one-time service startup. ProblemForger calls **during** the trajectory do consume the 30-minute budget, so graph/governance overhead can affect task resolution.
 
@@ -149,16 +150,27 @@ The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target
 
 At the pinned SWE-smith revision, `FAIL_TO_PASS` and `PASS_TO_PASS` are dataset list/sequence fields, not JSON-encoded strings. Selection code must validate that both fields decode/load as sequences of test identifiers before applying count filters; if the pinned schema does not match this expectation, materialization must fail rather than reinterpret string length as test count.
 
+The selector also validates the repository field before candidate filtering. Every row in the pinned split must have `repo` as a string in the exact structural form `<owner>/<repository>`:
+
+- exactly one `/`;
+- non-empty owner and repository components;
+- no leading/trailing whitespace in the field or either component;
+- no whitespace within either component;
+- the repository component before its first `.` must be non-empty.
+
+If any row violates this repository schema, materialization fails with a schema error rather than excluding/grouping the row differently across implementations.
+
 Build the candidate set from the pinned snapshot using rows satisfying all of:
 
 - non-empty `instance_id`;
 - non-empty `problem_statement`;
 - non-empty `image_name`;
+- valid `repo` under the repository schema above;
 - `1 <= len(FAIL_TO_PASS) <= 20`;
 - `1 <= len(PASS_TO_PASS) <= 200`;
 - `len(problem_statement) <= 12000` characters.
 
-Define a repository family from the part of `repo` after the slash and before the first dot. This groups multiple SWE-smith snapshots of the same upstream repository family.
+Define a repository family deterministically from the validated `repo`: take the repository component after the single slash, then take the non-empty prefix before its first dot (or the full repository component if no dot exists). This groups multiple SWE-smith snapshots of the same upstream repository family.
 
 For every candidate compute:
 
@@ -416,7 +428,7 @@ For each individual model call, including calls after semantic execution has beg
 
 A nonretryable provider failure that occurs **before the run has accepted its first semantic model response** terminates the schedule slot as `PRE_SEMANTIC_PROVIDER_FAILURE`, is scored unresolved, and is **not** eligible for whole-run replacement. This includes API/request validation failures, malformed provider responses not accepted into agent state, and ordinary nonretryable 4xx responses. The specific provider/error code remains in raw data.
 
-Exhausting the transport budget on the **first** model call without any semantic response terminates the attempt as `INFRA_FIRST_PROVIDER_CALL` and is eligible for whole-run replacement under the fixed attempt budget. Exhausting a later model call's transport budget after semantic execution has begun terminates the slot as unresolved `RUN_INTERRUPTED`; it is not a whole-run retry trigger.
+Exhausting the transport budget on the **first** model call without any semantic response terminates the attempt as `INFRA_FIRST_PROVIDER_CALL` and is eligible for whole-run replacement under the fixed attempt budget **only if the semantic deadline still has positive remaining time**. If the semantic deadline reaches zero first or simultaneously, `WALL_CLOCK_EXHAUSTED` takes precedence and no whole-run replacement is allowed. Exhausting a later model call's transport budget after semantic execution has begun terminates the slot as unresolved `RUN_INTERRUPTED`, unless semantic deadline expiry caused/preceded that termination, in which case `WALL_CLOCK_EXHAUSTED` takes precedence.
 
 ### Whole-agent-run replacement
 
