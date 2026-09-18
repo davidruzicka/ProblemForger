@@ -60,7 +60,7 @@ Each layer must be evaluated separately before later layers are allowed to hide 
     EventStore
 ```
 
-Authoritative graph-domain events are deliberately separate from harness/model/tool telemetry. Replaceable infrastructure and policies are accessed through explicit ports. Concrete providers are loaded from typed configuration. The core must not know whether persistence is backed by memory, SQLite, PostgreSQL, or another implementation.
+Authoritative graph-domain events are deliberately separate from harness/model/tool telemetry. Replaceable infrastructure and policies are accessed through explicit ports. Concrete providers are loaded from typed configuration. The core must not know whether the EventStore is memory, SQLite, PostgreSQL, or another implementation; provider capabilities remain explicit, so the in-memory adapter is test-only/ephemeral while normal service execution requires a durable provider such as SQLite.
 
 See [PLAN.md](PLAN.md), the [P0 audit](docs/p0-audit.md), and [architecture](docs/architecture.md).
 
