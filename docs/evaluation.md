@@ -10,7 +10,7 @@ The first experiment is intentionally small and mechanistic. It is not intended 
 
 At minimum:
 
-- **A — harness baseline**
+- **A — pinned HarnessX runtime + common benchmark-adapter baseline**
 - **B — A + explicit ProblemGraph interaction**
 - **C — B + deterministic mutation governance**
 - **D — C + learned verifier**
@@ -74,7 +74,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - schema normalization/validation, preserving `FAIL_TO_PASS` and `PASS_TO_PASS` as sequences rather than JSON/string lengths;
    - exact task/prompt rendering shared by A/B/C, including deterministic rendering of failing-test identifiers;
    - exact workspace setup, patch extraction, and result serialization shared by A/B/C;
-   - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency version and relevant evaluator/container image digests;
+   - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task `image_name`/container-resolution policy;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
    - no ProblemForger graph/governance behavior;
 2. **`graph-intervention-v1`**
@@ -125,7 +125,7 @@ Use a deterministic subset of the public SWE-smith dataset:
 
 SWE-smith provides executable software-engineering tasks with failing/passing tests. It is public training data, so this experiment must **not** be presented as an uncontaminated measurement of frontier coding capability. Its purpose here is paired mechanism comparison under executable ground truth.
 
-The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target `princeton-nlp/SWE-bench_Verified` / `test`; they are therefore **not** the P6 benchmark runner. P6 uses the frozen `benchmark-adapter-v1` to feed SWE-smith/`train` tasks into the pinned HarnessX runtime and to invoke evaluation consistently. The same benchmark adapter hash is mandatory for A, B, and C.
+The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target `princeton-nlp/SWE-bench_Verified` / `test`; they are therefore **not** the P6 benchmark runner. P6 uses the frozen `benchmark-adapter-v1` to feed SWE-smith/`train` tasks into the pinned HarnessX runtime and to invoke evaluation consistently. The adapter may reuse pinned HarnessX runtime/harness entry points such as `make_swebench_harness`, but it owns dataset loading/evaluation plumbing. The same benchmark adapter hash is mandatory for A, B, and C.
 
 ### Deterministic task selection
 
@@ -171,7 +171,7 @@ Candidates skipped by the primary family cap are therefore reconsidered by the h
 
 Materialization must fail rather than silently relax these rules if fewer than 12 primary or 8 holdout tasks can be selected.
 
-Only after `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks.
+Only after `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the resulting 20 IDs into a version-controlled manifest and record its SHA-256. The selector above is frozen; materialization is not an opportunity to hand-pick tasks. For those materialized tasks, also record the exact resolved benchmark `image_name` values and, where the runtime exposes immutable image digests, those digests before preflight begins.
 
 Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
 
@@ -255,7 +255,7 @@ d_i(C-B) = r_i(C) - r_i(B)
 
 Let `N` be the number of primary tasks retained after patch-independent preflight exclusions.
 
-- If `N < 8` (fewer than two thirds of the planned 12-task primary set), classify the experiment as `INSUFFICIENT_VALID_TASKS`. Do not start measured A/B/C agent runs, do not report a primary point estimate, and do not compute a primary confidence interval. Preserve/report the manifest, all preflight outputs, exclusions, and the retained-task count.
+- If `N < 8` (fewer than two thirds of the planned 12-task primary set), classify the experiment as `INSUFFICIENT_VALID_TASKS`. This threshold is frozen before measured outcomes and prevents a materially smaller retained sample from silently being treated as the planned P6 experiment. Do not start measured A/B/C agent runs, do not report a primary point estimate, and do not compute a primary confidence interval. Preserve/report the manifest, all preflight outputs, exclusions, and the retained-task count.
 - If `8 <= N <= 12`, proceed with the frozen measured experiment. The reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
 
 The 95% confidence interval for a proceeding experiment is a **percentile task bootstrap** with these frozen parameters:
