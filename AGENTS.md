@@ -85,6 +85,8 @@ For research-facing changes:
 - do not replace negative results with a more favorable metric after the fact;
 - do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
 - do not rerun or replace a measured P6 agent trajectory except when the frozen `docs/evaluation.md` infrastructure reason-code and attempt-budget rules mechanically authorize it;
+- clean-state/reset validation must finish before the first model request; its failures use the frozen `INFRA_RESET_VALIDATION` reason and normal whole-run attempt budget, while contamination discovered only after semantic execution invalidates the experiment rather than authorizing a rerun;
+- pre-semantic nonretryable provider failures have the frozen `PRE_SEMANTIC_PROVIDER_FAILURE` unresolved outcome; evaluator no-vector failures after repository tests start use `EVALUATOR_INVALID` for patch-independent preflight controls and `EVALUATION_INCOMPLETE` for measured candidate evaluations;
 - P6 task environments must execute immutable recorded image/content digests; never re-resolve mutable image tags during preflight, measured runs, or holdout use;
 - configuration A must not start ProblemForger or allocate a ProblemForger run/journal; use harness-neutral experiment/attempt IDs for A/B/C bookkeeping, while B/C get fresh ProblemForger run IDs per attempt;
 - retain the exact canonical candidate-patch bytes and SHA-256 for every measured attempt, and link every evaluator result to that digest;
