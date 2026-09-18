@@ -25,7 +25,7 @@ Resolution: each run now has a durable journal containing governance audit recor
 
 "Append-only event log" did not define atomicity, stream scope, or stale writers.
 
-Resolution: each run owns an append-only durable journal with separate `journal_position` and `graph_version`. Graph-changing writes use optimistic `expected_graph_version`; each atomic committed mutation advances graph version exactly once even when it emits multiple graph events, while audit-only records do not advance graph version. Proposal receipt and every externally returned governance outcome are durable.
+Resolution: each run owns an append-only durable journal with separate `journal_position` and `graph_version`. Graph-changing writes use optimistic `expected_graph_version`; each atomic committed mutation advances graph version exactly once even when it emits multiple graph events, while audit-only records do not advance graph version. Proposal receipt and every externally returned governance outcome are durable. The in-memory EventStore is explicitly ephemeral/test-only; SQLite is moved into P1 as the first provider allowed for normal service execution so restart durability is real rather than nominal.
 
 ### Graph lifecycle mixed unrelated state dimensions
 
