@@ -41,7 +41,7 @@ The journal contains two classes of durable records:
 - **governance audit records** — proposal receipt plus final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
 - **graph-changing domain events** — committed node/edge/evidence/lifecycle changes that reconstruct the ProblemGraph.
 
-Every journal record has a monotonic `journal_position`. Only graph-changing domain events advance the monotonic `graph_version`.
+Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
 
 A governance outcome is not returned to the harness as completed until its durable decision record has been appended. If a process fails after recording a proposal but before recording a final outcome, the journal exposes an incomplete proposal rather than silently losing it.
 
@@ -146,11 +146,13 @@ Provider lookup is explicit. The PoC does not dynamically import arbitrary class
 
 ## Event sourcing and audit persistence
 
-The run journal is ordered by `journal_position`. Current graph state is the projection of only graph-changing records:
+The run journal is ordered by `journal_position`. `graph_version` identifies complete committed graph states, not individual events. Current graph state is the projection of complete mutation batches through version `v`:
 
 ```text
-G_v = fold(graph_events where graph_version <= v)
+G_v = fold(complete mutation batches with graph_version <= v)
 ```
+
+If a mutation based on `G_v` emits multiple graph events, every event in that atomic batch is tagged `graph_version = v + 1`; there is no addressable state containing only a prefix of that batch.
 
 Graph-changing commits use optimistic compare-and-append against `graph_version`:
 
@@ -162,7 +164,7 @@ append_graph(expected_graph_version=v, audit_records=[...], graph_events=[...])
 
 Audit-only records can be appended without advancing `graph_version`.
 
-For a successful commit, the final `MutationDecision(COMMIT)` audit record and all graph-changing events from that proposal must be durable as one atomic batch.
+For a successful commit, the final `MutationDecision(COMMIT)` audit record and all graph-changing events from that proposal must be durable as one atomic batch. The batch advances `graph_version` once, from `v` to `v + 1`.
 
 For non-commit outcomes, the final decision record is appended durably before the service returns that outcome. If an optimistic graph append reports a version conflict, the application must append `MutationDecision(CONFLICT)` before returning `CONFLICT`; failure to persist that decision is a service/persistence failure, not a completed governance outcome.
 
