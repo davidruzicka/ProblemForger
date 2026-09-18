@@ -82,10 +82,21 @@ Every mutation command carries a client-generated `proposal_id` that is unique w
 
 On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence references. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
 
-Proposal execution uses a durable processing claim:
+Proposal execution uses a durable processing claim.
 
-- every active claim has an `owner_id` unique to the service/worker incarnation, monotonically increasing `claim_epoch`, and finite `lease_expires_at`;
-- claim TTL and renewal cadence are versioned typed service configuration and use the injected clock so behavior is testable/reproducible;
+Lease expiry uses a **restart-stable lease-time domain**, never a process-local monotonic timestamp persisted directly:
+
+- the durable EventStore persists a per-store `lease_clock_floor_ms`;
+- on provider/service open, sample UTC Unix time in milliseconds and set `lease_clock_anchor_ms = max(persisted lease_clock_floor_ms, sampled_utc_ms)`; also capture a process-local monotonic anchor;
+- during that provider instance, compute `lease_now_ms = lease_clock_anchor_ms + elapsed_monotonic_ms`; later wall-clock jumps do not move lease time backward or forward;
+- every claim/renew/expiry transaction atomically advances persisted `lease_clock_floor_ms` to at least the transaction's `lease_now_ms`;
+- persisted `lease_expires_at_ms` is expressed in this lease-time domain as `lease_now_ms + claim_ttl_ms`;
+- after restart, the new anchor starts at least at the persisted floor and advances from a fresh monotonic anchor, so a lease left by a dead prior process cannot remain busy indefinitely even if the host wall clock moved backward;
+- a wall clock that is ahead of the persisted floor may move the restart anchor forward and make an old lease expire sooner; claim-epoch fencing still prevents the superseded owner from finalizing.
+
+Every active claim also has an `owner_id` unique to the service/worker incarnation and a monotonically increasing `claim_epoch`.
+
+- claim TTL and renewal cadence are versioned typed service configuration and use the injected UTC + monotonic clock pair so behavior is testable/reproducible;
 - the claimant renews the lease while evaluating;
 - an unclaimed proposal or a proposal whose claim lease has expired may be atomically claimed/reclaimed, incrementing `claim_epoch`;
 - every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`;
@@ -95,7 +106,7 @@ Proposal execution uses a durable processing claim:
 Subsequent submissions follow these rules:
 
 - same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata; do not re-run governance or mutate the graph;
-- same `proposal_id` + same canonical request hash + proposal has an active, unexpired processing claim → return `PENDING` with current recovery metadata; do not create a second proposal attempt;
+- same `proposal_id` + same canonical request hash + proposal has an active, unexpired processing claim according to the restart-stable lease clock → return `PENDING` with current recovery metadata; do not create a second proposal attempt;
 - same `proposal_id` + same canonical request hash + proposal is incomplete and unclaimed/claim-expired → a mutation resubmission must attempt to atomically acquire a new recovery claim; the winner resumes governance from the durable normalized request under the new epoch, while a loser observes the new active claim and returns `PENDING`;
 - same `proposal_id` + different canonical request hash → return `IDEMPOTENCY_CONFLICT`; do not evaluate or mutate;
 - unknown `proposal_id` → treat as a new proposal submission.
