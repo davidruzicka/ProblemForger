@@ -107,3 +107,15 @@ A PR should explain:
 - what remains explicitly out of scope.
 
 Architecture-changing implementation discoveries require an ADR proposal before the implementation silently adopts a new direction.
+
+
+## Pull-request review loop
+
+For pull requests labeled `review-loop`, follow `docs/review-loop.md`.
+
+In particular:
+
+- automatically fix and verify mechanical/consistency defects that do not change accepted architecture or the frozen research contract;
+- stop for human input before accepting architecture, ADR, experiment-design, benchmark, primary-metric, or other research-method changes with multiple defensible choices;
+- reply in the original review thread and resolve it only after the fix is present;
+- continue until the latest review covers the current head and no valid unresolved thread remains.
