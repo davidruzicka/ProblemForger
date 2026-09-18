@@ -32,6 +32,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Authoritative graph state is reconstructable from the graph-changing records in the durable journal.
 - Harness/model/tool observations are telemetry and must not be required for graph replay or auditability.
 - Every externally returned governance outcome (`COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`) must be durably recorded before the response is considered complete.
+- Durable proposal receipts must contain enough normalized/versioned input for restart recovery; processing claims use finite leases and monotonic fencing epochs so stale workers cannot finalize.
 - Each run uses optimistic graph-version checks for graph-changing writes; stale writes fail explicitly rather than silently overwriting.
 - Mutation outcome, entity lifecycle, and evidence-derived verification status are separate concepts.
 - Evidence origin and verification method are separate metadata; no single evidence-strength enum defines truth.
@@ -83,7 +84,7 @@ For research-facing changes:
 - distinguish measured results from interpretation;
 - do not replace negative results with a more favorable metric after the fact;
 - do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
-- do not inspect or run P6 primary/holdout tasks while developing `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
+- do not inspect or run P6 primary/holdout tasks while developing `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
 
 ## Issues and planning
 
