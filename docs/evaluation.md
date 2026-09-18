@@ -90,7 +90,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - direct loading of dataset `SWE-bench/SWE-smith` at the pinned revision and `train` split;
    - schema normalization/validation, preserving `FAIL_TO_PASS` and `PASS_TO_PASS` as sequences rather than JSON/string lengths;
    - exact task/prompt rendering shared by A/B/C, including deterministic rendering of failing-test identifiers;
-   - exact workspace setup, patch extraction, and result serialization shared by A/B/C;
+   - exact workspace setup/startup procedure and finite setup/startup timeouts, patch extraction, and result serialization shared by A/B/C;
    - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task immutable-image resolution/cache policy;
    - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
