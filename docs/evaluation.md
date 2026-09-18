@@ -120,8 +120,9 @@ Before any task selected by the P6 selector is intentionally identified, inspect
 5. **`telemetry-metrics-v1`**
    - exact observation schema/fields required for P6 secondary overhead metrics;
    - attribution rules for ProblemForger-added model tokens, tool calls, and latency;
+   - provider-cost normalization rules, currency, frozen price schedule/version when API responses do not expose monetary charge directly, and missing-cost handling;
    - clock/latency boundaries and missing-observation handling;
-   - aggregation rules and denominators for telemetry-derived metrics.
+   - aggregation rules and denominators for total end-to-end efficiency metrics and ProblemForger-attributed telemetry metrics.
 
 All five artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
 
@@ -336,13 +337,44 @@ With only 12 tasks before exclusions, this is a PoC effect estimate, not strong 
 
 ### Secondary end-to-end metrics
 
+Report:
+
 - input/output/cache tokens where provider reports them;
 - provider cost;
 - wall-clock latency;
 - agent steps;
 - tool calls;
-- cost per resolved task;
-- latency per resolved task.
+- provider cost per resolved schedule slot;
+- end-to-end elapsed seconds per resolved schedule slot.
+
+The two per-resolution efficiency aggregates are frozen as follows for each configuration `X` over the complete common retained task set and all three repetitions:
+
+```text
+resolved_slots_X =
+    count of schedule slots for X whose frozen binary outcome is resolved
+
+total_provider_cost_usd_X =
+    sum of billable model-provider cost across every provider request attempt
+    belonging to every whole-run attempt attached to those X schedule slots,
+    including provider-call retries and infrastructure-invalid/replaced attempts
+
+provider_cost_per_resolved_slot_X =
+    total_provider_cost_usd_X / resolved_slots_X
+
+total_elapsed_seconds_X =
+    sum of end-to-end schedule-slot elapsed time for those X slots,
+    including setup, infrastructure-invalid attempts, replacement attempts,
+    and the final measured attempt
+
+elapsed_seconds_per_resolved_slot_X =
+    total_elapsed_seconds_X / resolved_slots_X
+```
+
+Cost unit is USD. If the provider/API exposes an exact monetary charge for a request, use it. Otherwise compute cost from recorded billable usage using the currency/rates and cache-token rules frozen in `telemetry-metrics-v1` before task exposure. A request contributes zero cost only when the provider evidence establishes zero billable usage; unknown billable usage makes the affected monetary aggregate unavailable rather than silently zero.
+
+Infrastructure-invalid/replaced attempts are included because they are real operational cost/latency attributable to that configuration's scheduled work. Benchmark evaluator/container compute is not included in `total_provider_cost_usd_X`; it is retained separately as evaluation infrastructure.
+
+If `resolved_slots_X = 0`, both per-resolved-slot ratios are **undefined/NA**, not zero or infinity; report the numerator and zero denominator explicitly. If the experiment stops as `INCOMPLETE_INFRASTRUCTURE` or `INVALID_EXPERIMENT_STATE` before the frozen schedule completes, retain/report accrued raw cost/latency but do not report cross-configuration per-resolution aggregates for the incomplete experiment.
 
 ### Journal-derived graph/governance metrics
 
@@ -565,6 +597,8 @@ For every schedule slot and every whole-run attempt, retain:
 - effective redacted configuration;
 - harness version/commit;
 - provider/model identifier and relevant settings;
+- provider/API/model revision, deployment/build identifier, response-version header, or equivalent version metadata when exposed by the provider; record explicit `null/unavailable` when the provider exposes none;
+- absolute UTC timestamps in RFC 3339 form for `attempt_started_at`, `semantic_started_at` (null if no first request was issued), and `attempt_ended_at`;
 - task-manifest hash and execution-schedule artifact/hash;
 - event/protocol schema versions;
 - for B/C, the ProblemForger `run_id` and full durable run journal for that attempt; for A, an explicit `problemforger_run_id = null` / no-journal marker;
@@ -579,7 +613,7 @@ For every schedule slot and every whole-run attempt, retain:
   - every tool/subprocess result returned to the agent, including stdout/stderr/exit status or structured error;
   - ProblemForger client requests/responses for B/C as seen by the adapter;
   - pre-semantic reset-validation result/reason plus retry/transport attempt reason codes and whether each model attempt produced a semantic response;
-  - monotonic offsets from semantic-timer start for model request start/end, retry/backoff intervals, tool start/end, ProblemForger calls, HarnessX step transitions, and terminal/deadline event;
+  - monotonic offsets from semantic-timer start for model request start/end, retry/backoff intervals, tool start/end, ProblemForger calls, HarnessX step transitions, and terminal/deadline event, anchored to the recorded absolute `semantic_started_at` timestamp;
   - terminal reason and observed step count;
 - the **exact candidate patch bytes submitted to evaluation**, stored as an immutable artifact, plus `sha256(candidate_patch_bytes)`;
 - if the attempt terminates before producing/submitting a patch, record an explicit no-candidate status and the SHA-256 of the canonical empty byte string rather than omitting the field;
