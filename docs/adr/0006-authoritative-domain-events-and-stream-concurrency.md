@@ -57,17 +57,26 @@ Graph-changing commits use optimistic comparison against `expected_graph_version
 Conceptually:
 
 ```text
-append_audit(stream_id, records[])
-  -> last_journal_position
+claim_proposal(stream_id, proposal_id, owner_id, lease_until)
+  -> CLAIMED {claim_epoch}
+  | BUSY
+  | FINAL
+  | ABANDONED
 
-append_graph(stream_id, expected_graph_version, audit_records[], graph_events[])
+finalize_audit(stream_id, proposal_id, expected_claim_epoch, decision_record)
+  -> last_journal_position
+  | STALE_CLAIM
+
+append_graph(stream_id, proposal_id, expected_claim_epoch,
+             expected_graph_version, audit_records[], graph_events[])
   -> {last_journal_position, new_graph_version}
-  OR VersionConflict
+  | VersionConflict
+  | STALE_CLAIM
 ```
 
 A successful `append_graph` atomically appends its audit and graph records, assigns the same `new_graph_version` to every graph-changing event in that batch, and makes that version addressable only after the complete batch is durable.
 
-Audit-only records can be appended independently and do not participate in graph-version comparison.
+Non-terminal audit records can be appended independently and do not participate in graph-version comparison. Proposal terminal records are different: they require the current claim epoch, including non-commit decisions and `ABANDONED`, so a stale worker cannot create a second terminal state.
 
 There is no required global order across independent run journals.
 
