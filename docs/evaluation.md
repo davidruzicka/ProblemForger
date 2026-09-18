@@ -55,12 +55,12 @@ If this exact provider/model becomes unavailable before the first measured run, 
 
 ### Agent budget
 
-Per run:
+Per valid measured run:
 
 - maximum 60 HarnessX agent steps;
 - maximum wall-clock time: 30 minutes;
 - no configuration-specific retry allowance;
-- provider transport/rate-limit retries that occur before a semantic model result are recorded as infrastructure retries rather than extra agent steps.
+- provider transport/rate-limit retries follow the frozen infrastructure-retry policy below and do not create extra semantic agent steps.
 
 Token usage, billed cost, and wall time are measured outcomes rather than normalized away. Added graph context/tool calls must pay their actual overhead.
 
@@ -75,6 +75,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - exact task/prompt rendering shared by A/B/C, including deterministic rendering of failing-test identifiers;
    - exact workspace setup, patch extraction, and result serialization shared by A/B/C;
    - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task `image_name`/container-resolution policy;
+   - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
    - no ProblemForger graph/governance behavior;
 2. **`graph-intervention-v1`**
@@ -341,20 +342,69 @@ For B→C, the `graph-intervention-v1` hash must be identical. The only intentio
 
 Any other benchmark-adapter, prompt, tool, memory, sandbox, model setting, graph-surface artifact, governance-policy artifact, or primary metric-rule difference invalidates the intended comparison and must be documented as a new experiment version.
 
-## Infrastructure failure policy
+## Frozen infrastructure retry policy
 
-Do not convert infrastructure faults into model failures.
+Retry eligibility is mechanical and identical for A/B/C. Operators must not decide after observing a run whether to discard and repeat it.
 
-Examples include:
+### Definitions
 
-- provider outage before a semantic response;
-- container/image download failure;
-- evaluator crash unrelated to candidate patch;
-- corrupted local benchmark environment.
+A **schedule slot** is one frozen `(instance_id, replicate, configuration)` entry.
 
-Record the failed attempt and retry the same task/configuration once the infrastructure is healthy. Agent max-step exhaustion, agent-produced invalid patches, and tool failures caused by the agent remain task outcomes.
+A **semantic model response** is the first provider response for that run that HarnessX accepts into agent state as assistant content and/or a tool call. Once such a response exists, the measured agent execution has begun semantically.
 
-Evaluator/task stability and candidate-patch stability are handled separately so an agent-produced flaky patch cannot remove an unfavorable task from the paired analysis.
+The frozen `benchmark-adapter-v1` emits machine-readable infrastructure reason codes. Only the reason codes explicitly listed below can authorize retries.
+
+### Provider-call transport retries
+
+For each individual model call, including calls after semantic execution has begun:
+
+- maximum 3 transport attempts total: the initial attempt plus at most 2 retries;
+- retry only when **no semantic response was produced** and the attempt ends in one of:
+  - connection/DNS/TLS failure before an HTTP response;
+  - transport/read timeout before a semantic response;
+  - HTTP 408;
+  - HTTP 429;
+  - HTTP 500–599;
+- do not retry semantic/API validation failures, malformed successful responses already accepted into agent state, content/tool behavior, or ordinary 4xx responses other than 408/429;
+- all transport attempts and reason codes are retained in raw telemetry.
+
+Exhausting the per-call transport budget terminates that agent-run attempt.
+
+### Whole-agent-run replacement
+
+A failed agent-run attempt is eligible for a clean whole-run replacement **only if no semantic model response has yet been accepted** and the attempt terminates with one of these frozen pre-semantic reason classes:
+
+- `INFRA_WORKSPACE_SETUP` — failure creating/restoring the pristine workspace before task delivery;
+- `INFRA_CONTAINER_START` — benchmark/container runtime image pull/create/start failure before task delivery;
+- `INFRA_HARNESS_START` — HarnessX process/session startup failure before task delivery;
+- `INFRA_PROBLEMFORGER_START` — B/C ProblemForger process or health-check startup failure before task delivery;
+- `INFRA_FIRST_PROVIDER_CALL` — the first model call exhausted the provider-call transport budget without producing a semantic response.
+
+Each schedule slot has **at most 3 whole-run attempts total**: one initial attempt plus at most 2 clean replacements. Every replacement must satisfy the same clean-state isolation contract and retains the same schedule-slot identity; prior invalid attempts remain in raw data.
+
+If all 3 attempts fail with eligible pre-semantic infrastructure reasons, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop launching new measured schedule slots, and report no primary point estimate or confidence interval. Do not substitute another task/replicate/configuration.
+
+After the first semantic model response has been accepted, **no whole-agent-run replacement is allowed**. If the run later terminates because provider retries are exhausted, a tool/container/process fails, or another runtime error occurs, the slot is scored unresolved with a frozen terminal reason such as `RUN_INTERRUPTED`. This prevents selective regeneration of an already-started trajectory.
+
+The following are always agent/system outcomes rather than whole-run retry triggers once semantic execution has begun: max-step exhaustion, no patch, invalid patch, malformed tool use, non-zero exit from an agent-invoked command, agent-invoked command timeout, test failure, and ProblemForger/tool errors returned during the trajectory.
+
+### Evaluator infrastructure retries
+
+Evaluator retries never regenerate the candidate patch or agent trajectory.
+
+For each required control/candidate evaluation repetition:
+
+- maximum 3 evaluator attempts total;
+- retry only if no required-test vector was produced and the frozen benchmark adapter reports a pre-test infrastructure reason:
+  - `EVAL_IMAGE_SETUP`;
+  - `EVAL_CONTAINER_START`;
+  - `EVAL_EVALUATOR_START`;
+- once candidate/control repository tests have started executing, evaluator/test failure is not retrospectively reclassified as retryable infrastructure merely because no valid vector was produced;
+- if the 3-attempt evaluator budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point estimate or confidence interval.
+
+Infrastructure-invalid attempts are reported separately from valid agent outcomes in cost/latency accounting; they are never silently deleted.
+
+Evaluator/task stability and candidate-patch stability are handled separately below so an agent-produced flaky patch cannot remove an unfavorable task from the paired analysis.
 
 ### Task/evaluator preflight
 
@@ -382,7 +432,7 @@ For **every measured candidate patch**, regardless of its first outcome:
 
 A third candidate-patch evaluation may be retained as diagnostic data but cannot change the frozen primary classification above.
 
-A one-off provider/container/evaluator infrastructure failure that produces no valid required-test vector is retried as an infrastructure retry and does not by itself trigger task exclusion or `PATCH_UNSTABLE`. All primary paired comparisons use the same common task set fixed after preflight task/evaluator exclusions.
+Evaluator attempts follow the frozen infrastructure-retry budget above. Retryable pre-test infrastructure failure does not by itself trigger task exclusion or `PATCH_UNSTABLE`; exhaustion makes the experiment `INCOMPLETE_INFRASTRUCTURE` rather than allowing post-hoc task replacement. All primary paired comparisons use the same common task set fixed after preflight task/evaluator exclusions.
 
 ## Later verifier/calibration split
 
