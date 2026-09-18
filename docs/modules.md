@@ -76,7 +76,9 @@ Requirements:
 - duplicate same-ID/different-hash submissions are detectable as idempotency conflicts;
 - proposal processing claims use finite leases plus monotonic `claim_epoch` fencing;
 - an unclaimed/expired incomplete proposal can be atomically reclaimed after restart;
-- final decision/graph append for a proposal validates `expected_claim_epoch` atomically and rejects stale workers before any write;
+- every proposal terminal write (COMMIT graph append, non-commit final decision, or `ABANDONED`) requires `proposal_id` + `expected_claim_epoch`, validates it atomically, and rejects stale workers before any write;
+- generic audit append without a claim epoch cannot be used to create proposal terminal records;
+- claim TTL/renewal cadence are typed versioned configuration and lease tests use the injected Clock;
 - unrecoverable incomplete proposals can be terminally marked `ABANDONED` without graph mutation;
 - every durable record has a monotonic per-run `journal_position`;
 - every graph-changing event carries a `graph_version`, but one atomic committed mutation batch advances the version only once;
