@@ -77,9 +77,11 @@ The core also does **not** own model inference in the initial PoC. Model executi
 The application layer exposes harness-neutral commands and queries such as:
 
 - create/start a ProblemForger run;
-- query graph state or a bounded subgraph;
-- propose a graph mutation against an expected graph version;
+- query run metadata and graph state or a bounded subgraph using explicit `run_id`;
+- propose a graph mutation against an expected graph version using explicit `run_id`;
 - attach/reference evidence;
+- query proposal status/outcome by `(run_id, proposal_id)`;
+- retrieve a bounded read-only governance/audit timeline derived from durable journal audit records, ordered by `journal_position`;
 - retrieve governor decisions and current graph version.
 
 The initial agent interaction uses this explicit API/tool surface rather than automatic full-graph prompt injection. This avoids introducing a context-selection subsystem before the graph/governance hypotheses have been tested.
@@ -233,4 +235,12 @@ See ADR 0009.
 
 ## UI
 
-UI consumes observation events and graph projections and is outside the correctness path. Native harness UI may expose compact status. A later web observer may provide full provenance and timeline inspection.
+UI/observer clients are outside the correctness path and consume three read-only views:
+
+- optional normalized observation/telemetry events for model/tool/runtime activity;
+- graph projections for authoritative graph state;
+- a durable governance/audit timeline projection exposed through the application API from run-journal audit records.
+
+The audit timeline remains available even when telemetry is disabled and includes proposal receipts plus non-commit outcomes such as `REJECT`, `RETRY`, `ESCALATE`, and `CONFLICT`. Observers must use the service/application read API rather than access `EventStore` directly.
+
+Native harness UI may expose compact status. A later web observer may combine graph state, durable governance provenance, and optional telemetry for full timeline inspection.
