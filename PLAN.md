@@ -90,7 +90,7 @@ See ADRs 0001–0009.
 
 - [ ] **P6 — Baseline and graph/governance evaluation**
   - freeze/hash `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, executable `graph-metrics-v1`, and `telemetry-metrics-v1` before exposing P6 tasks;
-  - materialize the frozen task manifest only after those artifacts are fixed;
+  - materialize the frozen task manifest only after those artifacts are fixed; validate the pinned dataset `repo` field deterministically and fail materialization on malformed repository identity;
   - use the same frozen benchmark adapter for A/B/C; do not rely on HarnessX's built-in SWE-bench Verified/test defaults;
   - run patch-independent preflight, then materialize/hash the deterministic complete A/B/C execution schedule before the first measured agent run;
   - require a clean workspace and new HarnessX session for every measured agent attempt; B/C additionally get a distinct empty ProblemForger run/journal per attempt, while A never starts ProblemForger;
@@ -98,7 +98,7 @@ See ADRs 0001–0009.
   - retain complete harness-native raw trajectories as adapter/evaluation artifacts for audit and later P7/P8 dataset construction; keep them out of core and the authoritative journal;
   - enforce the frozen pre-semantic infrastructure retry taxonomy and fixed attempt budgets; reset validation is pre-semantic and budgeted, pre-semantic nonretryable provider failures are scored deterministically, evaluator post-test no-vector outcomes are predeclared, and no post-hoc trajectory reruns are allowed;
   - resolve every selected benchmark image to an immutable digest/content identity before preflight and use only that identity thereafter;
-  - enforce the frozen 30-minute semantic deadline from immediately before the first model request through all provider/backoff/tool/ProblemForger trajectory time;
+  - enforce the frozen 30-minute semantic deadline from immediately before the first model request through all provider/backoff/tool/ProblemForger trajectory time; deadline expiry overrides provider retry/replacement classification;
   - run frozen A/B/C experiment from `docs/evaluation.md`;
   - preserve the frozen graph intervention identically between B and C;
   - report task resolution, cost, latency, graph overhead, and propagation metrics;
@@ -123,7 +123,7 @@ See ADRs 0001–0009.
   - controlled exploration/shadow evaluation to reduce selection bias.
 
 - [ ] **P10 — Observer/debug UI**
-  - harness-neutral event/projection consumer;
+  - harness-neutral consumer of optional telemetry, graph projections, and the read-only durable governance/audit timeline exposed by the service;
   - current objective/node, provenance, evidence, model rationale, confidence, timeline, warnings, local graph;
   - graph visualization remains secondary to causal/provenance inspection.
 
