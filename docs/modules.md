@@ -38,6 +38,10 @@ Owns persistence of each run's durable journal: governance audit records plus gr
 Conceptual contract:
 
 ```text
+record_proposal(stream_id, proposal_id, request_hash, receipt_record)
+    -> CREATED
+    | EXISTING {request_hash, status, last_journal_position}
+
 append_audit(stream_id, records[])
     -> last_journal_position
 
@@ -54,6 +58,9 @@ current_graph_version(stream_id)
 
 Requirements:
 
+- `proposal_id` is unique within a run and claimed atomically with its canonical request hash;
+- duplicate same-ID/same-hash submissions resolve to the existing proposal state/outcome, never a second mutation;
+- duplicate same-ID/different-hash submissions are detectable as idempotency conflicts;
 - every durable record has a monotonic per-run `journal_position`;
 - every graph-changing event carries a `graph_version`, but one atomic committed mutation batch advances the version only once;
 - all graph events in the same mutation batch share the same resulting `graph_version`;
@@ -181,6 +188,9 @@ Every provider of the same port runs the same behavioral contract suite.
 For `EventStore`, all providers run a common semantic contract suite covering at least:
 
 - empty journal/`graph_version` semantics;
+- atomic proposal-ID claim;
+- duplicate same-ID/same-hash recovery without duplicate receipt/commit;
+- duplicate same-ID/different-hash idempotency conflict;
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;
 - ordered journal read;
