@@ -257,15 +257,17 @@ Examples include:
 
 Record the failed attempt and retry the same task/configuration once the infrastructure is healthy. Agent max-step exhaustion, agent-produced invalid patches, and tool failures caused by the agent remain task outcomes.
 
-If benchmark evaluation appears nondeterministic for a task, use this frozen stability rule:
+Evaluator-stability probing is outcome-independent and mandatory for **every measured candidate patch**:
 
-1. rerun the evaluator for the **same candidate patch** in a fresh instance of the same pinned environment;
-2. if the required-test outcome disagrees with the original evaluation, run one additional fresh evaluator repetition for that same patch/environment;
-3. if the repeated evaluations are not identical, classify the **entire task** as `EVALUATOR_UNSTABLE`.
+1. evaluate the candidate patch once in a fresh instance of the pinned environment;
+2. evaluate the exact same patch a second time in a separate fresh instance of the same pinned environment, regardless of the first result;
+3. compare the full required-test outcome vector (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test), not only the aggregate resolved/not-resolved bit;
+4. if the two vectors differ, run one third evaluation in another fresh instance;
+5. if any of the repeated required-test vectors differ, classify the **entire task** as `EVALUATOR_UNSTABLE`.
 
 The exclusion unit is the whole task: exclude all A/B/C configurations and all repetitions for that task from the primary paired A→B and B→C analysis. Preserve and report every raw run/evaluator result, report the reduced task denominator, and do not replace the task with another candidate.
 
-A one-off provider/container/evaluator infrastructure failure that does not produce a contradictory test outcome is retried as an infrastructure retry and does not by itself trigger task exclusion. All primary paired comparisons use the same remaining common task set after any task-level evaluator-instability exclusions.
+A one-off provider/container/evaluator infrastructure failure that produces no valid required-test vector is retried as an infrastructure retry and does not by itself trigger task exclusion. All primary paired comparisons use the same remaining common task set after any task-level evaluator-instability exclusions.
 
 ## Later verifier/calibration split
 
