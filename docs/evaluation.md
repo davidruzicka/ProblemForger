@@ -172,7 +172,7 @@ A provider-side random seed is not assumed available.
 
 ### End-to-end ground truth
 
-A task is **resolved** only when the benchmark evaluator reports all required `FAIL_TO_PASS` tests passing and required `PASS_TO_PASS` tests remaining passing.
+A measured run is **resolved** only when both mandatory fresh-environment evaluations of its exact candidate patch produce an identical full required-test vector and that vector has all required `FAIL_TO_PASS` tests passing and all required `PASS_TO_PASS` tests remaining passing. Any candidate-vector disagreement is `PATCH_UNSTABLE` and counts as unresolved/failure.
 
 The model/agent is not shown the gold patch or hidden evaluator result during execution.
 
