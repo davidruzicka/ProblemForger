@@ -32,7 +32,7 @@ The P0 audit established these implementation constraints:
 - ProblemForger core runs as a separate Python 3.12+ local process/service.
 - HarnessX and Pi use the same versioned service boundary through thin adapters.
 - Each run has an append-only durable journal for governance audit records and graph-changing domain events, separate from harness/model/tool telemetry.
-- The journal has monotonic `journal_position`; only graph-changing records advance optimistic `graph_version`.
+- The journal has monotonic `journal_position`; each atomic committed graph mutation advances optimistic `graph_version` exactly once, regardless of the number of graph events it emits.
 - Mutation outcome, entity lifecycle, and verification status are separate concepts.
 - Evidence origin and verification method are orthogonal metadata.
 - The first PoC exposes explicit graph query/mutation tools; it does not introduce an automatic context selector.
