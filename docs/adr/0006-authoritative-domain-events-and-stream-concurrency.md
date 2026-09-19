@@ -48,7 +48,7 @@ Incomplete proposals are processed under a durable lease/claim with `owner_id`, 
 
 P1 permits one live EventStore provider instance per durable store. All concurrent workers using that store share the instance and its lease clock. Opening another instance must fail before it can initialize a clock or access journal state; a crash must release ownership without manual lock-file deletion. This deliberately excludes concurrent service owners instead of introducing distributed clock coordination into the PoC.
 
-Lease deadlines use a restart-stable time domain rather than persisted process-monotonic timestamps. The operational ownership and clock algorithms have one normative home: [STORE-OWNER and LEASE-CLOCK](../protocol.md#store-owner). Concurrent provider instances require an amendment to this ADR and a coherent shared-time contract before they are supported.
+Lease deadlines use a restart-stable time domain rather than persisted process-monotonic timestamps. The operational ownership and clock algorithms have one normative home: [STORE-OWNER and LEASE-CLOCK](../protocol.md#spec-protocol-store-owner). Concurrent provider instances require an amendment to this ADR and a coherent shared-time contract before they are supported.
 
 A new worker may atomically claim an unclaimed/expired proposal and increments the epoch. Final decision append or graph commit must atomically validate both the current claim epoch and an unexpired lease (`lease_expires_at_ms > lease_now_ms`); a stale or expired worker receives `STALE_CLAIM` and cannot append a decision or mutate graph state. Renewal cannot revive an expired claim.
 
@@ -60,25 +60,11 @@ A transport retry with the same proposal ID/request hash reuses that existing at
 
 Graph-changing commits use optimistic comparison against `expected_graph_version`. If the current graph version is `v`, one successful atomic mutation batch produces `new_graph_version = v + 1`, regardless of how many graph-changing events the mutation emits.
 
-Conceptually:
-
-```text
-claim_proposal(stream_id, proposal_id, owner_id, claim_ttl_ms)
-  -> CLAIMED {claim_epoch}
-  | BUSY
-  | FINAL
-  | ABANDONED
-
-finalize_audit(stream_id, proposal_id, expected_claim_epoch, decision_record)
-  -> last_journal_position
-  | STALE_CLAIM
-
-append_graph(stream_id, proposal_id, expected_claim_epoch,
-             expected_graph_version, audit_records[], graph_events[])
-  -> {last_journal_position, new_graph_version}
-  | VersionConflict
-  | STALE_CLAIM
-```
+The canonical claim, finalization, and graph-append signatures are owned by the
+[EventStore port](../modules.md#spec-modules-eventstore-port), while their
+atomic recovery and fencing preconditions are defined by the [protocol
+contract](../protocol.md#spec-protocol-proposal-recovery). This ADR records the
+architectural invariants and rationale without redeclaring the API.
 
 A successful `append_graph` atomically verifies the current, unexpired claim before appending its audit and graph records, assigns the same `new_graph_version` to every graph-changing event in that batch, and makes that version addressable only after the complete batch is durable.
 

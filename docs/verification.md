@@ -45,6 +45,8 @@ Examples:
 
 Evidence must identify the exact entity, edge, mutation, requirement, or root goal it supports or contradicts.
 
+<a id="spec-verification-evidence-trust"></a>
+<!-- spec-id: VERIFICATION.EVIDENCE-TRUST -->
 ### EVIDENCE-TRUST
 
 Worker-supplied origin and method are claims, not trusted attestations. The worker may attach assertions but cannot assign trusted provenance. The service assigns producer identity and trusted origin through an approved evidence-producing integration; unknown or unauthenticated producers cannot create trusted evidence. Claimed provenance may be preserved separately for audit, but cannot override the assigned source. Copying a producer name, method, result, or digest into a worker request does not make that request trusted. Workers may reference an existing service-registered evidence record; the service resolves and validates it rather than trusting an inline replacement.
@@ -53,6 +55,8 @@ The local deployment must keep the journal, ownership lock, service policy/confi
 
 Producer authentication and evidence integrity are common B/C boundary rules. B may retain untrusted assertions without requiring external support; C alone decides which trusted evidence is required under the frozen governance policy. Adapters translate producer observations; service policy decides their admissibility. Trusted origin does not imply that a checker or its result is correct.
 
+<a id="spec-verification-evidence-binding"></a>
+<!-- spec-id: VERIFICATION.EVIDENCE-BINDING -->
 ### EVIDENCE-BINDING
 
 Evidence consumed as trusted support must retain:
@@ -65,6 +69,8 @@ Evidence consumed as trusted support must retain:
 
 The producer checks an immutable snapshot or otherwise demonstrates that the checked bytes match the recorded subject identity. Governance compares that identity with the subject of the proposal. A mutable filename, URL, or entity ID alone is insufficient. New content requires new evidence; previous evidence remains historical support for its original subject. Hashes bind content, not trust. Unknown producers and subject mismatches cannot satisfy a trusted-evidence requirement; C applies its frozen missing/invalid-evidence decision rule, without relabeling an assertion as an external check.
 
+<a id="spec-verification-evidence-recovery"></a>
+<!-- spec-id: VERIFICATION.EVIDENCE-RECOVERY -->
 ### EVIDENCE-RECOVERY
 
 The durable proposal receipt retains the normalized evidence records submitted for evaluation and their content identities. In the PoC, these external evidence inputs are frozen at receipt: governance may derive deterministic check results from them, but incorporating new external evidence requires a new proposal. The durable final decision retains the normalized check results and checker/policy versions actually used. It must be possible to audit the decision with telemetry disabled. Large raw outputs may remain external, but their immutable digests and retrieval metadata must accompany the normalized result; harness-native trajectories still remain outside core and the journal.

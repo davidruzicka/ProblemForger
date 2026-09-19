@@ -82,7 +82,7 @@ For research-facing changes:
 - do not change frozen research choices after observing results or pool different experiment versions;
 - preserve raw evidence and distinguish measured results from interpretation, including null/negative results;
 - keep harness-native trajectories adapter-owned; only normalized observations cross core boundaries;
-- follow [STORE-OWNER and LEASE-CLOCK](docs/protocol.md#store-owner) for persistence and [EVIDENCE-TRUST through EVIDENCE-RECOVERY](docs/verification.md#evidence-trust) for evidence;
+- follow [STORE-OWNER and LEASE-CLOCK](docs/protocol.md#spec-protocol-store-owner) for persistence and [EVIDENCE-TRUST through EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-trust) for evidence;
 - all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
 
 Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.

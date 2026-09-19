@@ -76,14 +76,18 @@ A mutation request can yield outcomes such as:
 
 The service must persist the final decision record before returning a completed governance outcome to the harness.
 
+<a id="spec-protocol-proposal-recovery"></a>
+<!-- spec-id: PROTOCOL.PROPOSAL-RECOVERY -->
 ### Proposal identity, idempotency, and recovery
 
 Every mutation command carries a client-generated `proposal_id` that is unique within the ProblemForger run and acts as the idempotency key for transport retries.
 
-On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#evidence-recovery), including inline worker assertions. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
+On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery), including inline worker assertions. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
 
 Proposal execution uses a durable processing claim.
 
+<a id="spec-protocol-store-owner"></a>
+<!-- spec-id: PROTOCOL.STORE-OWNER -->
 #### STORE-OWNER
 
 P1 permits exactly one live EventStore provider instance per durable store, shared by all workers using that store. The provider must acquire exclusive ownership **before initializing the lease clock**, loading journal state, or accepting operations. A competing open fails explicitly with `STORE_IN_USE`; this is a service startup error, not a governance decision or a proposal claim.
@@ -92,6 +96,8 @@ Ownership must cover same-process duplicate instances as well as separate proces
 
 Concurrent workers still use atomic proposal claims, fencing epochs, and graph-version checks. Multiple live providers for one store are out of scope under ADR 0006; independent stores may be opened concurrently. Required P1 tests include racing process opens, same-process duplicate opens, path aliases, graceful close, crash release, and reopening with an active proposal lease.
 
+<a id="spec-protocol-lease-clock"></a>
+<!-- spec-id: PROTOCOL.LEASE-CLOCK -->
 #### LEASE-CLOCK
 
 Lease expiry uses a **restart-stable lease-time domain**, never a process-local monotonic timestamp persisted directly:
@@ -115,6 +121,10 @@ Every active claim also has an `owner_id` unique to the service/worker incarnati
 - every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`; every graph append requires both `proposal_id` and `expected_claim_epoch`, with no unfenced overload or default. Missing fields fail validation before any write. Run creation creates empty version-zero state; any initial graph content is committed through the same fenced proposal path;
 - the EventStore/application boundary atomically rejects a finalization or graph append unless the expected claim epoch still matches and `lease_expires_at_ms > lease_now_ms`; this active-claim check occurs before any final decision or graph mutation, and failure returns `STALE_CLAIM`;
 - governance evaluation before final append must not perform non-idempotent external side effects; any future side-effecting integration requires its own idempotency contract.
+
+The operation signatures are owned by the [EventStore port](modules.md#spec-modules-eventstore-port).
+This section defines their atomic lease, fencing, recovery, and graph-version
+preconditions; provider summaries must not copy this algorithm.
 
 #### Proposal recovery responses
 
@@ -183,7 +193,7 @@ Reasons:
 
 See ADR 0009.
 
-The local service boundary must also enforce [EVIDENCE-TRUST](verification.md#evidence-trust). The transport spike must show that worker tools cannot use trusted evidence-ingestion/admin operations or modify the durable store and policy configuration. Choosing a separate process alone does not establish that protection. Production authentication/TLS and remote deployment remain out of scope.
+The local service boundary must also enforce [EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust). The transport spike must show that worker tools cannot use trusted evidence-ingestion/admin operations or modify the durable store and policy configuration. Choosing a separate process alone does not establish that protection. Production authentication/TLS and remote deployment remain out of scope.
 
 ## Transport
 

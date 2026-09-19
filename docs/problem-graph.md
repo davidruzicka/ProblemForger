@@ -1,3 +1,5 @@
+<a id="spec-graph-model"></a>
+<!-- spec-id: GRAPH.MODEL -->
 # Problem graph
 
 ## Purpose
@@ -149,7 +151,7 @@ Evidence must identify what claim/entity/mutation it supports or contradicts and
 
 A passing test is strong evidence for the behavior that test covers; it is not automatically proof that the root goal is fully satisfied.
 
-The normative trust, immutable-subject binding, and recovery rules are [EVIDENCE-TRUST through EVIDENCE-RECOVERY](verification.md#evidence-trust). Evidence metadata describes provenance; worker-controlled metadata cannot establish trusted provenance.
+The normative trust, immutable-subject binding, and recovery rules are [EVIDENCE-TRUST through EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-trust). Evidence metadata describes provenance; worker-controlled metadata cannot establish trusted provenance.
 
 ## Anchors and drift
 
@@ -169,12 +171,10 @@ These are research hypotheses until evaluated.
 
 ## Versioning and concurrency
 
-Each ProblemForger run owns an append-only durable journal.
-
-Every durable record advances per-run `journal_position`. Each committed mutation batch advances `graph_version` exactly once; all graph-changing events emitted by that mutation share the same resulting version. Proposal/decision audit records do not advance graph version.
-
-The PoC may serialize governance internally, but graph-changing writes use optimistic `expected_graph_version` checks so future parallel workers cannot silently overwrite each other. A successful mutation from version `v` produces only complete state `v + 1`; no intermediate event-prefix state is addressable.
-
-Observation/telemetry events remain outside the durable governance journal and do not increment graph version.
-
-See ADR 0006.
+The [EventStore port](modules.md#spec-modules-eventstore-port), [protocol
+contract](protocol.md#spec-protocol-proposal-recovery), and ADR 0006 own journal,
+lease, and append algorithms. The graph-level invariants are: a committed
+mutation advances `graph_version` once as a complete batch; stale
+`expected_graph_version` values conflict rather than overwrite; and telemetry
+remains outside authoritative graph state. The graph projection must therefore
+never expose a prefix of an atomic mutation batch.

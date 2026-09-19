@@ -96,12 +96,60 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("expired claim as inactive", read("docs/modules.md"))
 
     def test_every_graph_append_signature_requires_fencing(self):
+        matches = []
         for path in (ROOT / "docs").rglob("*.md"):
             for match in re.finditer(r"\bappend_graph\((.*?)\)", path.read_text(), re.S):
-                with self.subTest(path=str(path), signature=match[0]):
-                    args = match[1]
-                    self.assertTrue("proposal_id" in args and "expected_claim_epoch" in args)
-                    self.assertFalse("proposal_id?" in args or "expected_claim_epoch?" in args)
+                matches.append((path.relative_to(ROOT).as_posix(), match[0]))
+        self.assertEqual([path for path, _ in matches], ["docs/modules.md"])
+        for path, signature in matches:
+            with self.subTest(path=path, signature=signature):
+                args = signature[signature.index("(") + 1 : -1]
+                self.assertTrue("proposal_id" in args and "expected_claim_epoch" in args)
+                self.assertFalse("proposal_id?" in args or "expected_claim_epoch?" in args)
+
+    def test_claim_operations_have_one_normative_home(self):
+        matches = []
+        for path in (ROOT / "docs").rglob("*.md"):
+            text = path.read_text()
+            for name in ("claim_proposal", "renew_claim"):
+                if re.search(rf"\b{name}\(", text):
+                    matches.append((name, path.relative_to(ROOT).as_posix()))
+        self.assertEqual(
+            matches,
+            [("claim_proposal", "docs/modules.md"), ("renew_claim", "docs/modules.md")],
+        )
+
+    def test_normative_contract_ids_have_one_owner_and_are_mapped(self):
+        expected = {
+            "GRAPH.MODEL": "docs/problem-graph.md",
+            "MODULES.EVENTSTORE-PORT": "docs/modules.md",
+            "PROTOCOL.STORE-OWNER": "docs/protocol.md",
+            "PROTOCOL.LEASE-CLOCK": "docs/protocol.md",
+            "PROTOCOL.PROPOSAL-RECOVERY": "docs/protocol.md",
+            "VERIFICATION.EVIDENCE-TRUST": "docs/verification.md",
+            "VERIFICATION.EVIDENCE-BINDING": "docs/verification.md",
+            "VERIFICATION.EVIDENCE-RECOVERY": "docs/verification.md",
+            "EVALUATION.MODEL": "docs/evaluation.md",
+            "EVALUATION.PRE-P6": "docs/evaluation.md",
+            "EVALUATION.BOOTSTRAP-RNG": "docs/evaluation.md",
+            "EVALUATION.PREFLIGHT": "docs/evaluation.md",
+            "EVALUATION.MEASURED-EVALUATION": "docs/evaluation.md",
+            "REVIEW.LOOP": "docs/review-loop.md",
+        }
+        found = {}
+        for path in (ROOT / "docs").rglob("*.md"):
+            for spec_id in re.findall(r"<!-- spec-id: ([A-Z0-9.-]+) -->", path.read_text()):
+                found.setdefault(spec_id, []).append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(set(found), set(expected))
+        ownership = read("docs/specification-checks.md")
+        for spec_id, owners in found.items():
+            with self.subTest(spec_id=spec_id):
+                self.assertEqual(owners, [expected[spec_id]])
+                owner = read(expected[spec_id])
+                anchor = "spec-" + re.sub(r"[^a-z0-9]+", "-", spec_id.lower()).strip("-")
+                self.assertIn(f'<a id="{anchor}"></a>', owner)
+                self.assertIn(f"`{spec_id}`", ownership)
+                self.assertIn(f"({Path(expected[spec_id]).name}#{anchor})", ownership)
 
     def test_bootstrap_has_one_shared_index_draw(self):
         evaluation = read("docs/evaluation.md")

@@ -27,18 +27,13 @@ The initial domain is software engineering because tests, compilers, type checke
 
 ## P0 decisions now fixed
 
-The P0 audit established these implementation constraints:
+The P0 audit established constraints whose current normative details live in the
+linked ADRs and requirement IDs:
 
-- ProblemForger core runs as a separate Python 3.12+ local process/service.
-- HarnessX and Pi use the same versioned service boundary through thin adapters.
-- Each run has an append-only durable journal for governance audit records and graph-changing domain events, separate from harness/model/tool telemetry.
-- The journal has monotonic `journal_position`; each atomic committed graph mutation advances optimistic `graph_version` exactly once, regardless of the number of graph events it emits.
-- Mutation outcome, entity lifecycle, and verification status are separate concepts.
-- Evidence origin and verification method are orthogonal metadata.
-- The first PoC exposes explicit graph query/mutation tools; it does not introduce an automatic context selector.
-- Model execution stays in the harness; the initial core does not define a `ModelProvider` abstraction.
-- Replaceable infrastructure/policies use explicit ports and configuration-selected providers.
-- P6 uses the frozen A/B/C experiment contract in `docs/evaluation.md`.
+- harness-neutral service boundary, graph vocabulary, and separated lifecycle/evidence axes — [GRAPH.MODEL](docs/problem-graph.md#spec-graph-model), ADRs 0001–0005, 0007–0009;
+- durable journal, graph-version atomicity, provider ownership, claims, and recovery — [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), [PROTOCOL.STORE-OWNER](docs/protocol.md#spec-protocol-store-owner), [PROTOCOL.LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock), ADR 0006;
+- evidence trust/binding/recovery and review-loop checkpoints — [VERIFICATION.EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [VERIFICATION.EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), [VERIFICATION.EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery), [REVIEW.LOOP](docs/review-loop.md#spec-review-loop);
+- the frozen P6 A/B/C experiment — [EVALUATION.MODEL](docs/evaluation.md#spec-evaluation-model), [EVALUATION.PRE-P6](docs/evaluation.md#spec-evaluation-pre-p6), [EVALUATION.BOOTSTRAP-RNG](docs/evaluation.md#spec-evaluation-bootstrap-rng), [EVALUATION.PREFLIGHT](docs/evaluation.md#spec-evaluation-preflight), [EVALUATION.MEASURED-EVALUATION](docs/evaluation.md#spec-evaluation-measured-evaluation).
 
 See ADRs 0001–0009.
 
@@ -54,8 +49,8 @@ See ADRs 0001–0009.
 
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
-  - durable run-journal envelope, audit records, graph-version semantics, and optimistic append contract;
-  - `EventStore` port + ephemeral in-memory adapter + durable SQLite adapter/contract tests, including idempotent proposal recovery with fenced processing claims and restart-stable persisted lease-clock semantics;
+  - durable journal and graph-version implementation under [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), and ADR 0006;
+  - `EventStore` providers and contract tests, including fenced claims and restart-stable lease-clock behavior under [PROTOCOL.LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock);
   - typed provider configuration and explicit module registry/composition root;
   - observation/telemetry contract;
   - local service transport decision and protocol skeleton;
@@ -89,11 +84,9 @@ See ADRs 0001–0009.
   - minimal native TUI status only.
 
 - [ ] **P6 — Baseline and deterministic-governance experiment**
-  - implement issue #8 against the normative [evaluation contract](docs/evaluation.md);
-  - freeze/hash the benchmark, graph intervention, governance, journal metrics, telemetry metrics, ordered model chain, and complete HarnessX runtime before exposing selected tasks;
-  - materialize the pinned task manifest and common execution schedule;
-  - enforce the specified preflight, isolation, deadline, and retry/classification rules;
-  - retain the required raw artifacts and compute the frozen paired outcomes and efficiency metrics;
+  - implement issue #8 against the normative evaluation IDs in `docs/evaluation.md`;
+  - freeze/hash the benchmark, intervention, governance, metrics, ordered model chain, and complete HarnessX runtime before exposing selected tasks;
+  - materialize the pinned manifest/schedule, enforce preflight/isolation/deadline/retry rules, retain raw artifacts, and compute the frozen paired outcomes and efficiency metrics;
   - preserve null/negative results and report the declared validity limitations.
 
 - [ ] **P7 — Learned verifier**

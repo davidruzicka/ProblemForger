@@ -31,11 +31,17 @@ Use an explicit typed registry/factory until a real use case justifies something
 
 P1 should define only capabilities already required by the PoC architecture:
 
+<a id="spec-modules-eventstore-port"></a>
+<!-- spec-id: MODULES.EVENTSTORE-PORT -->
 ### EventStore
 
 Owns persistence of each run's durable journal: governance audit records plus graph-changing domain events.
 
-Conceptual contract:
+The EventStore port owns the operation signatures and return statuses. The
+protocol defines the atomic preconditions and recovery semantics that every
+provider must implement.
+
+Conceptual port contract:
 
 ```text
 record_proposal(stream_id, proposal_id, request_hash, normalized_request, receipt_record)
@@ -71,8 +77,8 @@ current_graph_version(stream_id)
 
 Requirements:
 
-- enforce the [proposal identity/recovery contract](protocol.md#proposal-identity-idempotency-and-recovery), including atomic receipt uniqueness and fenced terminalization;
-- obey [STORE-OWNER and LEASE-CLOCK](protocol.md#store-owner); service startup refuses a second owner before state access;
+- enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and fenced terminalization;
+- obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
 - generic audit append without a claim epoch cannot create proposal terminal records;
 - assign monotonic per-run `journal_position` to every durable record;
@@ -80,7 +86,7 @@ Requirements:
 - audit-only writes never advance graph version; all graph events in a committed batch share one new version;
 - persist each returned governance outcome before completing its response;
 - preserve record ordering, append-only history, and versioned payload fidelity for replay/audit, with no required global order across runs;
-- retain normalized evidence according to [EVIDENCE-RECOVERY](verification.md#evidence-recovery).
+- retain normalized evidence according to [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery).
 
 Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service where ADR 0006 promises restart durability. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart.
 
@@ -104,7 +110,7 @@ Inject only where deterministic tests or reproducibility require it. Lease handl
 - UTC Unix time for the restart anchor;
 - monotonic elapsed time for progress within one provider/service instance.
 
-The owning provider combines these sources using [LEASE-CLOCK](protocol.md#lease-clock). Domain code does not implement or persist a separate clock algorithm.
+The owning provider combines these sources using [LEASE-CLOCK](protocol.md#spec-protocol-lease-clock). Domain code does not implement or persist a separate clock algorithm.
 
 Do not introduce a general service-locator abstraction.
 
@@ -223,7 +229,7 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - independent run journals;
 - byte/semantic fidelity sufficient for deterministic replay and governance audit.
 
-Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#store-owner), active-lease recovery, and forward/backward UTC jumps on reopen under [LEASE-CLOCK](protocol.md#lease-clock). A forward restart anchor may legitimately expire a lease sooner; a backward jump must not leave it busy indefinitely. Reopen durability tests do not apply to the ephemeral memory provider.
+Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#spec-protocol-store-owner), active-lease recovery, and forward/backward UTC jumps on reopen under [LEASE-CLOCK](protocol.md#spec-protocol-lease-clock). A forward restart anchor may legitimately expire a lease sooner; a backward jump must not leave it busy indefinitely. Reopen durability tests do not apply to the ephemeral memory provider.
 
 `MemoryEventStore` does **not** claim that durability contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
 

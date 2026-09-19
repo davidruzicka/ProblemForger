@@ -118,7 +118,7 @@ Prefer executable/external evidence and record verifier identity/version.
 
 The worker may optimize verifier-visible signals while missing the real goal.
 
-Keep root-goal checks, evidence diversity, delayed outcomes, and high-confidence failure audits. Enforce [trusted provenance and immutable evidence binding](verification.md#evidence-trust); a worker assertion cannot impersonate a checker, and a result for old bytes cannot silently support a modified artifact.
+Keep root-goal checks, evidence diversity, delayed outcomes, and high-confidence failure audits. Enforce [trusted provenance and immutable evidence binding](verification.md#spec-verification-evidence-trust); a worker assertion cannot impersonate a checker, and a result for old bytes cannot silently support a modified artifact.
 
 ### False precision
 

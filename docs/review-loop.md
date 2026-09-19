@@ -1,3 +1,5 @@
+<a id="spec-review-loop"></a>
+<!-- spec-id: REVIEW.LOOP -->
 # Pull-request review loop
 
 ## Purpose

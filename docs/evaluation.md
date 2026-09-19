@@ -40,6 +40,8 @@ Primary P6 harness:
 
 P6 is intentionally single-harness. Pi is used later as an independent portability check rather than mixed into the first causal comparison.
 
+<a id="spec-evaluation-model"></a>
+<!-- spec-id: EVALUATION.MODEL -->
 ### Model
 
 The P6 treatment uses one model selected from a predeclared, ordered model chain. The
@@ -115,6 +117,8 @@ Latency reporting remains end-to-end rather than hiding setup cost. Record separ
 
 Token usage, billed cost, and all latency components are measured outcomes rather than normalized away. Added graph context/tool calls must pay their actual overhead.
 
+<a id="spec-evaluation-pre-p6"></a>
+<!-- spec-id: EVALUATION.PRE-P6 -->
 ### Pre-P6 frozen artifacts
 
 Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, the five version-controlled contract artifacts, the model chain, and the complete HarnessX runtime environment must be frozen:
@@ -380,6 +384,8 @@ The 95% confidence interval for a proceeding experiment is a **percentile task b
 - interval: empirical 2.5th and 97.5th percentiles using NumPy `quantile(..., method="linear")`;
 - no BCa/basic/studentized alternative is substituted for the primary analysis.
 
+<a id="spec-evaluation-bootstrap-rng"></a>
+<!-- spec-id: EVALUATION.BOOTSTRAP-RNG -->
 #### BOOTSTRAP-RNG
 
 After exclusions, sort the retained tasks by `instance_id` in ascending Unicode code-point order; IDs must be unique. Use comparison columns in the fixed order `(B-A, C-B)`. Each task contributes its three binary resolved outcomes per configuration, in A/B/C order.
@@ -595,6 +601,8 @@ Infrastructure-invalid attempts are reported separately from valid agent outcome
 
 Evaluator/task stability and candidate-patch stability are handled separately below so an agent-produced flaky patch cannot remove an unfavorable task from the paired analysis.
 
+<a id="spec-evaluation-preflight"></a>
+<!-- spec-id: EVALUATION.PREFLIGHT -->
 ### Task/evaluator preflight
 
 Before any measured A/B/C agent run for a primary task:
@@ -623,6 +631,8 @@ The following decision table is normative. The required-evaluation retry policy 
 
 `EVALUATOR_INVALID`, `EVALUATOR_UNSTABLE`, and `BASELINE_INVALID` are patch-independent preflight exclusions applied **before measured agent runs begin**. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs and exclusion reason, report the reduced denominator, and do not replace the task.
 
+<a id="spec-evaluation-measured-evaluation"></a>
+<!-- spec-id: EVALUATION.MEASURED-EVALUATION -->
 ### Measured candidate patches
 
 For **every measured candidate patch**, regardless of its first outcome:

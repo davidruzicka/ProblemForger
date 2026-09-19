@@ -38,7 +38,7 @@ No single global evidence-strength enum defines truth.
 
 Worker claims cannot establish trusted provenance. The service assigns trusted provenance only through an approved evidence-producing integration; evidence used by governance is bound to the exact immutable subject checked and the checker version. A change in subject content does not inherit the previous result. Durable decision data must preserve the normalized evidence actually consumed, independently of optional telemetry.
 
-The operational rules are [EVIDENCE-TRUST, EVIDENCE-BINDING, and EVIDENCE-RECOVERY](../verification.md#evidence-trust). Harness adapters translate observations but do not decide evidence policy.
+The operational rules are [EVIDENCE-TRUST, EVIDENCE-BINDING, and EVIDENCE-RECOVERY](../verification.md#spec-verification-evidence-trust). Harness adapters translate observations but do not decide evidence policy.
 
 ## Consequences
 

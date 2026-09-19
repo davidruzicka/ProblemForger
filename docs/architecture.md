@@ -24,7 +24,7 @@ ProblemGraph -> Governor -> durable journal   TelemetrySink
      +-- EventStore port
 ```
 
-The worker/harness may propose changes. It does not own authoritative graph state. Local enforcement follows [STORE-OWNER](protocol.md#store-owner) and [EVIDENCE-TRUST](verification.md#evidence-trust); a separate process alone is not a security boundary.
+The worker/harness may propose changes. It does not own authoritative graph state. Local enforcement follows [STORE-OWNER](protocol.md#spec-protocol-store-owner) and [EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust); a separate process alone is not a security boundary.
 
 ProblemForger runs as a separate local process/service for the PoC. HarnessX and Pi use thin clients/adapters against the same service contract. This preserves a symmetric integration boundary even though HarnessX and the core are both Python.
 
@@ -74,15 +74,11 @@ The core also does **not** own model inference in the initial PoC. Model executi
 
 ### Application API
 
-The application layer exposes harness-neutral commands and queries such as:
-
-- create/start a ProblemForger run;
-- query run metadata and graph state or a bounded subgraph using explicit `run_id`;
-- propose a graph mutation against an expected graph version using explicit `run_id`;
-- attach/reference evidence;
-- query proposal status/outcome by `(run_id, proposal_id)`;
-- retrieve a bounded read-only governance/audit timeline derived from durable journal audit records, ordered by `journal_position`;
-- retrieve governor decisions and current graph version.
+The application layer exposes harness-neutral, run-scoped graph/proposal
+commands and bounded graph/audit queries. Operations carry an explicit
+`run_id`, and proposal status is keyed by `(run_id, proposal_id)`; the durable
+ordering and recovery semantics are defined by the [protocol
+contract](protocol.md#spec-protocol-proposal-recovery).
 
 The initial agent interaction uses this explicit API/tool surface rather than automatic full-graph prompt injection. This avoids introducing a context-selection subsystem before the graph/governance hypotheses have been tested.
 
@@ -90,34 +86,18 @@ See ADR 0008.
 
 ### Ports
 
-Introduce a port only when there is a real replaceable policy or infrastructure boundary.
-
-Initial ports:
-
-- `EventStore`;
-- `TelemetrySink`;
-- deterministic `Clock` / ID source only where tests or replay require injection.
-
-Later phases may introduce:
-
-- `Verifier`;
-- `Calibrator`;
-- `ModelSuitabilityEstimator`;
-- `ArtifactStore` if artifacts cannot remain external references;
-- `SnapshotStore` if replay performance demonstrates a need.
+The initial ports, provider responsibilities, and deferred-port policy are
+owned by [Modules](modules.md#spec-modules-eventstore-port). This architecture
+keeps only the boundary rule: introduce a port for a real replaceable policy or
+infrastructure boundary, not as a generic service locator.
 
 Do not add `ModelProvider` or `ContextSelector` to the initial core. The harness already owns model execution, and the initial PoC uses explicit graph queries instead of automatic context selection.
 
 ### Modules/adapters
 
-Concrete implementations of ports include:
-
-- event store: memory (ephemeral/test-only), SQLite (durable), later PostgreSQL;
-- telemetry: null/recording/JSONL or another sink;
-- verifier: later LLM judge or learned model;
-- calibration/routing: later experimental modules.
-
-Harness integrations are adapters to the service protocol, not provider modules inside the core.
+Concrete providers and their configuration are specified in [Modules](modules.md).
+Harness integrations are adapters to the service protocol, not provider modules
+inside the core.
 
 Harness-specific **raw trajectory archives** used for experiment reproducibility are also adapter/evaluation concerns, not core concerns. HarnessX and Pi may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
 
@@ -125,24 +105,8 @@ Provider-specific configuration belongs to the provider module.
 
 ### Composition root and configuration
 
-A typed loader maps a capability + provider name to validated provider configuration and an explicit factory/registry entry.
-
-Example:
-
-```yaml
-schema_version: 1
-
-modules:
-  event_store:
-    provider: sqlite
-    config:
-      path: .problemforger/events.db
-
-  telemetry:
-    provider: jsonl
-    config:
-      path: .problemforger/telemetry.jsonl
-```
+A typed loader maps a capability and provider name to validated configuration
+and an explicit factory/registry entry, as defined in [Modules](modules.md).
 
 Core code receives implementations of ports, never raw provider configuration.
 
@@ -158,15 +122,10 @@ G_v = fold(complete mutation batches with graph_version <= v)
 
 If a mutation based on `G_v` emits multiple graph events, every event in that atomic batch is tagged `graph_version = v + 1`; there is no addressable state containing only a prefix of that batch.
 
-Graph-changing commits use optimistic compare-and-append against `graph_version`:
-
-```text
-append_graph(stream_id, proposal_id, expected_claim_epoch,
-             expected_graph_version=v, audit_records=[...], graph_events=[...])
-    -> {last_journal_position, new_graph_version}
-    OR VersionConflict
-    OR STALE_CLAIM
-```
+Graph-changing commits use the canonical `append_graph` operation from the
+[EventStore port](modules.md#spec-modules-eventstore-port), with optimistic
+comparison against `graph_version` and the active-claim preconditions in the
+[protocol contract](protocol.md#spec-protocol-proposal-recovery).
 
 Audit-only records can be appended without advancing `graph_version`.
 
