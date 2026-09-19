@@ -190,7 +190,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - exact workspace setup/startup procedure and finite setup/startup timeouts, patch extraction, result serialization, and complete harness-specific raw trajectory capture/serialization shared by A/B/C;
    - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task immutable-image resolution/cache policy;
    - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
-   - the `INFRA_TASK_ARTIFACT` classifier is limited to immutable missing/corrupt/schema-incompatible task input in configuration-neutral preflight; it cannot classify transient network, image, runtime, harness, provider, or resource failures as task exclusions;
+   - the `INFRA_TASK_ARTIFACT` classifier follows the intrinsic-defect and infrastructure-precedence rules in Task-artifact preflight exclusions below;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
    - no ProblemForger graph/governance behavior;
 2. **`graph-intervention-v1`**
@@ -754,9 +754,16 @@ The following decision table is normative. The required-evaluation retry policy 
 
 The frozen benchmark adapter may additionally emit `INFRA_TASK_ARTIFACT` only during
 configuration-neutral, patch-independent preflight, before `N` is computed and before
-the measured schedule is hashed. This reason is restricted to deterministic evidence
-that the immutable task input is missing, corrupt, or schema-incompatible before any
-model execution. Network/image-pull failures, runtime or harness startup failures,
+the measured schedule is hashed. This reason requires an intrinsic defect in
+successfully retrieved, digest-verified task content: a required input within that
+content is missing, corrupt, or schema-incompatible before any model execution.
+Unavailable image content takes precedence over `INFRA_TASK_ARTIFACT`: a missing
+mirror/cache object, inaccessible immutable image, or transport/storage corruption
+that prevents digest verification follows `EVAL_IMAGE_SETUP` during preflight, with
+the existing evaluator retry budget and experiment-wide stop on exhaustion. These
+failures cannot change `N`, even if only one task is affected; inability to retrieve
+verified content is not evidence of an intrinsic defect.
+Network/image-pull failures, runtime or harness startup failures,
 provider failures, and resource exhaustion are transient/shared infrastructure and
 must not be relabeled as task invalidity.
 

@@ -142,6 +142,20 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("If all 3 attempts fail", whole_run)
         self.assertIn("stop launching new measured schedule slots", whole_run)
 
+    def test_unavailable_images_cannot_be_task_artifact_exclusions(self):
+        evaluation = read("docs/evaluation.md")
+        artifact = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("### Measured candidate patches", 1)[0]
+        normalized = " ".join(artifact.split())
+        for phrase in (
+            "intrinsic defect in successfully retrieved, digest-verified task content",
+            "Unavailable image content takes precedence over `INFRA_TASK_ARTIFACT`",
+            "`EVAL_IMAGE_SETUP`",
+            "missing mirror/cache object",
+            "cannot change `N`",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
     def test_harness_runtime_is_fully_content_addressed(self):
         evaluation = read("docs/evaluation.md")
         runtime = evaluation.split("7. **`harnessx-runtime-v1`**\n", 1)[1].split("All five contract artifacts", 1)[0]
