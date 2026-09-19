@@ -85,6 +85,16 @@ class SpecificationChecks(unittest.TestCase):
                     self.assertTrue("claim_ttl_ms" in match[1], "Provider must receive a TTL")
                     self.assertFalse("lease_expires_at_ms" in match[1], "Caller cannot set provider time")
 
+    def test_expired_claim_cannot_finalize_or_renew(self):
+        protocol = read("docs/protocol.md")
+        lease = protocol.split("#### LEASE-CLOCK\n", 1)[1].split("#### Proposal recovery responses", 1)[0]
+        self.assertIn("an expired claim is no longer active", lease)
+        self.assertIn("renewal of an expired claim fails `STALE_CLAIM`", lease)
+        self.assertIn("lease_expires_at_ms > lease_now_ms", lease)
+        self.assertIn("before any final decision or graph mutation", lease)
+        self.assertIn("current, unexpired claim", read("docs/adr/0006-authoritative-domain-events-and-stream-concurrency.md"))
+        self.assertIn("expired claim as inactive", read("docs/modules.md"))
+
     def test_every_graph_append_signature_requires_fencing(self):
         for path in (ROOT / "docs").rglob("*.md"):
             for match in re.finditer(r"\bappend_graph\((.*?)\)", path.read_text(), re.S):

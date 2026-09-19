@@ -50,7 +50,7 @@ P1 permits one live EventStore provider instance per durable store. All concurre
 
 Lease deadlines use a restart-stable time domain rather than persisted process-monotonic timestamps. The operational ownership and clock algorithms have one normative home: [STORE-OWNER and LEASE-CLOCK](../protocol.md#store-owner). Concurrent provider instances require an amendment to this ADR and a coherent shared-time contract before they are supported.
 
-A new worker may atomically claim an unclaimed/expired proposal and increments the epoch. Final decision append or graph commit must atomically validate the current claim epoch; a stale worker receives `STALE_CLAIM` and cannot append a decision or mutate graph state.
+A new worker may atomically claim an unclaimed/expired proposal and increments the epoch. Final decision append or graph commit must atomically validate both the current claim epoch and an unexpired lease (`lease_expires_at_ms > lease_now_ms`); a stale or expired worker receives `STALE_CLAIM` and cannot append a decision or mutate graph state. Renewal cannot revive an expired claim.
 
 If safe resumption is impossible because the producing schema/policy/runtime is unavailable or the durable request is invalid, the current claimant may append terminal operational status `ABANDONED` with a reason. This is not a governance outcome and never changes graph state.
 
@@ -80,9 +80,9 @@ append_graph(stream_id, proposal_id, expected_claim_epoch,
   | STALE_CLAIM
 ```
 
-A successful `append_graph` atomically appends its audit and graph records, assigns the same `new_graph_version` to every graph-changing event in that batch, and makes that version addressable only after the complete batch is durable.
+A successful `append_graph` atomically verifies the current, unexpired claim before appending its audit and graph records, assigns the same `new_graph_version` to every graph-changing event in that batch, and makes that version addressable only after the complete batch is durable.
 
-Non-terminal audit records can be appended independently and do not participate in graph-version comparison. Proposal terminal records are different: they require the current claim epoch, including non-commit decisions and `ABANDONED`, so a stale worker cannot create a second terminal state.
+Non-terminal audit records can be appended independently and do not participate in graph-version comparison. Proposal terminal records are different: they require the current, unexpired claim and its epoch, including non-commit decisions and `ABANDONED`, so a stale or expired worker cannot create a second terminal state.
 
 There is no required global order across independent run journals.
 

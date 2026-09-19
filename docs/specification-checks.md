@@ -52,7 +52,7 @@ P1/P3/P6 issues retain responsibility for real persistence, isolation, evidence,
 
 ## Follow-up review regression evidence
 
-Three added document checks failed on the previous head (six failing subcases): caller-provided claim/renewal deadlines, optional or omitted graph-append fencing, and unspecified bootstrap stream allocation. They pass after the contract corrections. The complete suite now has 15 Python tests and 11 workflow-script tests.
+Three added document checks failed on the previous head (six failing subcases): caller-provided claim/renewal deadlines, optional or omitted graph-append fencing, and unspecified bootstrap stream allocation. They pass after the contract corrections. The complete suite now has 16 Python tests and 11 workflow-script tests.
 
 The three new Python contract checks (ordered model-chain exhaustion, complete
 HarnessX runtime identity, and mandatory completion of the other evaluator
@@ -61,4 +61,9 @@ event-aware diff range) were red on the preceding PR head; they pass on the curr
 head. This red-to-green record covers the newly fixed review findings and is still
 documentation/test evidence, not proof of live provider behavior.
 
-The bootstrap fixtures fix the full index-matrix digest and both confidence intervals for every permitted retained task count. The reference sorts tasks, initializes once, draws once, and shares the draw across ordered comparisons. A separate scalar calculation verified the interval reductions for N=8 and N=12. P1 provider tests must still prove transactional TTL calculation and rejection of missing/stale fencing; document checks are not a substitute for those runtime tests.
+The expiry-before-reclaim lease check was also red before the latest protocol fix:
+the previous contract checked only `claim_epoch`, not an active unexpired lease.
+It now requires an atomic `lease_expires_at_ms > lease_now_ms` check for renewal,
+finalization, and graph append, and passes in the current 16-test suite.
+
+The bootstrap fixtures fix the full index-matrix digest and both confidence intervals for every permitted retained task count. The reference sorts tasks, initializes once, draws once, and shares the draw across ordered comparisons. A separate scalar calculation verified the interval reductions for N=8 and N=12. P1 provider tests must still prove transactional TTL calculation, expiry-before-reclaim rejection, and rejection of missing/stale fencing; document checks are not a substitute for those runtime tests.

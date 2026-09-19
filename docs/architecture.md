@@ -43,7 +43,7 @@ The journal contains two classes of durable records:
 
 Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
 
-A governance outcome is not returned to the harness as completed until its durable decision record has been appended. Proposal receipts persist the normalized/versioned request needed for recovery. If a process fails after recording a proposal but before recording a final outcome, the journal exposes an incomplete proposal rather than silently losing it. Incomplete work is resumed under a finite processing lease with monotonic claim-epoch fencing; stale workers cannot finalize after a newer claim exists.
+A governance outcome is not returned to the harness as completed until its durable decision record has been appended. Proposal receipts persist the normalized/versioned request needed for recovery. If a process fails after recording a proposal but before recording a final outcome, the journal exposes an incomplete proposal rather than silently losing it. Incomplete work is resumed under a finite processing lease with monotonic claim-epoch fencing; finalization also requires the matching claim to remain unexpired, so stale or expired workers cannot finalize even before a newer claim exists.
 
 ### Observation/telemetry events
 
@@ -165,13 +165,14 @@ append_graph(stream_id, proposal_id, expected_claim_epoch,
              expected_graph_version=v, audit_records=[...], graph_events=[...])
     -> {last_journal_position, new_graph_version}
     OR VersionConflict
+    OR STALE_CLAIM
 ```
 
 Audit-only records can be appended without advancing `graph_version`.
 
 For a successful commit, the final `MutationDecision(COMMIT)` audit record and all graph-changing events from that proposal must be durable as one atomic batch. The batch advances `graph_version` once, from `v` to `v + 1`.
 
-For non-commit outcomes, the final decision record is appended durably before the service returns that outcome. Proposal finalization also validates the current processing-claim epoch so restart/concurrent recovery cannot create two terminal decisions. If an optimistic graph append reports a version conflict, the application must append `MutationDecision(CONFLICT)` before returning `CONFLICT`; failure to persist that decision is a service/persistence failure, not a completed governance outcome.
+For non-commit outcomes, the final decision record is appended durably before the service returns that outcome. Proposal finalization atomically validates the current processing-claim epoch and an unexpired lease so restart/concurrent recovery cannot create two terminal decisions or allow a paused worker to finalize after expiry. If an optimistic graph append reports a version conflict, the application must append `MutationDecision(CONFLICT)` before returning `CONFLICT`; failure to persist that decision is a service/persistence failure, not a completed governance outcome.
 
 There is no required global order across independent runs.
 

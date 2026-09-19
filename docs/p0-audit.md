@@ -140,6 +140,7 @@ No production implementation or P6 measured execution was added by these amendme
 - A measured candidate evaluator missing-vector result cannot skip its other mandatory fresh-environment repetition unless an experiment-wide stop applies.
 - Review automation pins its write-capable action by full commit SHA and grants only `issues: write`; specification whitespace checks validate the event's actual PR/push range.
 - The changed-files inventory includes the workflow and all regression fixtures/tests, and the new checks were red on the preceding head and green after these fixes.
+- Lease fencing now rejects finalization, graph append, and renewal after expiry even when no reclaim has created a newer epoch; the provider check is atomic and returns `STALE_CLAIM`.
 
 ## Unresolved decisions
 

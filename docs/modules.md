@@ -73,6 +73,7 @@ Requirements:
 
 - enforce the [proposal identity/recovery contract](protocol.md#proposal-identity-idempotency-and-recovery), including atomic receipt uniqueness and fenced terminalization;
 - obey [STORE-OWNER and LEASE-CLOCK](protocol.md#store-owner); service startup refuses a second owner before state access;
+- treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
 - generic audit append without a claim epoch cannot create proposal terminal records;
 - assign monotonic per-run `journal_position` to every durable record;
 - atomically compare graph version and append the final decision plus graph events as one complete mutation batch under ADR 0006;
@@ -208,6 +209,7 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - crash-after-receipt recovery using a new claim epoch;
 - concurrent recovery claim where only one worker owns the current epoch;
 - stale-worker finalization/graph append rejected with no partial writes;
+- current-but-expired-worker finalization/graph append and expired-claim renewal rejected before reclaim, with no partial writes;
 - missing/null proposal identity or fencing epoch rejected before a graph append;
 - claim/renewal deadlines computed from provider time plus validated TTL, independent of caller time, with invalid TTL/overflow leaving claim and floor unchanged;
 - terminal `ABANDONED` recovery status without graph mutation;
