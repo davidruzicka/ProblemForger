@@ -3,28 +3,57 @@
 ## Boundaries
 
 ```text
-Harness
-  |
-  v
-Harness adapter
-  |
-  v
-ProblemForger protocol
-  |
-  v
-+----------------------- Core -----------------------+
-|                                                     |
-| ProblemGraph -> Governor -> decisions               |
-|      ^             ^                                |
-|      |             +-- evidence/verifier ports      |
-|      |                                              |
-|      +-- event store / snapshot ports               |
-|                                                     |
-| module/config registry supplies port implementations|
-+-----------------------------------------------------+
+Agent harness (HarnessX / Pi / ...)
+            |
+       thin adapter
+            |
+   versioned service protocol
+            |
+    ProblemForger process
+            |
+  +---------+------------------------------+
+  |                                        |
+  | application API                       | observation API
+  |                                        |
+  v                                        v
+ProblemGraph -> Governor -> durable journal   TelemetrySink
+     ^             |              |
+     |             |              +-- graph-changing domain events
+     |             +-- proposal/decision audit records
+     |
+     +-- EventStore port
 ```
 
-The worker/harness may propose changes. It does not own authoritative graph state.
+The worker/harness may propose changes. It does not own authoritative graph state. Local enforcement follows [STORE-OWNER](protocol.md#spec-protocol-store-owner) and [EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust); a separate process alone is not a security boundary.
+
+ProblemForger runs as a separate local process/service for the PoC. HarnessX and Pi use thin clients/adapters against the same service contract. This preserves a symmetric integration boundary even though HarnessX and the core are both Python.
+
+## Durable journal and observation plane
+
+ProblemForger separates durable governance/audit history from optional harness telemetry.
+
+### Durable run journal
+
+Every run has one append-only journal persisted through `EventStore`.
+
+The journal contains two classes of durable records:
+
+- **governance audit records** — proposal receipt plus final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
+- **graph-changing domain events** — committed node/edge/evidence/lifecycle changes that reconstruct the ProblemGraph.
+
+Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
+
+A governance outcome is not returned to the harness as completed until its durable decision record has been appended. Proposal receipts persist the normalized/versioned request needed for recovery. If a process fails after recording a proposal but before recording a final outcome, the journal exposes an incomplete proposal rather than silently losing it. Incomplete work is resumed under a finite processing lease with monotonic claim-epoch fencing; finalization also requires the matching claim to remain unexpired, so stale or expired workers cannot finalize even before a newer claim exists.
+
+### Observation/telemetry events
+
+Harness lifecycle events, model calls, tool calls, token/cost measurements, and adapter diagnostics are useful for evaluation and UI, but are not the governance audit log and are not required for graph replay.
+
+They flow through `TelemetrySink` and may reference durable journal records through correlation/causation identifiers.
+
+Telemetry may be disabled without losing authoritative graph state or governance outcomes.
+
+See ADR 0006.
 
 ## Layers
 
@@ -34,102 +63,116 @@ Contains:
 
 - graph domain types;
 - graph mutation semantics;
-- lifecycle and provenance;
+- entity lifecycle and provenance;
 - governance policy interfaces;
-- event definitions;
+- durable governance audit-record and graph-domain-event definitions;
 - pure replay/projection logic.
 
 It must not depend on SQLite, PostgreSQL, a specific model API, HarnessX, Pi, a UI framework, or provider-specific settings.
 
+The core also does **not** own model inference in the initial PoC. Model execution remains a harness responsibility. Later routing asks the harness to select a model; it does not move inference into the core.
+
+### Application API
+
+The application layer exposes harness-neutral, run-scoped graph/proposal
+commands and bounded graph/audit queries. Operations carry an explicit
+`run_id`, and proposal status is keyed by `(run_id, proposal_id)`; the durable
+ordering and recovery semantics are defined by the [protocol
+contract](protocol.md#spec-protocol-proposal-recovery).
+
+The initial agent interaction uses this explicit API/tool surface rather than automatic full-graph prompt injection. This avoids introducing a context-selection subsystem before the graph/governance hypotheses have been tested.
+
+See ADR 0008.
+
 ### Ports
 
-Stable contracts for replaceable capabilities. Likely ports include:
+The initial ports, provider responsibilities, and deferred-port policy are
+owned by [Modules](modules.md#spec-modules-eventstore-port). This architecture
+keeps only the boundary rule: introduce a port for a real replaceable policy or
+infrastructure boundary, not as a generic service locator.
 
-- `EventStore`;
-- `SnapshotStore` when needed;
-- `Verifier`;
-- `Calibrator`;
-- `ModelProvider`;
-- `ModelSuitabilityEstimator`;
-- `ContextSelector`;
-- `TelemetrySink`;
-- `ArtifactStore`;
-- `Clock` / ID generation where determinism matters.
-
-A port is introduced only when there is a real replaceable policy/infrastructure boundary.
+Do not add `ModelProvider` or `ContextSelector` to the initial core. The harness already owns model execution, and the initial PoC uses explicit graph queries instead of automatic context selection.
 
 ### Modules/adapters
 
-Concrete implementations of ports:
+Concrete providers and their configuration are specified in [Modules](modules.md).
+Harness integrations are adapters to the service protocol, not provider modules
+inside the core.
 
-- event store: memory, SQLite, later PostgreSQL;
-- verifier: deterministic composition, LLM judge, learned model;
-- telemetry: JSONL, OpenTelemetry or another sink;
-- harness integration: HarnessX, Pi.
+Harness-specific **raw trajectory archives** used for experiment reproducibility are also adapter/evaluation concerns, not core concerns. HarnessX and Pi may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
 
 Provider-specific configuration belongs to the provider module.
 
-### Configuration/module loader
+### Composition root and configuration
 
-A typed loader maps a capability + provider name to a validated provider configuration and factory.
+A typed loader maps a capability and provider name to validated configuration
+and an explicit factory/registry entry, as defined in [Modules](modules.md).
 
-Example:
+Core code receives implementations of ports, never raw provider configuration.
 
-```yaml
-modules:
-  event_store:
-    provider: sqlite
-    config:
-      path: .problemforger/events.db
+Provider lookup is explicit. The PoC does not dynamically import arbitrary classes from configuration strings.
 
-  telemetry:
-    provider: jsonl
-    config:
-      path: .problemforger/events.jsonl
-```
+## Event sourcing and audit persistence
 
-Core code receives an implementation of a port, never raw provider configuration.
-
-## Event sourcing
-
-The event log is authoritative. Current graph state is a projection.
+The run journal is ordered by `journal_position`. `graph_version` identifies complete committed graph states, not individual events. Current graph state is the projection of complete mutation batches through version `v`:
 
 ```text
-G_t = fold(events[0:t])
+G_v = fold(complete mutation batches with graph_version <= v)
 ```
 
-This provides:
+If a mutation based on `G_v` emits multiple graph events, every event in that atomic batch is tagged `graph_version = v + 1`; there is no addressable state containing only a prefix of that batch.
 
-- replay;
-- provenance;
-- time travel;
-- graph diffs;
-- reproducible training examples;
-- later invalidation without rewriting history.
+Graph-changing commits use the canonical `append_graph` operation from the
+[EventStore port](modules.md#spec-modules-eventstore-port), with optimistic
+comparison against `graph_version` and the active-claim preconditions in the
+[protocol contract](protocol.md#spec-protocol-proposal-recovery).
 
-Snapshots may be added as an optimization but may not become the source of truth.
+Audit-only records can be appended without advancing `graph_version`.
+
+For a successful commit, the final `MutationDecision(COMMIT)` audit record and all graph-changing events from that proposal must be durable as one atomic batch. The batch advances `graph_version` once, from `v` to `v + 1`.
+
+For non-commit outcomes, the final decision record is appended durably before the service returns that outcome. Proposal finalization atomically validates the current processing-claim epoch and an unexpired lease so restart/concurrent recovery cannot create two terminal decisions or allow a paused worker to finalize after expiry. If an optimistic graph append reports a version conflict, the application must append `MutationDecision(CONFLICT)` before returning `CONFLICT`; failure to persist that decision is a service/persistence failure, not a completed governance outcome.
+
+There is no required global order across independent runs.
+
+Snapshots may be added later as a derived optimization but may not become the source of truth.
+
+See ADR 0006.
 
 ## Graph governor
 
 The governor evaluates proposed mutations using:
 
 1. schema and deterministic graph invariants;
-2. deterministic/external evidence;
-3. learned or LLM verification when necessary;
+2. relevant deterministic or externally observed evidence;
+3. later, learned/LLM verification when necessary;
 4. policy and uncertainty.
 
-Possible decisions:
+Possible outcomes are:
 
 - commit;
 - reject;
 - retry;
-- escalate.
+- escalate;
+- conflict when the proposal is based on a stale graph version.
+
+For the initial ablation:
+
+- configuration **B** exposes the explicit graph API with only schema/version/invariant checks required for a valid graph;
+- configuration **C** uses the same API and prompt surface but adds deterministic governance/evidence policy.
+
+This makes B→C the cleanest early estimate of governance contribution.
 
 ## Harness adapters
 
-Adapters normalize harness-specific lifecycle/events into ProblemForger concepts and translate decisions back.
+Adapters:
 
-Adapters should declare capabilities such as:
+- register or expose ProblemForger graph tools/commands to the worker;
+- normalize relevant harness observations into telemetry;
+- translate governor outcomes into harness actions;
+- declare capabilities.
+
+Candidate capabilities include:
 
 - can block tool call;
 - can inject context;
@@ -137,8 +180,28 @@ Adapters should declare capabilities such as:
 - can pause/resume;
 - can render native status UI.
 
-The core must not assume the least-common-denominator behavior of every harness.
+Adapters must not contain graph/governance policy.
+
+HarnessX currently exposes composable processors/event middleware and model/harness separation. Pi exposes TypeScript extensions with lifecycle/tool interception and custom TUI support. Exact capabilities are re-audited at their pinned revisions when P4/P5 begin.
+
+## Runtime language
+
+- ProblemForger core/service: Python 3.12+.
+- HarnessX adapter: Python client/processor.
+- Pi adapter: TypeScript extension/client.
+
+The transport is intentionally left for a bounded P1 decision. Changing transport must not change the domain/application protocol.
+
+See ADR 0009.
 
 ## UI
 
-UI consumes events/projections and is outside the correctness path. Native harness UI may expose a compact status. A later web observer may provide full provenance and timeline inspection.
+UI/observer clients are outside the correctness path and consume three read-only views:
+
+- optional normalized observation/telemetry events for model/tool/runtime activity;
+- graph projections for authoritative graph state;
+- a durable governance/audit timeline projection exposed through the application API from run-journal audit records.
+
+The audit timeline remains available even when telemetry is disabled and includes proposal receipts plus non-commit outcomes such as `REJECT`, `RETRY`, `ESCALATE`, and `CONFLICT`. Observers must use the service/application read API rather than access `EventStore` directly.
+
+Native harness UI may expose compact status. A later web observer may combine graph state, durable governance provenance, and optional telemetry for full timeline inspection.

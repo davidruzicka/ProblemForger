@@ -1,0 +1,2 @@
+# Reference environment for the frozen P6 bootstrap, not a core dependency.
+numpy==2.3.5

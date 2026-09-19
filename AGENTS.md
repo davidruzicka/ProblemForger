@@ -24,19 +24,30 @@ Do not silently override a higher-authority source. If an implementation need co
 ## Architectural invariants
 
 - ProblemForger core is harness-neutral.
+- ProblemForger core/application logic runs behind the same separate local service boundary for HarnessX and Pi.
 - Harness adapters contain translation/integration logic only, never domain policy.
 - The worker model is not the authority for graph state.
-- Authoritative state is reconstructable from an append-only event log.
+- Each run has an append-only durable run journal. Governance proposals/outcomes and graph-changing domain events are durable records; harness/model/tool observations remain optional telemetry.
+- Every durable journal record has a monotonic `journal_position`; each committed mutation batch advances `graph_version` exactly once, and all graph-changing events in that batch share the resulting version.
+- Authoritative graph state is reconstructable from the graph-changing records in the durable journal.
+- Harness/model/tool observations are telemetry and must not be required for graph replay or auditability.
+- Every externally returned governance outcome (`COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`) must be durably recorded before the response is considered complete.
+- Durable proposal receipts must contain enough normalized/versioned input for restart recovery; processing claims use finite leases and monotonic fencing epochs so stale workers cannot finalize. Persisted lease deadlines use the restart-stable lease-time domain from `docs/protocol.md`, never raw process-monotonic timestamps.
+- Each run uses optimistic graph-version checks for graph-changing writes; stale writes fail explicitly rather than silently overwriting.
+- Mutation outcome, entity lifecycle, and evidence-derived verification status are separate concepts.
+- Evidence origin and verification method are separate metadata; no single evidence-strength enum defines truth.
+- The initial PoC uses explicit graph query/mutation tools rather than an automatic context selector.
+- Model inference remains a harness responsibility in the initial PoC.
 - Replaceable infrastructure and policies are accessed through explicit ports/interfaces.
 - Core code must not import or instantiate concrete providers.
-- Concrete providers are selected through typed configuration.
+- Concrete providers are selected through typed configuration and an explicit registry/composition root.
 - Provider-specific configuration must not leak into core/domain code.
-- In-memory and SQLite are initial persistence adapters, not special cases.
-- Prefer deterministic or externally observed evidence over learned verification.
+- In-memory and SQLite implement the same EventStore port, but durability is an explicit capability: memory is ephemeral/test-only, while normal service execution requires a durable provider such as SQLite.
+- Prefer mechanically reproducible or external evidence over worker self-assessment when they address the same claim, but keep evidence scope explicit.
 - Verifier output is evidence, not ground truth.
 - Root goals, anchors, governor policy, audit history, and verification thresholds must not be silently mutable by the worker agent.
-- UI is an observer of the event stream and must not be required for correctness.
-- Do not build a generic plugin framework unless an actual second implementation requires it.
+- UI is an observer of optional telemetry, graph projections, and read-only durable governance/audit projections; it must not be required for correctness or access EventStore directly.
+- Do not build a generic plugin framework unless a real requirement justifies it.
 
 ## Scope discipline
 
@@ -45,6 +56,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Routing is architecturally anticipated but not part of the first graph/governance PoC.
 - Avoid broad ontologies in the initial graph schema.
 - Avoid multi-agent complexity unless an experiment specifically requires it.
+- Do not introduce `ModelProvider`, `ContextSelector`, snapshots, or other future abstractions into P1 unless a current issue proves the need.
 - Prefer the smallest mechanism that can falsify or support the current hypothesis.
 
 ## Work procedure
@@ -66,18 +78,22 @@ For every behavioral change or bug fix:
 
 For research-facing changes:
 
-- preserve raw experimental data and configuration;
-- record model/provider/version where possible;
-- record random seeds when applicable;
-- distinguish measured results from interpretation;
-- do not replace negative results with a more favorable metric after the fact.
+- follow the normative [evaluation contract](docs/evaluation.md) for frozen artifacts, task exposure, attempt budgets, exclusions, metrics, and raw-data retention; do not duplicate those algorithms in instructions or issues;
+- do not change frozen research choices after observing results or pool different experiment versions;
+- preserve raw evidence and distinguish measured results from interpretation, including null/negative results;
+- keep harness-native trajectories adapter-owned; only normalized observations cross core boundaries;
+- follow [STORE-OWNER and LEASE-CLOCK](docs/protocol.md#spec-protocol-store-owner) for persistence and [EVIDENCE-TRUST through EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-trust) for evidence;
+- all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
+
+Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.
 
 ## Issues and planning
 
 High-level issues are epics. Before implementing an epic, decompose it into bounded sub-issues with:
 
+- context;
 - scope;
-- non-scope;
+- explicit non-scope;
 - dependencies;
 - acceptance criteria;
 - verification evidence.
@@ -91,3 +107,17 @@ A PR should explain:
 - how it was verified;
 - whether architecture/specification changed;
 - what remains explicitly out of scope.
+
+Architecture-changing implementation discoveries require an ADR proposal before the implementation silently adopts a new direction.
+
+
+## Pull-request review loop
+
+For pull requests labeled `review-loop`, follow `docs/review-loop.md`.
+
+In particular:
+
+- automatically fix and verify mechanical/consistency defects that do not change accepted architecture or the frozen research contract;
+- stop for human input before accepting architecture, ADR, experiment-design, benchmark, primary-metric, or other research-method changes with multiple defensible choices;
+- reply in the original review thread and resolve it only after the fix is present;
+- continue until the latest review covers the current head and no valid unresolved thread remains.
