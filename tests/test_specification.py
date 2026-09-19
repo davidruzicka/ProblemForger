@@ -92,6 +92,8 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("renewal of an expired claim fails `STALE_CLAIM`", lease)
         self.assertIn("lease_expires_at_ms > lease_now_ms", lease)
         self.assertIn("before any final decision or graph mutation", lease)
+        self.assertIn("lease_clock_generation", lease)
+        self.assertIn("earlier generation is treated as expired/inactive", lease)
         self.assertIn("current, unexpired claim", read("docs/adr/0006-authoritative-domain-events-and-stream-concurrency.md"))
         self.assertIn("expired claim as inactive", read("docs/modules.md"))
 

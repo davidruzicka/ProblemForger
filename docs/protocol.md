@@ -109,13 +109,14 @@ Concurrent workers still use atomic proposal claims, fencing epochs, and graph-v
 Lease expiry uses a **restart-stable lease-time domain**, never a process-local monotonic timestamp persisted directly:
 
 - the durable EventStore persists a per-store `lease_clock_floor_ms`;
-- on provider/service open, sample UTC Unix time in milliseconds and set `lease_clock_anchor_ms = max(persisted lease_clock_floor_ms, sampled_utc_ms)`; also capture a process-local monotonic anchor;
+- the durable EventStore persists a per-store `lease_clock_floor_ms` and `lease_clock_generation`;
+- after acquiring store ownership, provider/service open atomically increments `lease_clock_generation`, samples UTC Unix time in milliseconds, and sets `lease_clock_anchor_ms = max(persisted lease_clock_floor_ms, sampled_utc_ms)`; it also captures a process-local monotonic anchor;
 - during that provider instance, compute `lease_now_ms = lease_clock_anchor_ms + elapsed_monotonic_ms`; later wall-clock jumps do not move lease time backward or forward;
 - every claim/renew/expiry transaction atomically advances persisted `lease_clock_floor_ms` to at least the transaction's `lease_now_ms`;
 - persisted `lease_expires_at_ms` is expressed in this lease-time domain as `lease_now_ms + claim_ttl_ms`;
 - claim and renewal accept `claim_ttl_ms`, never a caller-supplied deadline; the owning EventStore samples its own lease clock and computes the deadline inside the same atomic transaction that validates/updates the claim and advances the persisted floor. Renewal is accepted only while the matching claim is still active and unexpired;
 - TTL is a positive integer number of milliseconds validated against typed service configuration; invalid TTLs or deadline overflow fail without changing claim or floor state. The provider must not use caller/process timestamps as its clock source;
-- after restart, the new anchor starts at least at the persisted floor and advances from a fresh monotonic anchor, so a lease left by a dead prior process cannot remain busy indefinitely even if the host wall clock moved backward;
+- after restart, the new anchor starts at least at the persisted floor and advances from a fresh monotonic anchor. Every claim records the provider `lease_clock_generation`; a claim from an earlier generation is treated as expired/inactive immediately, cannot be renewed or finalized, and must be reclaimed under a new epoch. This conservative recovery rule prevents a backward wall-clock jump plus repeated restarts from reviving a dead claim indefinitely;
 - a wall clock that is ahead of the persisted floor may move the restart anchor forward and make an old lease expire sooner; claim-epoch fencing still prevents the superseded owner from finalizing, while the expiry check independently prevents a current-but-expired owner from finalizing.
 
 Every active claim also has an `owner_id` unique to the service/worker incarnation and a monotonically increasing `claim_epoch`. The service assigns or authenticates that owner identity at the application boundary; a worker cannot choose an arbitrary identity to impersonate another claimant, and a `PENDING` response does not disclose the active owner's identity.

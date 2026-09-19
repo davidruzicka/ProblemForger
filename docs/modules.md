@@ -89,6 +89,7 @@ Requirements:
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and fenced terminalization;
 - obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
+- claims owned by a previous provider `lease_clock_generation` are inactive on reopen and require a new recovery claim epoch; restart must not revive them by moving lease time backward;
 - generic audit append without both expected owner and claim epoch cannot create proposal terminal records;
 - terminal audit and graph appends must atomically match both the service-assigned claim owner and claim epoch; a claim epoch alone is not sufficient authority;
 - assign monotonic per-run `journal_position` to every durable record;
