@@ -39,7 +39,7 @@ node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The Python suite executes the normative bootstrap reference against golden synthetic fixtures for N=8..12, verifies input-order and RNG-state isolation, and checks invalid inputs. It also checks the corrected specification boundaries, including predeclared model/fallback behavior, content-addressed runtime identity, candidate-patch failure classification, durable run registration, owner-plus-epoch fencing, non-rewindable lease recovery across provider generations, mandatory completion of both evaluator repetitions unless an experiment-wide stop applies, the absence of the obsolete mandatory third control, single normative homes for the lease-clock and EventStore port contracts, mapped requirement anchors, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
+The Python suite executes the normative bootstrap reference against golden synthetic fixtures for N=8..12, verifies input-order and RNG-state isolation, and checks invalid inputs. It also checks the corrected specification boundaries, including predeclared model/fallback behavior, content-addressed runtime identity, conditional native-generation controls and the separate harness-comparison contract, frozen continuation/sensitivity rules, pre-measurement task-artifact exclusions, candidate-patch failure classification, durable run registration, owner-plus-epoch fencing, non-rewindable lease recovery across provider generations, mandatory completion of both evaluator repetitions unless an experiment-wide stop applies, the absence of the obsolete mandatory third control, single normative homes for the lease-clock and EventStore port contracts, mapped requirement anchors, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
 
 In CI, the whitespace check uses the actual event range: pull requests compare the base and head SHAs, while pushes compare the event's previous and current SHAs. The checkout fetches complete history so both endpoints are available; a new-branch push falls back to the new commit's parent.
 
@@ -73,5 +73,11 @@ The expiry-before-reclaim lease check was also red before the latest protocol fi
 the previous contract checked only `claim_epoch`, not an active unexpired lease.
 It now requires an atomic `lease_expires_at_ms > lease_now_ms` check for renewal,
 finalization, and graph append. The regression check passes after that fix.
+
+The methodology regression checks now pin the practical-effect decision boundaries
+and secondary sensitivity calculations, reject silent temperature fallback, keep
+harness comparison separate from P6, and constrain task-artifact exclusions to the
+pre-measurement common-task freeze. These checks protect the contract wording; they
+do not substitute for adapter capability probes or live harness/evaluator tests.
 
 The bootstrap fixtures fix the full index-matrix digest and both confidence intervals for every permitted retained task count. The reference sorts tasks, initializes once, draws once, and shares the draw across ordered comparisons. A separate scalar calculation verified the interval reductions for N=8 and N=12. P1 provider tests must still prove transactional TTL calculation, expiry-before-reclaim rejection, and rejection of missing/stale fencing; document checks are not a substitute for those runtime tests.

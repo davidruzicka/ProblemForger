@@ -55,6 +55,93 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("new blinded task selection", model)
         self.assertIn("Models are never mixed", model)
 
+    def test_p6_temperature_capability_is_frozen_and_harness_comparison_is_separate(self):
+        evaluation = read("docs/evaluation.md")
+        model = evaluation.split("### Model\n", 1)[1].split("### Separate harness-comparison experiment\n", 1)[0]
+        comparison = evaluation.split("### Separate harness-comparison experiment\n", 1)[1].split("### Agent budget\n", 1)[0]
+
+        self.assertIn("temperature=0", model)
+        self.assertIn("capability probe", model)
+        self.assertIn("chain entry is\nunavailable", model)
+        self.assertIn("do not silently omit the field", model)
+
+        for phrase in (
+            "separate project-level experiment",
+            "Never pool `P6-HARNESS-v1` results",
+            "exploratory only",
+            "new blinded task selection",
+            "same model identifier",
+            "not semantic equivalence",
+            "generation-policy-v1",
+            "EXPLICIT(value)",
+            "OMITTED_NATIVE",
+            "UNSUPPORTED",
+            "UNKNOWN",
+            "absence from a request is not evidence",
+            "do not emulate it",
+            "interleaved harness/configuration schedule",
+            "difference-in-differences",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, comparison)
+
+    def test_continuation_and_sensitivity_rules_are_frozen(self):
+        evaluation = read("docs/evaluation.md")
+        interpretation = evaluation.split("### Frozen continuation and interpretation rule\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
+
+        for phrase in (
+            "delta = 10",
+            "U < -delta",
+            "L > delta",
+            "L >= -delta",
+            "U <= delta",
+            "Equality at either boundary",
+            "REDESIGN",
+            "PRACTICALLY_NULL",
+            "ADVANCE_P7",
+            "B-A point estimate is at least `+delta`",
+            "B-A lower\n  bound is greater than `-delta`",
+            "C-B lower bound is greater than `-delta`",
+            "No\nanalyst may choose a different threshold",
+            "SENSITIVITY_DISCORDANT",
+            "zero effects fixed",
+            "all `2^m` assignments",
+            "inclusive tail `abs(T*) >= abs(T_observed)`",
+            "replicate-disagreement rate",
+            "leave-one-repetition-out",
+            "Do not select a favorable omitted replicate",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, interpretation)
+        self.assertNotIn("does not exclude material harm", interpretation)
+
+    def test_task_artifact_exclusion_is_pre_measurement_only(self):
+        evaluation = read("docs/evaluation.md")
+        artifact = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("<a id=\"spec-evaluation-measured-evaluation\">", 1)[0]
+
+        for phrase in (
+            "`INFRA_TASK_ARTIFACT`",
+            "configuration-neutral, patch-independent preflight",
+            "before `N` is computed",
+            "before\nthe measured schedule is hashed",
+            "missing, corrupt, or schema-incompatible",
+            "Network/image-pull failures",
+            "must not be relabeled as task invalidity",
+            "every A/B/C\nconfiguration and all three repetitions",
+            "with no replacement task",
+            "after the first measured slot starts",
+            "INCOMPLETE_INFRASTRUCTURE",
+            "unknown/mixed",
+            "post-semantic failure",
+            "does not exclude the task",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, artifact)
+
+        whole_run = evaluation.split("### Whole-agent-run replacement\n", 1)[1].split("### Evaluator infrastructure retries\n", 1)[0]
+        self.assertIn("If all 3 attempts fail", whole_run)
+        self.assertIn("stop launching new measured schedule slots", whole_run)
+
     def test_harness_runtime_is_fully_content_addressed(self):
         evaluation = read("docs/evaluation.md")
         runtime = evaluation.split("7. **`harnessx-runtime-v1`**\n", 1)[1].split("All five contract artifacts", 1)[0]

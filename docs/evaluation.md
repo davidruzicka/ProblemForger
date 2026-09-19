@@ -38,7 +38,7 @@ Primary P6 harness:
 - HarnessX
 - pinned revision: `bf5f199ee65034d55db0c536e582f1e7c8abf669`
 
-P6 is intentionally single-harness. Pi is used later as an independent portability check rather than mixed into the first causal comparison.
+P6 is intentionally single-harness. Pi is used later as an independent portability check rather than mixed into the first causal comparison. A project-level harness comparison is a separate frozen experiment described below; its whole-stack results are never pooled with P6.
 
 <a id="spec-evaluation-model"></a>
 <!-- spec-id: EVALUATION.MODEL -->
@@ -61,6 +61,16 @@ Primary P6 model (the first chain entry):
 - `max_tokens=16384` per model response;
 - `temperature=0`;
 - same provider/model settings for A, B, and C.
+
+The explicit `temperature=0` setting is part of this pinned HarnessX treatment, not an
+assumption about other harnesses. Before task exposure, the benchmark adapter must run
+a non-task capability probe in the pinned HarnessX environment and verify that the
+setting is accepted and effective (or that the provider exposes an equivalent
+verifiable acknowledgement). If it cannot be verified, this chain entry is
+unavailable; do not silently omit the field, emulate it, or infer an undocumented
+default. The frozen model-chain rule then selects the next predeclared entry before
+exposure, or terminates the experiment if no entry remains. Record the probe request,
+result, evidence, and environment/configuration hashes in the run manifest.
 
 From chain freeze until the first measured run starts, a model-unavailability event
 consumes the next unused chain entry in order, subject to the frozen provider
@@ -87,6 +97,55 @@ after the first measured run starts, do not select a fallback or regenerate an
 already-started run; apply the frozen provider/whole-run retry policy to the affected
 schedule slots and stop/report the experiment only if that policy's experiment-wide
 stop condition is reached. Models are never mixed within one v1 comparison.
+
+### Separate harness-comparison experiment
+
+`P6-HARNESS-v1` is a separate project-level experiment for comparing complete
+harness/provider stacks on the same frozen task manifest. It must be frozen before
+any task in that manifest is exposed for the comparison. If the design is created
+after P6 outcomes on an already exposed manifest, it is exploratory only; it must
+not be presented as a confirmatory comparison, and a confirmatory version requires
+a new blinded task selection. Never pool `P6-HARNESS-v1` results with the single-
+harness P6 estimate.
+
+The estimand is the whole packaged system, not an isolated CLI feature. Freeze and
+record, per harness, the prompts and tool surface, context/compaction behavior,
+retry and timeout policy, model/provider/deployment revision, native generation
+controls, runtime/dependency identity, and environment. The same model identifier
+or nominal effort value is not semantic equivalence across harnesses. Where hidden
+reasoning or token caps cannot be observed and enforced identically, do not claim an
+equal token budget; match the observable wall-clock and environment constraints and
+report the remaining difference as part of the estimand.
+
+Generation controls are adapter-scoped. Freeze the per-harness records as a
+content-addressed `generation-policy-v1` artifact before task exposure and record its
+hash in the experiment manifest. For every requested control, record the
+requested value, status, serialized request (when observable), effective value (only
+when the interface reports one), source/evidence, configuration/environment
+precedence, and relevant version/configuration hashes. Use these statuses:
+
+- `EXPLICIT(value)` — the control was serialized and the pinned interface accepted
+  it, with evidence of the effective value;
+- `OMITTED_NATIVE` — the control was intentionally not serialized and native
+  behavior was selected; absence from a request is not evidence of a particular
+  default, so the effective value remains `UNKNOWN` unless the interface reports it;
+- `UNSUPPORTED` — a capability probe or rejected request establishes that the
+  requested control is unavailable; do not emulate it with another control;
+- `UNKNOWN` — capability or effective behavior cannot be established.
+
+For a harness that does not support `temperature`, request `temperature=0` only in
+the capability probe, omit it from measured calls, and record `UNSUPPORTED`; never
+record an inferred zero or silently call native defaults equivalent to zero. If the
+project deliberately chooses native behavior instead, record `OMITTED_NATIVE` and
+keep the effective value unknown unless the runtime reports it. Documentation may
+support the record only with a pinned retrieval/version hash; it cannot replace an
+observed capability/effective-value check.
+
+Freeze an interleaved harness/configuration schedule, use the same task-level
+repetitions and evaluator contract, and retain adapter-owned native trajectories.
+A 2×3 harness-by-A/B/C design may report within-harness ablations and a
+difference-in-differences interaction, but it does not isolate a harness-only causal
+effect unless all non-harness factors are actually controlled.
 
 ### Agent budget
 
@@ -131,6 +190,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - exact workspace setup/startup procedure and finite setup/startup timeouts, patch extraction, result serialization, and complete harness-specific raw trajectory capture/serialization shared by A/B/C;
    - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task immutable-image resolution/cache policy;
    - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
+   - the `INFRA_TASK_ARTIFACT` classifier is limited to immutable missing/corrupt/schema-incompatible task input in configuration-neutral preflight; it cannot classify transient network, image, runtime, harness, provider, or resource failures as task exclusions;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
    - no ProblemForger graph/governance behavior;
 2. **`graph-intervention-v1`**
@@ -366,7 +426,9 @@ d_i(B-A) = r_i(B) - r_i(A)
 d_i(C-B) = r_i(C) - r_i(B)
 ```
 
-Let `N` be the number of primary tasks retained after patch-independent preflight exclusions.
+Let `N` be the number of primary tasks retained after all patch-independent preflight
+exclusions, including the frozen task-artifact rule below. Compute it once before the
+measured schedule is materialized; no measured outcome may change the task set.
 
 - If `N < 8` (fewer than two thirds of the planned 12-task primary set), classify the experiment as `INSUFFICIENT_VALID_TASKS`. This threshold is frozen before measured outcomes and prevents a materially smaller retained sample from silently being treated as the planned P6 experiment. Do not start measured A/B/C agent runs, do not report a primary point estimate, and do not compute a primary confidence interval. Preserve/report the manifest, all preflight outputs, exclusions, and the retained-task count.
 - If `8 <= N <= 12`, proceed with the frozen measured experiment. The reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
@@ -433,6 +495,62 @@ def bootstrap_primary(tasks):
 `ci_pp` has lower/upper-bound rows and B−A/C−B columns. The synthetic fixtures in `tests/fixtures/bootstrap-v1.json` cover every retained N from 8 through 12; they contain no selected P6 task data. Integer success-count differences divided by `3*N` are algebraically the declared mean paired task effect.
 
 With only 12 tasks before exclusions, this is a PoC effect estimate, not strong population-level evidence. Avoid binary "significant/not significant" claims.
+
+### Frozen continuation and interpretation rule
+
+Before task exposure, set `delta = 10` percentage points. This is a human-approved
+minimum practical effect for this pilot, not a quantity estimated from P6 outcomes.
+For a 95% interval `[L, U]` for either contrast, classify it in this precedence order:
+
+- `MATERIAL_HARM` when `U < -delta`;
+- `PRACTICAL_BENEFIT` when `L > delta`;
+- `PRACTICAL_EQUIVALENCE` when `L >= -delta` and `U <= delta`;
+- `INCONCLUSIVE` otherwise.
+
+Equality at either boundary belongs to equivalence when the full interval is inside
+`[-delta, +delta]`; it is not a benefit or harm claim. The experiment-level action is
+also frozen in precedence order:
+
+- `REDESIGN` if either B-A or C-B is `MATERIAL_HARM`;
+- `PRACTICALLY_NULL` if both contrasts are `PRACTICAL_EQUIVALENCE`;
+- `ADVANCE_P7` only if the B-A point estimate is at least `+delta`, the B-A lower
+  bound is greater than `-delta`, and the C-B lower bound is greater than `-delta`;
+- `INCONCLUSIVE` otherwise.
+
+The `ADVANCE_P7` rule is a pilot progression signal, not confirmatory inference; the
+95% intervals are marginal and carry no multiplicity guarantee. A materially harmful
+contrast requires redesign of the affected intervention. A practically null result
+is reportable and carries no benefit claim. An inconclusive result creates no positive
+claim and requires a new blinded experiment before promoting the intervention. No
+analyst may choose a different threshold, interval rule, or precedence after outcomes
+are known. Record `delta`, the interval labels, and the action rule in the immutable
+experiment manifest before task exposure.
+
+### Frozen sensitivity analyses
+
+`temperature=0` (when supported) does not make an end-to-end trajectory deterministic.
+The three fresh repetitions estimate trajectory and evaluator variability; replicate
+labels are schedule blocks, not independent task units. Freeze these secondary
+analyses before task exposure:
+
+1. For each contrast, run an exact two-sided paired sign-permutation test on the
+   task-level `d_i` values. Keep zero effects fixed, flip the signs of the `m`
+   nonzero effects over all `2^m` assignments, use `abs(mean(d))` as the statistic,
+   and count the inclusive tail `abs(T*) >= abs(T_observed)`. Report the unadjusted
+   diagnostic p-value separately; it never replaces the bootstrap or drives the
+   continuation rule. This sensitivity result relies on the paired sign-exchangeability
+   assumption and is not a new primary claim.
+2. For each configuration, report the task-level replicate-disagreement rate: the
+   fraction of included tasks whose three binary outcomes are not all equal.
+3. For each `k ∈ {1,2,3}`, remove replicate ordinal `k` from A/B/C for every task,
+   recompute both point effects, and report all three leave-one-repetition-out
+   estimates plus sign agreement with the primary point estimate (`zero` is a distinct
+   sign). Do not select a favorable omitted replicate.
+
+If primary and sensitivity conclusions disagree, label the result
+`SENSITIVITY_DISCORDANT`; do not reinterpret the P7 gate and require a new blinded
+replication for a positive claim. Record the exact sensitivity algorithm and its
+version/hash in the experiment manifest before task exposure.
 
 ### Secondary end-to-end metrics
 
@@ -632,6 +750,31 @@ The following decision table is normative. The required-evaluation retry policy 
 
 `EVALUATOR_INVALID`, `EVALUATOR_UNSTABLE`, and `BASELINE_INVALID` are patch-independent preflight exclusions applied **before measured agent runs begin**. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs and exclusion reason, report the reduced denominator, and do not replace the task.
 
+### Task-artifact preflight exclusions
+
+The frozen benchmark adapter may additionally emit `INFRA_TASK_ARTIFACT` only during
+configuration-neutral, patch-independent preflight, before `N` is computed and before
+the measured schedule is hashed. This reason is restricted to deterministic evidence
+that the immutable task input is missing, corrupt, or schema-incompatible before any
+model execution. Network/image-pull failures, runtime or harness startup failures,
+provider failures, and resource exhaustion are transient/shared infrastructure and
+must not be relabeled as task invalidity.
+
+An `INFRA_TASK_ARTIFACT` exclusion removes that entire task from every A/B/C
+configuration and all three repetitions, with no replacement task. Retain the raw
+artifact, classifier output, and evidence digest. Apply the exclusion once while the
+common task set is being frozen; recompute `N` and the schedule hash, then apply the
+existing `N < 8` stop before measured runs begin. Operators may not add, remove, or
+reinterpret a task after the first measured slot starts or after observing outcomes.
+
+If immutable task invalidity is discovered late, its scope is disputed, or the cause
+is unknown/mixed, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop before
+launching another measured slot, preserve all artifacts, and report no primary
+estimate or confidence interval. A post-semantic failure that is not task-artifact
+invalidity remains an unresolved schedule slot; it does not exclude the task or
+authorize regeneration. Repeated generic pre-semantic failures in one schedule slot
+therefore retain the experiment-level stop rule below.
+
 <a id="spec-evaluation-measured-evaluation"></a>
 <!-- spec-id: EVALUATION.MEASURED-EVALUATION -->
 ### Measured candidate patches
@@ -699,6 +842,8 @@ Track explicitly:
 - routing selection bias;
 - prompt/tool/interface confounding;
 - differing harness capabilities;
+- native harness/provider generation defaults and unsupported controls;
+- trajectory nondeterminism and prompt sensitivity despite deterministic sampling controls;
 - provider or benchmark infrastructure failures;
 - cherry-picking peak runs.
 
@@ -713,6 +858,7 @@ For every schedule slot and every whole-run attempt, retain:
 - effective redacted configuration;
 - harness version/commit;
 - provider/model identifier and relevant settings;
+- requested/effective generation controls with `EXPLICIT`, `OMITTED_NATIVE`, `UNSUPPORTED`, or `UNKNOWN` status, capability/effective-value evidence, and configuration/environment precedence;
 - `model-chain-v1` hash, selected chain index, exact selected model identity, and every exhausted chain entry;
 - `harnessx-runtime-v1` hash, runtime image/archive digest, dependency-lockfile hash, interpreter/runtime version, and execution platform/architecture;
 - provider/API/model revision, deployment/build identifier, response-version header, or equivalent version metadata when exposed by the provider; record explicit `null/unavailable` when the provider exposes none;

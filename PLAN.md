@@ -119,6 +119,7 @@ See ADRs 0001–0009.
   - + learned verifier;
   - + calibration/abstention;
   - + routing;
+  - run the separate frozen harness-comparison experiment in `docs/evaluation.md` and never pool it with P6;
   - repeat across HarnessX and Pi where technically comparable;
   - re-audit and freeze an independent external-validity benchmark.
 
