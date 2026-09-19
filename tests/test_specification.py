@@ -138,6 +138,23 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("| NOT_FOUND", contract)
         self.assertIn("persist run registration before accepting proposals", module)
 
+        for operation in (
+            "record_proposal",
+            "claim_proposal",
+            "renew_claim",
+            "append_audit",
+            "append_graph",
+            "read_journal",
+            "current_graph_version",
+        ):
+            match = re.search(
+                rf"\b{operation}\(.*?\)\n    ->(?P<returns>.*?)(?=\n\n|\Z)",
+                contract,
+                re.S,
+            )
+            self.assertIsNotNone(match, operation)
+            self.assertIn("NOT_FOUND", match.group("returns"), operation)
+
     def test_terminal_writes_bind_claim_owner_and_epoch(self):
         module = read("docs/modules.md")
         protocol = read("docs/protocol.md")

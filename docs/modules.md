@@ -55,32 +55,39 @@ get_run(run_id)
 record_proposal(stream_id, proposal_id, request_hash, normalized_request, receipt_record)
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
+    | NOT_FOUND
 
 claim_proposal(stream_id, proposal_id, owner_id, claim_ttl_ms)
     -> CLAIMED {claim_epoch}
     | PENDING {claim_epoch, lease_expires_at_ms}
     | FINAL
     | ABANDONED
+    | NOT_FOUND
 
 renew_claim(stream_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
     -> RENEWED
     | STALE_CLAIM
+    | NOT_FOUND
 
 append_audit(stream_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
     -> last_journal_position
     | STALE_CLAIM
+    | NOT_FOUND
 
 append_graph(stream_id, proposal_id, expected_owner_id, expected_claim_epoch,
              expected_graph_version, audit_records[], graph_events[])
     -> {last_journal_position, new_graph_version}
     | VersionConflict
     | STALE_CLAIM
+    | NOT_FOUND
 
 read_journal(stream_id, after_journal_position?)
     -> ordered durable records
+    | NOT_FOUND
 
 current_graph_version(stream_id)
     -> graph_version
+    | NOT_FOUND
 ```
 
 Requirements:
