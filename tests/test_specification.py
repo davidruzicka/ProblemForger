@@ -104,7 +104,11 @@ class SpecificationChecks(unittest.TestCase):
         for path, signature in matches:
             with self.subTest(path=path, signature=signature):
                 args = signature[signature.index("(") + 1 : -1]
-                self.assertTrue("proposal_id" in args and "expected_claim_epoch" in args)
+                self.assertTrue(
+                    "proposal_id" in args
+                    and "expected_owner_id" in args
+                    and "expected_claim_epoch" in args
+                )
                 self.assertFalse("proposal_id?" in args or "expected_claim_epoch?" in args)
 
     def test_claim_operations_have_one_normative_home(self):
@@ -122,6 +126,25 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("PENDING {claim_epoch, lease_expires_at_ms}", module)
         self.assertNotIn("BUSY {claim_epoch, lease_expires_at_ms}", module)
         self.assertIn("expected_claim_epoch, claim_ttl_ms", module)
+
+    def test_eventstore_registers_runs_before_proposals(self):
+        module = read("docs/modules.md")
+        contract = module.split("Conceptual port contract:\n", 1)[1].split("```\n\nRequirements:", 1)[0]
+        self.assertIn("create_run(run_id, run_metadata)", contract)
+        self.assertIn("graph_version=0, last_journal_position=0", contract)
+        self.assertIn("get_run(run_id)", contract)
+        self.assertIn("| NOT_FOUND", contract)
+        self.assertIn("persist run registration before accepting proposals", module)
+
+    def test_terminal_writes_bind_claim_owner_and_epoch(self):
+        module = read("docs/modules.md")
+        protocol = read("docs/protocol.md")
+        audit = re.search(r"\bappend_audit\((.*?)\)", module, re.S).group(1)
+        graph = re.search(r"\bappend_graph\((.*?)\)", module, re.S).group(1)
+        self.assertIn("expected_owner_id", audit)
+        self.assertIn("expected_claim_epoch", audit)
+        self.assertIn("expected_owner_id", graph)
+        self.assertIn("both expected owner identity and claim epoch", protocol)
 
     def test_candidate_patch_failure_has_frozen_classification(self):
         evaluation = read("docs/evaluation.md")

@@ -44,7 +44,7 @@ Proposal receipt is also durable. Each proposal has a client-generated `proposal
 
 If the process terminates after a proposal is recorded but before a final decision is persisted, replay exposes an incomplete proposal rather than erasing it. The durable receipt stores the complete normalized request, not only its hash, so recovery does not depend on transient client state.
 
-Incomplete proposals are processed under a durable lease/claim with `owner_id`, monotonic `claim_epoch`, and finite expiry.
+Incomplete proposals are processed under a durable lease/claim with `owner_id`, monotonic `claim_epoch`, and finite expiry. Terminalization and graph append must match both claim dimensions; an epoch without the owner identity is not sufficient authority for an active proposal.
 
 P1 permits one live EventStore provider instance per durable store. All concurrent workers using that store share the instance and its lease clock. Opening another instance must fail before it can initialize a clock or access journal state; a crash must release ownership without manual lock-file deletion. This deliberately excludes concurrent service owners instead of introducing distributed clock coordination into the PoC.
 

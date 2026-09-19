@@ -44,6 +44,14 @@ provider must implement.
 Conceptual port contract:
 
 ```text
+create_run(run_id, run_metadata)
+    -> CREATED {graph_version=0, last_journal_position=0}
+    | EXISTING {run_metadata, graph_version, last_journal_position}
+
+get_run(run_id)
+    -> RUN {run_metadata, graph_version, last_journal_position}
+    | NOT_FOUND
+
 record_proposal(stream_id, proposal_id, request_hash, normalized_request, receipt_record)
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
@@ -58,11 +66,11 @@ renew_claim(stream_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms
     -> RENEWED
     | STALE_CLAIM
 
-append_audit(stream_id, records[], proposal_id?, expected_claim_epoch?)
+append_audit(stream_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
     -> last_journal_position
     | STALE_CLAIM
 
-append_graph(stream_id, proposal_id, expected_claim_epoch,
+append_graph(stream_id, proposal_id, expected_owner_id, expected_claim_epoch,
              expected_graph_version, audit_records[], graph_events[])
     -> {last_journal_position, new_graph_version}
     | VersionConflict
@@ -77,10 +85,12 @@ current_graph_version(stream_id)
 
 Requirements:
 
+- persist run registration before accepting proposals; `create_run` is idempotent, reopening preserves the registration and version-zero state, and every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and fenced terminalization;
 - obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
-- generic audit append without a claim epoch cannot create proposal terminal records;
+- generic audit append without both expected owner and claim epoch cannot create proposal terminal records;
+- terminal audit and graph appends must atomically match both the service-assigned claim owner and claim epoch; a claim epoch alone is not sufficient authority;
 - assign monotonic per-run `journal_position` to every durable record;
 - atomically compare graph version and append the final decision plus graph events as one complete mutation batch under ADR 0006;
 - audit-only writes never advance graph version; all graph events in a committed batch share one new version;

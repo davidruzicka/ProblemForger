@@ -27,6 +27,12 @@ Initial operations should cover:
 
 All run-scoped v1 commands and queries carry `run_id` explicitly. There is no ambient/session-selected run context in the domain/application protocol; a transport may maintain connections or sessions, but it must not infer or override the target run. Missing/unknown/mismatched `run_id` is an explicit protocol error.
 
+Run creation is durable and idempotent: `create_run(run_id, run_metadata)`
+registers an empty version-zero run before any proposal is accepted, and a
+repeat create returns the existing registration. Reopen/restart preserves that
+registration and its `graph_version = 0` / empty-journal state. No operation
+implicitly creates a run from an arbitrary ID; unknown runs return `NOT_FOUND`.
+
 The exact wire schema is finalized in P1.
 
 ### Observation plane
@@ -112,14 +118,14 @@ Lease expiry uses a **restart-stable lease-time domain**, never a process-local 
 - after restart, the new anchor starts at least at the persisted floor and advances from a fresh monotonic anchor, so a lease left by a dead prior process cannot remain busy indefinitely even if the host wall clock moved backward;
 - a wall clock that is ahead of the persisted floor may move the restart anchor forward and make an old lease expire sooner; claim-epoch fencing still prevents the superseded owner from finalizing, while the expiry check independently prevents a current-but-expired owner from finalizing.
 
-Every active claim also has an `owner_id` unique to the service/worker incarnation and a monotonically increasing `claim_epoch`.
+Every active claim also has an `owner_id` unique to the service/worker incarnation and a monotonically increasing `claim_epoch`. The service assigns or authenticates that owner identity at the application boundary; a worker cannot choose an arbitrary identity to impersonate another claimant, and a `PENDING` response does not disclose the active owner's identity.
 
 - claim TTL and renewal cadence are versioned typed service configuration and use the injected UTC + monotonic clock pair so behavior is testable/reproducible;
 - the claimant renews the lease while evaluating;
 - an expired claim is no longer active even if no reclaim has occurred; renewal of an expired claim fails `STALE_CLAIM` and cannot extend it;
 - an unclaimed proposal or a proposal whose claim lease has expired may be atomically claimed/reclaimed, incrementing `claim_epoch`;
-- every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`; every graph append requires both `proposal_id` and `expected_claim_epoch`, with no unfenced overload or default. Missing fields fail validation before any write. Run creation creates empty version-zero state; any initial graph content is committed through the same fenced proposal path;
-- the EventStore/application boundary atomically rejects a finalization or graph append unless the expected claim epoch still matches and `lease_expires_at_ms > lease_now_ms`; this active-claim check occurs before any final decision or graph mutation, and failure returns `STALE_CLAIM`;
+- every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected owner identity and `claim_epoch`; every graph append requires `proposal_id`, `expected_owner_id`, and `expected_claim_epoch`, with no unfenced overload or default. Missing fields fail validation before any write. Run creation creates empty version-zero state; any initial graph content is committed through the same fenced proposal path;
+- the EventStore/application boundary atomically rejects a finalization or graph append unless both expected owner identity and claim epoch match the active claim and `lease_expires_at_ms > lease_now_ms`; this active-claim check occurs before any final decision or graph mutation, and failure returns `STALE_CLAIM`;
 - governance evaluation before final append must not perform non-idempotent external side effects; any future side-effecting integration requires its own idempotency contract.
 
 The operation signatures are owned by the [EventStore port](modules.md#spec-modules-eventstore-port).
