@@ -331,7 +331,51 @@ The 95% confidence interval for a proceeding experiment is a **percentile task b
 - interval: empirical 2.5th and 97.5th percentiles using NumPy `quantile(..., method="linear")`;
 - no BCa/basic/studentized alternative is substituted for the primary analysis.
 
-If the implementation language differs, it must reproduce this procedure and seed semantics exactly or use a checked-in reference implementation/output fixture.
+#### BOOTSTRAP-RNG
+
+After exclusions, sort the retained tasks by `instance_id` in ascending Unicode code-point order; IDs must be unique. Use comparison columns in the fixed order `(B-A, C-B)`. Each task contributes its three binary resolved outcomes per configuration, in A/B/C order.
+
+Initialize one fresh `Generator(PCG64(0x505246365F423031))` per complete analysis. Its only random draw is one call to `integers(0, N, size=(100_000, N), dtype=np.int64, endpoint=False)`. Interpret the resulting matrix in row-major order: each row is one bootstrap sample. Both comparisons use the **shared** matrix; do not reseed per comparison, draw separate matrices, consume earlier random values, or distribute RNG draws across workers. Exclusions determine N before initialization; do not draw for 12 tasks and then filter indices. Each sampled task retains all three repetitions for A/B/C.
+
+The following executable reference fixes initialization, draw shape/dtype, reduction order, comparison order, and percentile calculation. NumPy 2.3.5 is the reference version. Other versions/languages must match the checked-in synthetic fixtures, including the SHA-256 of the complete shared index matrix serialized as little-endian signed int64 in C order. Numerical outputs must match within an absolute tolerance of 1e-12 percentage points (zero relative tolerance). This is analysis reference code, not a production benchmark runner.
+
+<!-- bootstrap-reference:start -->
+```python
+import hashlib
+import numpy as np
+
+
+def bootstrap_primary(tasks):
+    tasks = sorted(tasks, key=lambda task: task["instance_id"])
+    ids = [task["instance_id"] for task in tasks]
+    n = len(ids)
+    if not 8 <= n <= 12 or len(set(ids)) != n:
+        raise ValueError("Expected 8..12 retained tasks with unique IDs")
+    outcomes = np.asarray([task["resolved"] for task in tasks])
+    if outcomes.shape != (n, 3, 3) or not np.isin(outcomes, [0, 1]).all():
+        raise ValueError("Expected three binary repetitions for A/B/C")
+    counts = outcomes.astype(np.int64).sum(axis=2, dtype=np.int64)
+    differences = np.column_stack((counts[:, 1] - counts[:, 0],
+                                   counts[:, 2] - counts[:, 1]))
+    rng = np.random.Generator(np.random.PCG64(0x505246365F423031))
+    indices = rng.integers(0, n, size=(100_000, n),
+                           dtype=np.int64, endpoint=False)
+    scale = np.float64(100.0) / (3 * n)
+    sampled = differences[indices].sum(axis=1, dtype=np.int64) * scale
+    return {
+        "task_ids": ids,
+        "comparisons": ["B-A", "C-B"],
+        "indices_sha256": hashlib.sha256(
+            indices.astype("<i8", copy=False).tobytes(order="C")
+        ).hexdigest(),
+        "point_pp": (differences.sum(axis=0, dtype=np.int64) * scale).tolist(),
+        "ci_pp": np.quantile(sampled, [0.025, 0.975], axis=0,
+                             method="linear").tolist(),
+    }
+```
+<!-- bootstrap-reference:end -->
+
+`ci_pp` has lower/upper-bound rows and B−A/C−B columns. The synthetic fixtures in `tests/fixtures/bootstrap-v1.json` cover every retained N from 8 through 12; they contain no selected P6 task data. Integer success-count differences divided by `3*N` are algebraically the declared mean paired task effect.
 
 With only 12 tasks before exclusions, this is a PoC effect estimate, not strong population-level evidence. Avoid binary "significant/not significant" claims.
 

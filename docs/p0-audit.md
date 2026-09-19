@@ -129,6 +129,13 @@ The follow-up audit identified five issues and the user authorized their correct
 
 No production implementation or P6 measured execution was added by these amendments. The [check instructions](specification-checks.md) describe both reproducible verification and its limits.
 
+### Follow-up PR contract corrections
+
+- Claim/renewal inputs now carry TTL; the owning EventStore transaction computes deadlines under `LEASE-CLOCK`.
+- Every documented graph-append signature requires proposal identity and fencing epoch; initialization has no unfenced graph-write exception.
+- `BOOTSTRAP-RNG` fixes task order, one fresh generator and one shared draw matrix, comparison order, dtype, and reference arithmetic. Synthetic fixtures cover every retained N=8..12 without exposing P6 tasks.
+- The reproducible checks now include the numerical reference and the three previously failing contract checks; issues #8 and #16 carry implementation acceptance criteria.
+
 ## Unresolved decisions
 
 No unresolved decision blocks P1.

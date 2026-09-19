@@ -21,7 +21,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Check specification contracts and links
-        run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+        run: |
+          python3 -m venv "$RUNNER_TEMP/spec-checks-venv"
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m pip install -r tests/requirements.txt
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -B -m unittest discover -s tests -p 'test_*.py' -v
       - name: Test the review-request script without posting comments
         run: node --test tests/review-workflow.test.mjs
       - name: Check whitespace

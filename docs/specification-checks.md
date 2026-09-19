@@ -13,6 +13,7 @@ Accepted ADRs own architectural decisions. The operational specifications below 
 | Immutable evidence/subject binding | [EVIDENCE-BINDING](verification.md#evidence-binding) |
 | Evidence retention and restart behavior | [EVIDENCE-RECOVERY](verification.md#evidence-recovery) |
 | Provider port and contract-suite responsibilities | [Modules](modules.md) |
+| Bootstrap stream and reference computation | [BOOTSTRAP-RNG](evaluation.md#bootstrap-rng) |
 | P6 task selection, ordering, outcomes, metrics, and raw data | [Evaluation](evaluation.md) |
 | Review automation and human checkpoints | [Review loop](review-loop.md) |
 
@@ -20,15 +21,16 @@ Stable requirement IDs are section headings in the owning specification. A refer
 
 ## Run checks
 
-From the repository root, use Python 3.12+ and Node.js 18+; no package installation or credentials are needed:
+From the repository root, use Python 3.12+ in a virtual environment and Node.js 18+. The pinned NumPy dependency is only for the analysis reference checks; no credentials are needed:
 
 ```sh
+python3 -m pip install -r tests/requirements.txt
 python3 -B -m unittest discover -s tests -p 'test_*.py' -v
 node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The Python suite checks the corrected specification boundaries, the absence of the obsolete mandatory third control, a single home for the lease-clock algorithm, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
+The Python suite executes the normative bootstrap reference against golden synthetic fixtures for N=8..12, verifies input-order and RNG-state isolation, and checks invalid inputs. It also checks the corrected specification boundaries, the absence of the obsolete mandatory third control, a single home for the lease-clock algorithm, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
 
 The Node suite extracts and executes the actual inline script in the review-request workflow with a mocked GitHub client. It checks trusted-marker deduplication, spoofed/missing comments, new heads, pagination arguments, and API failure propagation. No comments or reviews are posted. It does not validate GitHub event delivery or prove that the external Codex integration accepts the bot's request.
 
@@ -44,3 +46,9 @@ Two reasoning fixtures motivate implementation tests:
 - **Preflight:** complete vectors `[fail, pass]` and `[pass, pass]` already establish instability. None of the four possible third binary vectors can make all vectors equal. A diagnostic infrastructure failure must not change the task result or abort the experiment. Test this in the benchmark adapter without opening any selected P6 task.
 
 P1/P3/P6 issues retain responsibility for real persistence, isolation, evidence, and evaluator behavior tests. A passing document check cannot replace those suites. Do not materialize or execute selected P6 tasks while adding these checks.
+
+## Follow-up review regression evidence
+
+Three added document checks failed on the previous head (six failing subcases): caller-provided claim/renewal deadlines, optional or omitted graph-append fencing, and unspecified bootstrap stream allocation. They pass after the contract corrections. The complete suite now has 12 Python tests and nine workflow-script tests.
+
+The bootstrap fixtures fix the full index-matrix digest and both confidence intervals for every permitted retained task count. The reference sorts tasks, initializes once, draws once, and shares the draw across ordered comparisons. A separate scalar calculation verified the interval reductions for N=8 and N=12. P1 provider tests must still prove transactional TTL calculation and rejection of missing/stale fencing; document checks are not a substitute for those runtime tests.

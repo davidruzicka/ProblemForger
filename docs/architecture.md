@@ -161,7 +161,8 @@ If a mutation based on `G_v` emits multiple graph events, every event in that at
 Graph-changing commits use optimistic compare-and-append against `graph_version`:
 
 ```text
-append_graph(expected_graph_version=v, audit_records=[...], graph_events=[...])
+append_graph(stream_id, proposal_id, expected_claim_epoch,
+             expected_graph_version=v, audit_records=[...], graph_events=[...])
     -> {last_journal_position, new_graph_version}
     OR VersionConflict
 ```

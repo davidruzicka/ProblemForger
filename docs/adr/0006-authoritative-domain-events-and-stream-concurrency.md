@@ -63,7 +63,7 @@ Graph-changing commits use optimistic comparison against `expected_graph_version
 Conceptually:
 
 ```text
-claim_proposal(stream_id, proposal_id, owner_id, lease_expires_at_ms)
+claim_proposal(stream_id, proposal_id, owner_id, claim_ttl_ms)
   -> CLAIMED {claim_epoch}
   | BUSY
   | FINAL

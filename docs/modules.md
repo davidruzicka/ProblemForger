@@ -42,13 +42,13 @@ record_proposal(stream_id, proposal_id, request_hash, normalized_request, receip
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
 
-claim_proposal(stream_id, proposal_id, owner_id, lease_expires_at_ms)
+claim_proposal(stream_id, proposal_id, owner_id, claim_ttl_ms)
     -> CLAIMED {claim_epoch}
     | BUSY {claim_epoch, lease_expires_at_ms}
     | FINAL
     | ABANDONED
 
-renew_claim(stream_id, proposal_id, owner_id, claim_epoch, lease_expires_at_ms)
+renew_claim(stream_id, proposal_id, owner_id, claim_epoch, claim_ttl_ms)
     -> RENEWED
     | STALE_CLAIM
 
@@ -56,7 +56,8 @@ append_audit(stream_id, records[], proposal_id?, expected_claim_epoch?)
     -> last_journal_position
     | STALE_CLAIM
 
-append_graph(stream_id, expected_graph_version, audit_records[], graph_events[], proposal_id?, expected_claim_epoch?)
+append_graph(stream_id, proposal_id, expected_claim_epoch,
+             expected_graph_version, audit_records[], graph_events[])
     -> {last_journal_position, new_graph_version}
     | VersionConflict
     | STALE_CLAIM
@@ -207,6 +208,8 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - crash-after-receipt recovery using a new claim epoch;
 - concurrent recovery claim where only one worker owns the current epoch;
 - stale-worker finalization/graph append rejected with no partial writes;
+- missing/null proposal identity or fencing epoch rejected before a graph append;
+- claim/renewal deadlines computed from provider time plus validated TTL, independent of caller time, with invalid TTL/overflow leaving claim and floor unchanged;
 - terminal `ABANDONED` recovery status without graph mutation;
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;

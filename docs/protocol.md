@@ -101,6 +101,8 @@ Lease expiry uses a **restart-stable lease-time domain**, never a process-local 
 - during that provider instance, compute `lease_now_ms = lease_clock_anchor_ms + elapsed_monotonic_ms`; later wall-clock jumps do not move lease time backward or forward;
 - every claim/renew/expiry transaction atomically advances persisted `lease_clock_floor_ms` to at least the transaction's `lease_now_ms`;
 - persisted `lease_expires_at_ms` is expressed in this lease-time domain as `lease_now_ms + claim_ttl_ms`;
+- claim and renewal accept `claim_ttl_ms`, never a caller-supplied deadline; the owning EventStore samples its own lease clock and computes the deadline inside the same atomic transaction that validates/updates the claim and advances the persisted floor;
+- TTL is a positive integer number of milliseconds validated against typed service configuration; invalid TTLs or deadline overflow fail without changing claim or floor state. The provider must not use caller/process timestamps as its clock source;
 - after restart, the new anchor starts at least at the persisted floor and advances from a fresh monotonic anchor, so a lease left by a dead prior process cannot remain busy indefinitely even if the host wall clock moved backward;
 - a wall clock that is ahead of the persisted floor may move the restart anchor forward and make an old lease expire sooner; claim-epoch fencing still prevents the superseded owner from finalizing.
 
@@ -109,7 +111,7 @@ Every active claim also has an `owner_id` unique to the service/worker incarnati
 - claim TTL and renewal cadence are versioned typed service configuration and use the injected UTC + monotonic clock pair so behavior is testable/reproducible;
 - the claimant renews the lease while evaluating;
 - an unclaimed proposal or a proposal whose claim lease has expired may be atomically claimed/reclaimed, incrementing `claim_epoch`;
-- every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`;
+- every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`; every graph append requires both `proposal_id` and `expected_claim_epoch`, with no unfenced overload or default. Missing fields fail validation before any write. Run creation creates empty version-zero state; any initial graph content is committed through the same fenced proposal path;
 - the EventStore/application boundary atomically rejects stale epochs with `STALE_CLAIM` before any graph mutation or final decision append;
 - governance evaluation before final append must not perform non-idempotent external side effects; any future side-effecting integration requires its own idempotency contract.
 

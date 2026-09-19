@@ -52,6 +52,28 @@ class SpecificationChecks(unittest.TestCase):
                 copies.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(copies, ["docs/protocol.md"])
 
+    def test_lease_commands_accept_ttl_not_caller_deadline(self):
+        for path in (ROOT / "docs").rglob("*.md"):
+            for match in re.finditer(r"\b(?:claim_proposal|renew_claim)\((.*?)\)", path.read_text(), re.S):
+                with self.subTest(path=str(path), signature=match[0]):
+                    self.assertTrue("claim_ttl_ms" in match[1], "Provider must receive a TTL")
+                    self.assertFalse("lease_expires_at_ms" in match[1], "Caller cannot set provider time")
+
+    def test_every_graph_append_signature_requires_fencing(self):
+        for path in (ROOT / "docs").rglob("*.md"):
+            for match in re.finditer(r"\bappend_graph\((.*?)\)", path.read_text(), re.S):
+                with self.subTest(path=str(path), signature=match[0]):
+                    args = match[1]
+                    self.assertTrue("proposal_id" in args and "expected_claim_epoch" in args)
+                    self.assertFalse("proposal_id?" in args or "expected_claim_epoch?" in args)
+
+    def test_bootstrap_has_one_shared_index_draw(self):
+        evaluation = read("docs/evaluation.md")
+        self.assertTrue("#### BOOTSTRAP-RNG" in evaluation, "Missing canonical RNG contract")
+        self.assertTrue("size=(100_000, n)" in evaluation, "Missing draw shape")
+        self.assertTrue("dtype=np.int64" in evaluation, "Missing integer dtype")
+        self.assertTrue("shared" in evaluation and "instance_id" in evaluation)
+
     def test_relative_document_links_resolve(self):
         for path in ROOT.rglob("*.md"):
             for target in re.findall(r"\]\(([^)]+)\)", path.read_text()):
