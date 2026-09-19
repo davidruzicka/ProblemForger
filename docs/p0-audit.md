@@ -135,6 +135,11 @@ No production implementation or P6 measured execution was added by these amendme
 - Every documented graph-append signature requires proposal identity and fencing epoch; initialization has no unfenced graph-write exception.
 - `BOOTSTRAP-RNG` fixes task order, one fresh generator and one shared draw matrix, comparison order, dtype, and reference arithmetic. Synthetic fixtures cover every retained N=8..12 without exposing P6 tasks.
 - The reproducible checks now include the numerical reference and the three previously failing contract checks; issues #8 and #16 carry implementation acceptance criteria.
+- The model treatment now uses a frozen ordered fallback chain; exhaustion after task exposure is terminal `INCOMPLETE_INFRASTRUCTURE` with no estimate and requires a new blinded experiment for any replacement.
+- The P6 runtime is frozen as a content-addressed HarnessX environment with an interpreter, transitive lockfile, immutable image/archive digest, and reproducible restore procedure; a HarnessX source commit alone is insufficient.
+- A measured candidate evaluator missing-vector result cannot skip its other mandatory fresh-environment repetition unless an experiment-wide stop applies.
+- Review automation pins its write-capable action by full commit SHA and grants only `issues: write`; specification whitespace checks validate the event's actual PR/push range.
+- The changed-files inventory includes the workflow and all regression fixtures/tests, and the new checks were red on the preceding head and green after these fixes.
 
 ## Unresolved decisions
 
@@ -150,25 +155,32 @@ The following are deliberately deferred and must not be silently decided inside 
 
 ## Files changed
 
-- `README.md`
-- `PLAN.md`
-- `AGENTS.md`
 - `.github/workflows/request-codex-review.yml`
+- `.github/workflows/specification-checks.yml`
+- `AGENTS.md`
+- `PLAN.md`
+- `README.md`
 - `docs/architecture.md`
-- `docs/modules.md`
-- `docs/problem-graph.md`
-- `docs/protocol.md`
-- `docs/verification.md`
-- `docs/evaluation.md`
-- `docs/risks.md`
-- `docs/related-work.md`
-- `docs/p0-audit.md`
-- `docs/review-loop.md`
 - `docs/adr/0003-ports-adapters-config-modules.md`
 - `docs/adr/0006-authoritative-domain-events-and-stream-concurrency.md`
 - `docs/adr/0007-separate-lifecycle-verification-and-evidence-axes.md`
 - `docs/adr/0008-explicit-agent-graph-api-for-initial-poc.md`
 - `docs/adr/0009-separate-local-process-service-boundary.md`
+- `docs/evaluation.md`
+- `docs/modules.md`
+- `docs/p0-audit.md`
+- `docs/problem-graph.md`
+- `docs/protocol.md`
+- `docs/risks.md`
+- `docs/related-work.md`
+- `docs/review-loop.md`
+- `docs/specification-checks.md`
+- `docs/verification.md`
+- `tests/fixtures/bootstrap-v1.json`
+- `tests/requirements.txt`
+- `tests/review-workflow.test.mjs`
+- `tests/test_bootstrap_reference.py`
+- `tests/test_specification.py`
 
 ## P1 readiness
 

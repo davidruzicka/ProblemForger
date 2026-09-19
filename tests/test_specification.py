@@ -44,6 +44,32 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("cannot abort the experiment", preflight)
         self.assertIn("diagnostic", preflight)
 
+    def test_model_chain_handles_post_exposure_exhaustion(self):
+        evaluation = read("docs/evaluation.md")
+        model = evaluation.split("### Model\n", 1)[1].split("### Agent budget", 1)[0]
+        self.assertIn("model-chain-v1", model)
+        self.assertIn("ordered model chain", model)
+        self.assertIn("MODEL_UNAVAILABLE_AFTER_EXPOSURE", model)
+        self.assertIn("INCOMPLETE_INFRASTRUCTURE", model)
+        self.assertIn("MODEL_UNAVAILABLE_BEFORE_EXPOSURE", model)
+        self.assertIn("new blinded task selection", model)
+        self.assertIn("Models are never mixed", model)
+
+    def test_harness_runtime_is_fully_content_addressed(self):
+        evaluation = read("docs/evaluation.md")
+        runtime = evaluation.split("7. **`harnessx-runtime-v1`**\n", 1)[1].split("All five contract artifacts", 1)[0]
+        self.assertIn("complete transitive dependency lockfile", runtime)
+        self.assertIn("repository@sha256:<digest>", runtime)
+        self.assertIn("mutable tags", runtime)
+        self.assertIn("HarnessX commit alone is not a sufficient runtime identity", evaluation)
+
+    def test_missing_candidate_vector_does_not_skip_other_repetition(self):
+        evaluation = read("docs/evaluation.md")
+        measured = evaluation.split("### Measured candidate patches\n", 1)[1].split("## Later verifier/calibration split", 1)[0]
+        self.assertIn("still execute and retain the other mandatory repetition", measured)
+        self.assertIn("unless an experiment-wide stop has already been triggered", measured)
+        self.assertNotIn("may still be retained/executed", measured)
+
     def test_lease_clock_algorithm_has_one_normative_home(self):
         # These formulas previously appeared in independently maintained copies.
         copies = []

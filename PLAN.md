@@ -90,7 +90,7 @@ See ADRs 0001–0009.
 
 - [ ] **P6 — Baseline and deterministic-governance experiment**
   - implement issue #8 against the normative [evaluation contract](docs/evaluation.md);
-  - freeze/hash the benchmark, graph intervention, governance, journal metrics, and telemetry metrics before exposing selected tasks;
+  - freeze/hash the benchmark, graph intervention, governance, journal metrics, telemetry metrics, ordered model chain, and complete HarnessX runtime before exposing selected tasks;
   - materialize the pinned task manifest and common execution schedule;
   - enforce the specified preflight, isolation, deadline, and retry/classification rules;
   - retain the required raw artifacts and compute the frozen paired outcomes and efficiency metrics;

@@ -14,6 +14,7 @@ Accepted ADRs own architectural decisions. The operational specifications below 
 | Evidence retention and restart behavior | [EVIDENCE-RECOVERY](verification.md#evidence-recovery) |
 | Provider port and contract-suite responsibilities | [Modules](modules.md) |
 | Bootstrap stream and reference computation | [BOOTSTRAP-RNG](evaluation.md#bootstrap-rng) |
+| P6 model selection and HarnessX runtime freeze | [Evaluation — Model](evaluation.md#model), [Pre-P6 frozen artifacts](evaluation.md#pre-p6-frozen-artifacts) |
 | P6 task selection, ordering, outcomes, metrics, and raw data | [Evaluation](evaluation.md) |
 | Review automation and human checkpoints | [Review loop](review-loop.md) |
 
@@ -30,9 +31,11 @@ node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The Python suite executes the normative bootstrap reference against golden synthetic fixtures for N=8..12, verifies input-order and RNG-state isolation, and checks invalid inputs. It also checks the corrected specification boundaries, the absence of the obsolete mandatory third control, a single home for the lease-clock algorithm, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
+The Python suite executes the normative bootstrap reference against golden synthetic fixtures for N=8..12, verifies input-order and RNG-state isolation, and checks invalid inputs. It also checks the corrected specification boundaries, including the predeclared model chain and post-exposure exhaustion rule, the content-addressed HarnessX runtime lock, mandatory completion of both candidate evaluator repetitions unless an experiment-wide stop applies, the absence of the obsolete mandatory third control, a single home for the lease-clock algorithm, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
 
-The Node suite extracts and executes the actual inline script in the review-request workflow with a mocked GitHub client. It checks trusted-marker deduplication, spoofed/missing comments, new heads, pagination arguments, and API failure propagation. No comments or reviews are posted. It does not validate GitHub event delivery or prove that the external Codex integration accepts the bot's request.
+In CI, the whitespace check uses the actual event range: pull requests compare the base and head SHAs, while pushes compare the event's previous and current SHAs. The checkout fetches complete history so both endpoints are available; a new-branch push falls back to the new commit's parent.
+
+The Node suite extracts and executes the actual inline script in the review-request workflow with a mocked GitHub client. It checks trusted-marker deduplication, spoofed/missing comments, new heads, pagination arguments, and API failure propagation. It also checks the pinned review action, least-privilege permissions, and the event-aware whitespace contract. No comments or reviews are posted. It does not validate GitHub event delivery or prove that the external Codex integration accepts the bot's request.
 
 The specification-checks workflow runs these commands with read-only repository permission and no repository secrets. The separate review-request workflow uses write permissions to post its review request. Its trusted `pull_request_target` context must never check out or execute PR-head code.
 
@@ -49,6 +52,13 @@ P1/P3/P6 issues retain responsibility for real persistence, isolation, evidence,
 
 ## Follow-up review regression evidence
 
-Three added document checks failed on the previous head (six failing subcases): caller-provided claim/renewal deadlines, optional or omitted graph-append fencing, and unspecified bootstrap stream allocation. They pass after the contract corrections. The complete suite now has 12 Python tests and nine workflow-script tests.
+Three added document checks failed on the previous head (six failing subcases): caller-provided claim/renewal deadlines, optional or omitted graph-append fencing, and unspecified bootstrap stream allocation. They pass after the contract corrections. The complete suite now has 15 Python tests and 11 workflow-script tests.
+
+The three new Python contract checks (ordered model-chain exhaustion, complete
+HarnessX runtime identity, and mandatory completion of the other evaluator
+repetition) and the two workflow checks (full action pin/least privilege and
+event-aware diff range) were red on the preceding PR head; they pass on the current
+head. This red-to-green record covers the newly fixed review findings and is still
+documentation/test evidence, not proof of live provider behavior.
 
 The bootstrap fixtures fix the full index-matrix digest and both confidence intervals for every permitted retained task count. The reference sorts tasks, initializes once, draws once, and shares the draw across ordered comparisons. A separate scalar calculation verified the interval reductions for N=8 and N=12. P1 provider tests must still prove transactional TTL calculation and rejection of missing/stale fencing; document checks are not a substitute for those runtime tests.

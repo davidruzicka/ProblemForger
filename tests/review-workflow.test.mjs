@@ -4,6 +4,10 @@ import test from 'node:test';
 
 // Execute the actual inline script. No GitHub requests are sent by these tests.
 const workflow = readFileSync(new URL('../.github/workflows/request-codex-review.yml', import.meta.url), 'utf8');
+const specificationWorkflow = readFileSync(
+  new URL('../.github/workflows/specification-checks.yml', import.meta.url),
+  'utf8',
+);
 const match = workflow.match(/^          script: \|\n((?: {12}[^\n]*\n|\n)*)/m);
 assert.ok(match, 'Expected the workflow inline script');
 const source = match[1].replace(/^ {12}/gm, '');
@@ -66,4 +70,22 @@ test('list failure is surfaced instead of posting a duplicate', async () => {
 test('comment failure is surfaced for a workflow retry', async () => {
   const error = new Error('create failed');
   await assert.rejects(invoke([], { createError: error }), (actual) => actual === error);
+});
+
+test('review workflow pins the GitHub Script action and uses least privilege', () => {
+  assert.match(
+    workflow,
+    /uses: actions\/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7/,
+  );
+  assert.match(workflow, /permissions:\n  issues: write\n(?!  pull-requests: write)/);
+});
+
+test('specification checks validate the actual event commit range', () => {
+  assert.match(specificationWorkflow, /fetch-depth: 0/);
+  assert.match(specificationWorkflow, /PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.match(specificationWorkflow, /PR_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+  assert.match(specificationWorkflow, /PUSH_BEFORE_SHA: \$\{\{ github\.event\.before \}\}/);
+  assert.match(specificationWorkflow, /PUSH_AFTER_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(specificationWorkflow, /git diff --check "\$PR_BASE_SHA\.\.\.\$PR_HEAD_SHA"/);
+  assert.match(specificationWorkflow, /git diff --check "\$PUSH_BEFORE_SHA" "\$PUSH_AFTER_SHA"/);
 });

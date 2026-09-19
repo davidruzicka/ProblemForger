@@ -42,7 +42,16 @@ P6 is intentionally single-harness. Pi is used later as an independent portabili
 
 ### Model
 
-Primary P6 model:
+The P6 treatment uses one model selected from a predeclared, ordered model chain. The
+chain is a frozen artifact (`model-chain-v1`) and is selected once for the complete
+A/B/C experiment, never independently per task, configuration, replicate, or retry.
+Before any selected task is exposed, `model-chain-v1` must contain the exact ordered
+entries (provider, model identifier, model/API revision or deployment when available,
+and all model-call settings) and its SHA-256 must be recorded in the run manifest.
+The first entry is the primary model below; every fallback entry must be explicitly
+named in that artifact. An unspecified model is never an implicit fallback.
+
+Primary P6 model (the first chain entry):
 
 - provider: Anthropic direct provider supported by HarnessX;
 - model: `claude-sonnet-4-6`;
@@ -51,7 +60,31 @@ Primary P6 model:
 - `temperature=0`;
 - same provider/model settings for A, B, and C.
 
-If this exact provider/model becomes unavailable before the first measured run, update this document **before** running the experiment and restart the A/B/C experiment contract with one replacement model. Do not mix models within the v1 comparison.
+From chain freeze until the first measured run starts, a model-unavailability event
+consumes the next unused chain entry in order, subject to the frozen provider
+availability/retry policy. This includes an entry that was selected earlier but
+becomes unavailable before measurement. The entry selected when that window closes
+is then locked for every A/B/C run. The same predeclared chain rule also applies after
+the task manifest or patch-independent preflight results have been exposed, so
+knowledge of the evaluation set cannot affect which fallback is selected. Record the
+selected chain index, exact effective model identity, and every exhausted entry in
+the run manifest.
+
+If all chain entries are unavailable after task-manifest or preflight exposure and
+before the first measured run, terminate the experiment as
+`INCOMPLETE_INFRASTRUCTURE` with terminal reason
+`MODEL_UNAVAILABLE_AFTER_EXPOSURE`. Preserve the exposed manifest, preflight outputs,
+availability attempts, and their raw evidence; report no primary point estimate or
+confidence interval; and do not edit the manifest or choose an unlisted model. To
+continue with another model, create a new experiment version and perform the complete
+pre-P6 freeze plus a new blinded task selection without using the exposed manifest or
+preflight results to select tasks. If the chain is exhausted before task-manifest
+exposure, fail materialization with `MODEL_UNAVAILABLE_BEFORE_EXPOSURE`; expose no
+selected task and report no measured result. If the selected model becomes unavailable
+after the first measured run starts, do not select a fallback or regenerate an
+already-started run; apply the frozen provider/whole-run retry policy to the affected
+schedule slots and stop/report the experiment only if that policy's experiment-wide
+stop condition is reached. Models are never mixed within one v1 comparison.
 
 ### Agent budget
 
@@ -84,7 +117,7 @@ Token usage, billed cost, and all latency components are measured outcomes rathe
 
 ### Pre-P6 frozen artifacts
 
-Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, five version-controlled artifacts must be frozen:
+Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, the five version-controlled contract artifacts, the model chain, and the complete HarnessX runtime environment must be frozen:
 
 1. **`benchmark-adapter-v1`**
    - exact code/configuration that bridges the pinned SWE-smith task source into the pinned HarnessX runtime;
@@ -124,9 +157,25 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - clock/latency boundaries and missing-observation handling;
    - aggregation rules and denominators for total end-to-end efficiency metrics and ProblemForger-attributed telemetry metrics.
 
-All five artifacts must be content-addressed (for example SHA-256) and their hashes recorded in every P6 run manifest.
+The following additional frozen artifacts are required before task exposure:
 
-Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the five artifacts.
+6. **`model-chain-v1`**
+   - the finite ordered list defined in the Model section above, including the exact provider/model/revision/settings for every primary and fallback entry;
+   - availability probing, selection, exhaustion, and experiment-stop reason codes;
+   - the rule that the first available entry is selected once for all A/B/C runs and cannot be replaced after the first measured run starts.
+7. **`harnessx-runtime-v1`**
+   - the exact HarnessX source revision above and the platform/architecture on which it runs;
+   - the exact interpreter/runtime version and the complete transitive dependency lockfile, including the frozen installation command;
+   - a content-addressed OCI image reference (`repository@sha256:<digest>`) or an equivalent immutable runtime archive digest containing the base image, system packages, native tools, and installed dependencies;
+   - all runtime configuration that can affect HarnessX behavior, with secrets excluded and secret sources/versioned interfaces identified;
+   - a deterministic build/restore procedure that fails rather than resolving mutable tags, floating dependency ranges, or an unverified cache.
+
+All five contract artifacts, `model-chain-v1`, and `harnessx-runtime-v1` must be
+content-addressed (for example SHA-256) and their hashes recorded in every P6 run
+manifest. Every A/B/C attempt must execute the recorded runtime image/archive and
+resolved lockfile; the HarnessX commit alone is not a sufficient runtime identity.
+
+Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the five contract artifacts, the model chain, or the runtime environment.
 
 Primary graph/governance metrics must be mechanically reproducible from the durable run journal plus the frozen `graph-metrics-v1` artifact. Ambiguous cases that the frozen rule cannot classify are reported as `UNRESOLVED` and are not manually reassigned into primary metric buckets after results are known.
 
@@ -145,7 +194,7 @@ Use a deterministic subset of the public SWE-smith dataset:
 
 SWE-smith provides executable software-engineering tasks with failing/passing tests. It is public training data, so this experiment must **not** be presented as an uncontaminated measurement of frontier coding capability. Its purpose here is paired mechanism comparison under executable ground truth.
 
-The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target `princeton-nlp/SWE-bench_Verified` / `test`; they are therefore **not** the P6 benchmark runner. P6 uses the frozen `benchmark-adapter-v1` to feed SWE-smith/`train` tasks into the pinned HarnessX runtime and to invoke evaluation consistently. The adapter may reuse pinned HarnessX runtime/harness entry points such as `make_swebench_harness`, but it owns dataset loading/evaluation plumbing. The same benchmark adapter hash is mandatory for A, B, and C.
+The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target `princeton-nlp/SWE-bench_Verified` / `test`; they are therefore **not** the P6 benchmark runner. P6 uses the frozen `benchmark-adapter-v1` to feed SWE-smith/`train` tasks into the content-addressed `harnessx-runtime-v1` and to invoke evaluation consistently. The adapter may reuse pinned HarnessX runtime/harness entry points such as `make_swebench_harness`, but it owns dataset loading/evaluation plumbing. The same benchmark adapter hash and runtime hash are mandatory for A, B, and C.
 
 ### Deterministic task selection
 
@@ -470,7 +519,7 @@ The benchmark adapter is experimental plumbing, not the treatment. Any adapter b
 
 ### Intervention freeze and parity
 
-The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the five pre-P6 artifacts above must be frozen **before** the selected P6 tasks are exposed.
+The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the five pre-P6 contract artifacts, `model-chain-v1`, and `harnessx-runtime-v1` must be frozen **before** the selected P6 tasks are exposed.
 
 For B→C, the `graph-intervention-v1` hash must be identical. The only intentional B→C difference is activation of `governance-policy-v1`.
 
@@ -539,6 +588,7 @@ For each required control/candidate evaluation repetition:
 - once candidate/control repository tests have started executing, evaluator/test failure is not retrospectively reclassified as retryable infrastructure merely because no valid vector was produced;
 - if a **control/preflight** evaluation has started repository tests and terminates without a complete required-test vector, classify that task `EVALUATOR_INVALID`; this is a patch-independent task-level preflight exclusion and is never retried or replaced;
 - if a **measured candidate-patch** evaluation has started repository tests and terminates without a complete required-test vector, record that evaluation repetition as `EVALUATION_INCOMPLETE`; the measured run is unresolved regardless of its other evaluator repetition, and the missing-vector repetition is never retried;
+- after such a measured missing-vector outcome, continue with the other mandatory evaluator repetition in a separate fresh environment. It must not be skipped merely because the first repetition is already unresolved; the only exception is an experiment-wide stop already required by this policy (for example, `INCOMPLETE_INFRASTRUCTURE`);
 - if the 3-attempt pre-test evaluator infrastructure budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point estimate or confidence interval.
 
 Infrastructure-invalid attempts are reported separately from valid agent outcomes in cost/latency accounting; they are never silently deleted.
@@ -578,7 +628,7 @@ The following decision table is normative. The required-evaluation retry policy 
 For **every measured candidate patch**, regardless of its first outcome:
 
 1. execute the two mandatory evaluator repetitions in separate fresh instances of the pinned environment, subject to the frozen evaluator policy above;
-2. if either repetition starts repository tests but terminates without a complete required-test vector, classify the candidate/run `EVALUATION_INCOMPLETE` and score it unresolved; the other mandatory repetition may still be retained/executed for audit, but cannot rescue the primary classification;
+2. if either repetition starts repository tests but terminates without a complete required-test vector, classify the candidate/run `EVALUATION_INCOMPLETE` and score it unresolved; still execute and retain the other mandatory repetition in its separate fresh environment unless an experiment-wide stop has already been triggered. That repetition cannot rescue the primary classification, but it remains mandatory raw evidence;
 3. only when both repetitions produced complete vectors, compare the full required-test outcome vectors;
 4. the run is scored **resolved** only if both complete vectors are identical and satisfy the end-to-end resolution criterion;
 5. if both vectors are complete but differ, classify that candidate/run as `PATCH_UNSTABLE` and score the run as unresolved/failure; do **not** exclude the task or any paired runs.
@@ -652,6 +702,8 @@ For every schedule slot and every whole-run attempt, retain:
 - effective redacted configuration;
 - harness version/commit;
 - provider/model identifier and relevant settings;
+- `model-chain-v1` hash, selected chain index, exact selected model identity, and every exhausted chain entry;
+- `harnessx-runtime-v1` hash, runtime image/archive digest, dependency-lockfile hash, interpreter/runtime version, and execution platform/architecture;
 - provider/API/model revision, deployment/build identifier, response-version header, or equivalent version metadata when exposed by the provider; record explicit `null/unavailable` when the provider exposes none;
 - absolute UTC timestamps in RFC 3339 form for `attempt_started_at`, `semantic_started_at` (null if no first request was issued), and `attempt_ended_at`;
 - task-manifest hash and execution-schedule artifact/hash;

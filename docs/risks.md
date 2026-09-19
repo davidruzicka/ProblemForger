@@ -48,7 +48,7 @@ Mitigation: report per-task results and task-level bootstrap intervals; do not c
 
 Cloud models and provider behavior can change under a stable-looking name.
 
-Mitigation: record provider/model identifier, absolute UTC attempt start/semantic-start/end timestamps, every provider/API/model revision or deployment/build identifier exposed by responses, harness commit, effective settings, usage metadata, and frozen execution ordering. Record an explicit unavailable value when no provider revision metadata is exposed. Treat model replacement as a new experiment version.
+Mitigation: freeze a content-addressed HarnessX runtime and an ordered model chain before task exposure; record the selected chain entry, runtime/image/lockfile digests, absolute UTC attempt start/semantic-start/end timestamps, every provider/API/model revision or deployment/build identifier exposed by responses, harness commit, effective settings, usage metadata, and frozen execution ordering. Record an explicit unavailable value when no provider revision metadata is exposed. A predeclared chain fallback may be selected only before the first measured run; an unlisted or post-start replacement requires a new experiment version.
 
 ## Architecture
 
