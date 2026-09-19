@@ -75,7 +75,7 @@ Do not resolve a valid finding merely because it has been converted into another
 
 A PR exits the review loop when:
 
-- the latest Codex review covers the current head SHA;
+- positive evidence shows that the latest Codex review covers the current head SHA, or a human waiver for that head is explicitly recorded; absence of unresolved threads alone is not evidence that a review arrived;
 - there are no unresolved valid review threads;
 - CI/required checks pass;
 - no human-checkpoint item remains unresolved.

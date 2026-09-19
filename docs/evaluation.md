@@ -578,7 +578,7 @@ If all 3 attempts fail with eligible pre-semantic infrastructure reasons, classi
 
 After the first semantic model response has been accepted, **no whole-agent-run replacement is allowed**. If the run later terminates because provider retries are exhausted, a tool/container/process fails, or another runtime error occurs, the slot is scored unresolved with a frozen terminal reason such as `RUN_INTERRUPTED`. This prevents selective regeneration of an already-started trajectory.
 
-The following are always agent/system outcomes rather than whole-run retry triggers once semantic execution has begun: max-step exhaustion, no patch, invalid patch, malformed tool use, non-zero exit from an agent-invoked command, agent-invoked command timeout, test failure, and ProblemForger/tool errors returned during the trajectory.
+The following are always agent/system outcomes rather than whole-run retry triggers once semantic execution has begun: max-step exhaustion, no patch, invalid patch, `CANDIDATE_PATCH_INVALID`, malformed tool use, non-zero exit from an agent-invoked command, agent-invoked command timeout, test failure, and ProblemForger/tool errors returned during the trajectory. The other mandatory evaluator repetition still runs in a separate fresh environment unless an experiment-wide stop applies.
 
 ### Evaluator infrastructure retries
 
@@ -594,6 +594,7 @@ For each required control/candidate evaluation repetition:
 - once candidate/control repository tests have started executing, evaluator/test failure is not retrospectively reclassified as retryable infrastructure merely because no valid vector was produced;
 - if a **control/preflight** evaluation has started repository tests and terminates without a complete required-test vector, classify that task `EVALUATOR_INVALID`; this is a patch-independent task-level preflight exclusion and is never retried or replaced;
 - if a **measured candidate-patch** evaluation has started repository tests and terminates without a complete required-test vector, record that evaluation repetition as `EVALUATION_INCOMPLETE`; the measured run is unresolved regardless of its other evaluator repetition, and the missing-vector repetition is never retried;
+- if the canonical candidate patch is absent, malformed, or cannot be applied before repository tests start, record `CANDIDATE_PATCH_INVALID` for that evaluator repetition with the exact patch digest and application error; this is a nonretryable agent/system outcome, is not eligible for whole-run replacement, and scores the measured run unresolved rather than being reclassified as evaluator infrastructure failure;
 - after such a measured missing-vector outcome, continue with the other mandatory evaluator repetition in a separate fresh environment. It must not be skipped merely because the first repetition is already unresolved; the only exception is an experiment-wide stop already required by this policy (for example, `INCOMPLETE_INFRASTRUCTURE`);
 - if the 3-attempt pre-test evaluator infrastructure budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point estimate or confidence interval.
 

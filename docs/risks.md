@@ -106,6 +106,25 @@ A separate process keeps Pi/HarnessX integration symmetric but introduces serial
 
 Mitigation: benchmark the local boundary, keep protocol payloads bounded, and choose the transport through a focused P1 spike.
 
+## Specification maintenance
+
+### Specification volume and rot
+
+The P0 contract spans many documents and issue descriptions. Repeated amendments
+to the same section, copied rules with slightly different wording, stale test
+counts, and links that still resolve only through generated heading slugs are
+early indicators that the specification is becoming harder to trust than the
+implementation.
+
+Mitigation: keep one normative owner per contract in
+`docs/specification-checks.md`; give owned requirements stable IDs and explicit
+anchors; make plans, issues, PRs, and audit notes link to those owners instead
+of restating algorithms; remove historical suite counts; and add a regression
+check whenever a cross-document invariant is important enough to freeze. Prune
+or split a section when it accumulates unrelated phase work, and require the
+review-loop human checkpoint for research-method changes rather than growing
+the contract by unreviewed prose.
+
 ## Verification
 
 ### Correlated judge errors

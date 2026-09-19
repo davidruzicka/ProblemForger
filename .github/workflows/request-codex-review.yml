@@ -21,7 +21,7 @@ jobs:
     if: >-
       github.event.pull_request.draft == false &&
       contains(github.event.pull_request.labels.*.name, 'review-loop')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Request Codex review
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

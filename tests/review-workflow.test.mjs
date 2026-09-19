@@ -73,6 +73,7 @@ test('comment failure is surfaced for a workflow retry', async () => {
 });
 
 test('review workflow pins the GitHub Script action and uses least privilege', () => {
+  assert.match(workflow, /runs-on: ubuntu-24\.04/);
   assert.match(
     workflow,
     /uses: actions\/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7/,

@@ -50,11 +50,11 @@ record_proposal(stream_id, proposal_id, request_hash, normalized_request, receip
 
 claim_proposal(stream_id, proposal_id, owner_id, claim_ttl_ms)
     -> CLAIMED {claim_epoch}
-    | BUSY {claim_epoch, lease_expires_at_ms}
+    | PENDING {claim_epoch, lease_expires_at_ms}
     | FINAL
     | ABANDONED
 
-renew_claim(stream_id, proposal_id, owner_id, claim_epoch, claim_ttl_ms)
+renew_claim(stream_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
     -> RENEWED
     | STALE_CLAIM
 

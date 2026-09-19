@@ -118,6 +118,18 @@ class SpecificationChecks(unittest.TestCase):
             matches,
             [("claim_proposal", "docs/modules.md"), ("renew_claim", "docs/modules.md")],
         )
+        module = read("docs/modules.md")
+        self.assertIn("PENDING {claim_epoch, lease_expires_at_ms}", module)
+        self.assertNotIn("BUSY {claim_epoch, lease_expires_at_ms}", module)
+        self.assertIn("expected_claim_epoch, claim_ttl_ms", module)
+
+    def test_candidate_patch_failure_has_frozen_classification(self):
+        evaluation = read("docs/evaluation.md")
+        retries = evaluation.split("### Evaluator infrastructure retries\n", 1)[1].split("### Task/evaluator preflight", 1)[0]
+        self.assertIn("CANDIDATE_PATCH_INVALID", retries)
+        self.assertIn("nonretryable agent/system outcome", retries)
+        self.assertIn("not eligible for whole-run replacement", retries)
+        self.assertIn("other mandatory evaluator repetition", retries)
 
     def test_normative_contract_ids_have_one_owner_and_are_mapped(self):
         expected = {
