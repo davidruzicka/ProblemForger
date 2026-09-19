@@ -24,7 +24,7 @@ ProblemGraph -> Governor -> durable journal   TelemetrySink
      +-- EventStore port
 ```
 
-The worker/harness may propose changes. It does not own authoritative graph state.
+The worker/harness may propose changes. It does not own authoritative graph state. Local enforcement follows [STORE-OWNER](protocol.md#store-owner) and [EVIDENCE-TRUST](verification.md#evidence-trust); a separate process alone is not a security boundary.
 
 ProblemForger runs as a separate local process/service for the PoC. HarnessX and Pi use thin clients/adapters against the same service contract. This preserves a symmetric integration boundary even though HarnessX and the core are both Python.
 

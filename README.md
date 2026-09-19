@@ -86,6 +86,10 @@ This repository is in the **specification and PoC stage**. Claims about reliabil
 - [Related work](docs/related-work.md)
 - [Architecture decisions](docs/adr/)
 
+## Specification checks
+
+This branch contains specification documents and executable GitHub Actions automation. No production ProblemForger implementation exists yet. Run the reproducible checks described in [Specification ownership and checks](docs/specification-checks.md).
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).

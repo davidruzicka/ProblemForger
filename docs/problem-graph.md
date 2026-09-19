@@ -149,7 +149,7 @@ Evidence must identify what claim/entity/mutation it supports or contradicts and
 
 A passing test is strong evidence for the behavior that test covers; it is not automatically proof that the root goal is fully satisfied.
 
-See `docs/verification.md`.
+The normative trust, immutable-subject binding, and recovery rules are [EVIDENCE-TRUST through EVIDENCE-RECOVERY](verification.md#evidence-trust). Evidence metadata describes provenance; worker-controlled metadata cannot establish trusted provenance.
 
 ## Anchors and drift
 

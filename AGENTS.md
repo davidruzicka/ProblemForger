@@ -78,24 +78,14 @@ For every behavioral change or bug fix:
 
 For research-facing changes:
 
-- preserve raw experimental data and configuration;
-- retain absolute UTC attempt/semantic-start/end timestamps and any provider/API/model revision metadata exposed by the provider;
-- record model/provider/version where possible;
-- record random seeds when applicable;
-- distinguish measured results from interpretation;
-- compute P6 per-resolution cost/latency only with the frozen numerator/denominator/attempt-inclusion/zero-denominator rules in `docs/evaluation.md`;
-- do not replace negative results with a more favorable metric after the fact;
-- do not change frozen benchmark/task/model/metric choices after observing results without versioning the experiment contract;
-- do not rerun or replace a measured P6 agent trajectory except when the frozen `docs/evaluation.md` infrastructure reason-code and attempt-budget rules mechanically authorize it;
-- clean-state/reset validation must finish before the first model request; its failures use the frozen `INFRA_RESET_VALIDATION` reason and normal whole-run attempt budget, while contamination discovered only after semantic execution invalidates the experiment rather than authorizing a rerun;
-- pre-semantic nonretryable provider failures have the frozen `PRE_SEMANTIC_PROVIDER_FAILURE` unresolved outcome; evaluator no-vector failures after repository tests start use `EVALUATOR_INVALID` for patch-independent preflight controls and `EVALUATION_INCOMPLETE` for measured candidate evaluations;
-- P6 task environments must execute immutable recorded image/content digests; never re-resolve mutable image tags during preflight, measured runs, or holdout use;
-- configuration A must not start ProblemForger or allocate a ProblemForger run/journal; use harness-neutral experiment/attempt IDs for A/B/C bookkeeping, while B/C get fresh ProblemForger run IDs per attempt;
-- retain the exact canonical candidate-patch bytes and SHA-256 for every measured attempt, and link every evaluator result to that digest;
-- retain the complete harness-native raw trajectory for every measured attempt as an adapter-owned content-addressed artifact; do not add HarnessX/Pi trajectory types to ProblemForger core, EventStore, or the authoritative journal; only normalized observations cross `TelemetrySink`;
-- enforce the frozen P6 semantic wall-clock boundary exactly: timer starts immediately before the first model request after successful setup; all trajectory provider/backoff/tool/ProblemForger time consumes it, and deadline expiry takes precedence over provider retry/replacement classifications.
-- do not inspect or run P6 primary/holdout tasks while developing `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`, `graph-metrics-v1`, or `telemetry-metrics-v1`; freeze and hash those artifacts first.
-- all run-scoped protocol/tool operations must carry explicit `run_id`; do not introduce an ambient/session-selected run context.
+- follow the normative [evaluation contract](docs/evaluation.md) for frozen artifacts, task exposure, attempt budgets, exclusions, metrics, and raw-data retention; do not duplicate those algorithms in instructions or issues;
+- do not change frozen research choices after observing results or pool different experiment versions;
+- preserve raw evidence and distinguish measured results from interpretation, including null/negative results;
+- keep harness-native trajectories adapter-owned; only normalized observations cross core boundaries;
+- follow [STORE-OWNER and LEASE-CLOCK](docs/protocol.md#store-owner) for persistence and [EVIDENCE-TRUST through EVIDENCE-RECOVERY](docs/verification.md#evidence-trust) for evidence;
+- all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
+
+Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.
 
 ## Issues and planning
 

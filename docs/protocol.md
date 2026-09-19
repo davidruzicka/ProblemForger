@@ -80,9 +80,19 @@ The service must persist the final decision record before returning a completed 
 
 Every mutation command carries a client-generated `proposal_id` that is unique within the ProblemForger run and acts as the idempotency key for transport retries.
 
-On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence references. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
+On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#evidence-recovery), including inline worker assertions. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
 
 Proposal execution uses a durable processing claim.
+
+#### STORE-OWNER
+
+P1 permits exactly one live EventStore provider instance per durable store, shared by all workers using that store. The provider must acquire exclusive ownership **before initializing the lease clock**, loading journal state, or accepting operations. A competing open fails explicitly with `STORE_IN_USE`; this is a service startup error, not a governance decision or a proposal claim.
+
+Ownership must cover same-process duplicate instances as well as separate processes and path aliases for the same store. Hold it for the provider lifetime and release it only after in-flight operations/connections are closed. A process crash releases ownership automatically; a persisted boolean, PID file, or lease-clock deadline alone is not an ownership lock. The SQLite implementation must document its canonical store/lock identity and supported local-filesystem assumptions, reject unsupported storage, and prevent replacing/unlinking its live store or lock identity. Internal connections are allowed only under the owning provider and its shared clock. A forked child cannot operate an inherited provider; it must open normally and obtain ownership after the old owner closes.
+
+Concurrent workers still use atomic proposal claims, fencing epochs, and graph-version checks. Multiple live providers for one store are out of scope under ADR 0006; independent stores may be opened concurrently. Required P1 tests include racing process opens, same-process duplicate opens, path aliases, graceful close, crash release, and reopening with an active proposal lease.
+
+#### LEASE-CLOCK
 
 Lease expiry uses a **restart-stable lease-time domain**, never a process-local monotonic timestamp persisted directly:
 
@@ -102,6 +112,8 @@ Every active claim also has an `owner_id` unique to the service/worker incarnati
 - every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected `claim_epoch`;
 - the EventStore/application boundary atomically rejects stale epochs with `STALE_CLAIM` before any graph mutation or final decision append;
 - governance evaluation before final append must not perform non-idempotent external side effects; any future side-effecting integration requires its own idempotency contract.
+
+#### Proposal recovery responses
 
 Subsequent submissions follow these rules:
 
@@ -167,6 +179,8 @@ Reasons:
 - observer/UI clients can later consume the same public boundary.
 
 See ADR 0009.
+
+The local service boundary must also enforce [EVIDENCE-TRUST](verification.md#evidence-trust). The transport spike must show that worker tools cannot use trusted evidence-ingestion/admin operations or modify the durable store and policy configuration. Choosing a separate process alone does not establish that protection. Production authentication/TLS and remote deployment remain out of scope.
 
 ## Transport
 

@@ -511,10 +511,21 @@ Before any measured A/B/C agent run for a primary task:
 4. both control vectors must be identical **and** match the benchmark's expected baseline contract:
    - every required `FAIL_TO_PASS` test is failing;
    - every required `PASS_TO_PASS` test is passing;
-5. if the two valid vectors differ, run one third control evaluation in another fresh instance;
-6. if that third evaluation starts tests but yields no complete vector, classify the task `EVALUATOR_INVALID`;
-7. if all produced vectors are complete but any of the repeated required-test vectors differ, classify the task as `EVALUATOR_UNSTABLE`;
-8. if the stable complete control vector does not match the expected baseline contract, classify the task as `BASELINE_INVALID`.
+5. if the two complete vectors differ, classify the task as `EVALUATOR_UNSTABLE` immediately; no third control is required and no later result can restore eligibility;
+6. if the two complete vectors agree but do not match the expected baseline contract, classify the task as `BASELINE_INVALID`;
+7. otherwise the task is eligible for the common A/B/C task set.
+
+Any additional control evaluation is diagnostic only and runs after the primary experiment terminates. Its result, missing vector, or infrastructure retry exhaustion cannot change the task's primary classification and cannot abort the experiment. Retain diagnostic attempts separately from required preflight attempts and measured schedule-slot cost/latency. This restriction prevents a redundant third control from adding an experiment-wide failure path or changing the measured execution schedule.
+
+The following decision table is normative. The required-evaluation retry policy takes precedence before a complete vector exists; the rows for complete vectors are mutually exclusive.
+
+| Required control evaluations | Task/experiment result | Additional required controls |
+| --- | --- | --- |
+| Pre-test infrastructure budget exhausted | `INCOMPLETE_INFRASTRUCTURE` (experiment) | None |
+| Tests started but a complete vector is missing | `EVALUATOR_INVALID` (task) | None |
+| Two complete vectors disagree | `EVALUATOR_UNSTABLE` (task) | None |
+| Two complete vectors agree but violate the baseline | `BASELINE_INVALID` (task) | None |
+| Two complete vectors agree and match the baseline | Eligible task | None |
 
 `EVALUATOR_INVALID`, `EVALUATOR_UNSTABLE`, and `BASELINE_INVALID` are patch-independent preflight exclusions applied **before measured agent runs begin**. Exclude all A/B/C configurations and repetitions for such a task from the primary paired A→B and B→C analysis, preserve/report all preflight evaluator outputs and exclusion reason, report the reduced denominator, and do not replace the task.
 

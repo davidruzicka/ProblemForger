@@ -46,7 +46,9 @@ If the process terminates after a proposal is recorded but before a final decisi
 
 Incomplete proposals are processed under a durable lease/claim with `owner_id`, monotonic `claim_epoch`, and finite expiry.
 
-Lease deadlines are not persisted process-monotonic timestamps. Durable providers maintain a persisted `lease_clock_floor_ms`; on open they anchor a restart-stable lease clock at `max(persisted_floor, sampled UTC Unix ms)` and advance that anchor using process-monotonic elapsed time. Claim/renew/expiry transactions advance the persisted floor. This gives lease time a stable persisted epoch across reopen/restart while remaining immune to wall-clock jumps during one process lifetime. A backward wall-clock change across restart cannot keep an abandoned lease busy indefinitely; after reopen the anchored logical lease clock continues to advance toward the persisted deadline.
+P1 permits one live EventStore provider instance per durable store. All concurrent workers using that store share the instance and its lease clock. Opening another instance must fail before it can initialize a clock or access journal state; a crash must release ownership without manual lock-file deletion. This deliberately excludes concurrent service owners instead of introducing distributed clock coordination into the PoC.
+
+Lease deadlines use a restart-stable time domain rather than persisted process-monotonic timestamps. The operational ownership and clock algorithms have one normative home: [STORE-OWNER and LEASE-CLOCK](../protocol.md#store-owner). Concurrent provider instances require an amendment to this ADR and a coherent shared-time contract before they are supported.
 
 A new worker may atomically claim an unclaimed/expired proposal and increments the epoch. Final decision append or graph commit must atomically validate the current claim epoch; a stale worker receives `STALE_CLAIM` and cannot append a decision or mutate graph state.
 
@@ -95,3 +97,4 @@ There is no required global order across independent run journals.
 - In-memory, SQLite, and future stores share the same semantic journal/concurrency contract; only durability-capable providers are valid for normal service execution and restart guarantees.
 - Future parallel workers can detect stale graph proposals and stale proposal-processing claims; durable lease expiry remains finite across service/provider restart.
 - The PoC may serialize actual governance execution internally while retaining the optimistic graph-write contract.
+- Store ownership is distinct from a proposal processing claim: one provider may host multiple workers, but no second provider may independently advance the same store's lease clock.

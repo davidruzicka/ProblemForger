@@ -70,30 +70,15 @@ current_graph_version(stream_id)
 
 Requirements:
 
-- `proposal_id` is unique within a run and claimed atomically with its canonical request hash;
-- the durable proposal receipt stores the complete normalized/versioned request required for restart recovery;
-- duplicate same-ID/same-hash submissions resolve to the existing proposal state/outcome, never a second mutation;
-- duplicate same-ID/different-hash submissions are detectable as idempotency conflicts;
-- proposal processing claims use finite leases plus monotonic `claim_epoch` fencing;
-- persisted lease deadlines use the restart-stable lease-time domain defined in `docs/protocol.md`; process-local monotonic timestamps are never persisted as lease deadlines;
-- durable providers persist `lease_clock_floor_ms`; on reopen they anchor lease time at `max(persisted_floor, sampled_utc_ms)` and advance it with a fresh process monotonic clock;
-- an unclaimed/expired incomplete proposal can be atomically reclaimed after restart;
-- every proposal terminal write (COMMIT graph append, non-commit final decision, or `ABANDONED`) requires `proposal_id` + `expected_claim_epoch`, validates it atomically, and rejects stale workers before any write;
-- generic audit append without a claim epoch cannot be used to create proposal terminal records;
-- claim TTL/renewal cadence are typed versioned configuration and lease tests use injected UTC + monotonic clock sources;
-- unrecoverable incomplete proposals can be terminally marked `ABANDONED` without graph mutation;
-- every durable record has a monotonic per-run `journal_position`;
-- every graph-changing event carries a `graph_version`, but one atomic committed mutation batch advances the version only once;
-- all graph events in the same mutation batch share the same resulting `graph_version`;
-- audit-only records never advance `graph_version`;
-- graph compare-and-append is atomic;
-- a successful `COMMIT` persists its final decision audit record and all graph-changing events atomically, with one new graph version assigned to the complete batch;
-- `REJECT`, `RETRY`, `ESCALATE`, and returned `CONFLICT` outcomes are durably recorded before the service response completes;
-- proposal receipt is durable, so crashes can leave an explicit incomplete proposal rather than erasing history;
-- journal order is stable within a run;
-- no global ordering across runs is required;
-- stored payload/schema metadata is sufficient for deterministic graph replay and governance audit;
-- append-only history is never rewritten by later invalidation.
+- enforce the [proposal identity/recovery contract](protocol.md#proposal-identity-idempotency-and-recovery), including atomic receipt uniqueness and fenced terminalization;
+- obey [STORE-OWNER and LEASE-CLOCK](protocol.md#store-owner); service startup refuses a second owner before state access;
+- generic audit append without a claim epoch cannot create proposal terminal records;
+- assign monotonic per-run `journal_position` to every durable record;
+- atomically compare graph version and append the final decision plus graph events as one complete mutation batch under ADR 0006;
+- audit-only writes never advance graph version; all graph events in a committed batch share one new version;
+- persist each returned governance outcome before completing its response;
+- preserve record ordering, append-only history, and versioned payload fidelity for replay/audit, with no required global order across runs;
+- retain normalized evidence according to [EVIDENCE-RECOVERY](verification.md#evidence-recovery).
 
 Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service where ADR 0006 promises restart durability. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart.
 
@@ -117,7 +102,7 @@ Inject only where deterministic tests or reproducibility require it. Lease handl
 - UTC Unix time for the restart anchor;
 - monotonic elapsed time for progress within one provider/service instance.
 
-The durable provider combines them with persisted `lease_clock_floor_ms` exactly as defined in `docs/protocol.md`. Domain code must not persist raw process-monotonic timestamps or assume that a monotonic epoch survives restart.
+The owning provider combines these sources using [LEASE-CLOCK](protocol.md#lease-clock). Domain code does not implement or persist a separate clock algorithm.
 
 Do not introduce a general service-locator abstraction.
 
@@ -220,8 +205,6 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - duplicate same-ID/same-hash recovery without duplicate receipt/commit;
 - duplicate same-ID/different-hash idempotency conflict;
 - crash-after-receipt recovery using a new claim epoch;
-- active, unexpired lease survives provider close/reopen as busy until the restart-stable lease clock reaches its persisted deadline, then becomes reclaimable without manual intervention;
-- backward wall-clock jump across reopen cannot make an old lease busy indefinitely;
 - concurrent recovery claim where only one worker owns the current epoch;
 - stale-worker finalization/graph append rejected with no partial writes;
 - terminal `ABANDONED` recovery status without graph mutation;
@@ -235,7 +218,7 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - independent run journals;
 - byte/semantic fidelity sufficient for deterministic replay and governance audit.
 
-Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history, plus restart behavior for an active proposal lease using the persisted lease-clock floor/deadline.
+Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#store-owner), active-lease recovery, and forward/backward UTC jumps on reopen under [LEASE-CLOCK](protocol.md#lease-clock). A forward restart anchor may legitimately expire a lease sooner; a backward jump must not leave it busy indefinitely. Reopen durability tests do not apply to the ephemeral memory provider.
 
 `MemoryEventStore` does **not** claim that durability contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
 

@@ -1,0 +1,28 @@
+name: Specification checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: specification-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check specification contracts and links
+        run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test the review-request script without posting comments
+        run: node --test tests/review-workflow.test.mjs
+      - name: Check whitespace
+        run: git show --format= --check HEAD
