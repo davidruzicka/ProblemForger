@@ -141,19 +141,20 @@ is interpretable. Relative change divides by a potentially tiny, zero, or
 negative effect and is unsuitable as the default instability criterion.
 
 The subsequent proposal to flag a maximum absolute change of at least 10
-percentage points is **also unapproved and insufficiently justified**. Reusing
-the practical-effect margin does not establish a sensitivity tolerance.
-Keep these three choices separate:
+percentage points was also insufficiently justified as a standalone instability
+threshold. Keep these three choices separate:
 
 - minimum worthwhile benefit;
 - maximum acceptable harm;
 - tolerated estimator sensitivity.
 
-Proposal: report all omitted-repetition effects, signs, and their maximum
-absolute departure from the primary estimate descriptively until a decision
-threshold has independent justification. The current undefined
-`SENSITIVITY_DISCORDANT` predicate remains an open contract issue; this document
-does not silently redefine or remove it.
+`SENSITIVITY_DISCORDANT` was resolved 2026-09-20 by the combined sign-and-
+practical-band point-estimate rule in
+[Evaluation](evaluation.md#frozen-sensitivity-analyses). That rule reuses the
+already frozen `delta = 10` percentage-point margin, while the separate utility
+rationale for the margin remains an analysis-parameter question. Report all
+omitted-repetition effects and their maximum absolute departure descriptively;
+the normative predicate is maintained in Evaluation rather than duplicated here.
 
 ### Analysis parameter register
 
@@ -312,7 +313,7 @@ This is a proposal for resolving the audit, not an authorization to alter P6.
 | --- | --- | --- | --- |
 | High | Intended estimand and evidential role of P6 | Needs explicit clarification | `evaluation.md` |
 | High | Bootstrap/gate operating characteristics | Needs simulation evidence | `evaluation.md` |
-| High | Mechanical sensitivity-discordance rule and its consequence | Open; neither sign-only nor 10-point proposal approved | `evaluation.md` |
+| High | Mechanical sensitivity-discordance rule and its consequence | Resolved 2026-09-20; see [Evaluation](evaluation.md#frozen-sensitivity-analyses) | `evaluation.md` |
 | High | Benefit/harm margins and complete-system utility | Needs rationale and approval | `evaluation.md` |
 | Medium | Sample/repetition allocation and family dependence | Needs pilot/simulation evidence | `evaluation.md` |
 | Medium | Observable generation-control record | Needs schema clarification | `evaluation.md` (and `protocol.md` only if service-boundary semantics change) |

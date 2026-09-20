@@ -555,10 +555,28 @@ analyses before task exposure:
    estimates plus sign agreement with the primary point estimate (`zero` is a distinct
    sign). Do not select a favorable omitted replicate.
 
-If primary and sensitivity conclusions disagree, label the result
-`SENSITIVITY_DISCORDANT`; do not reinterpret the P7 gate and require a new blinded
-replication for a positive claim. Record the exact sensitivity algorithm and its
-version/hash in the experiment manifest before task exposure.
+4. Define `SENSITIVITY_DISCORDANT` as a point-estimate category diagnostic; it
+   does not compare an undefined “sensitivity conclusion.” Reuse the frozen
+   `delta = 10` percentage-point margin. For each point estimate `x` (the primary
+   estimate and every leave-one-repetition-out estimate), define:
+   - `sign(x)` as one of `NEGATIVE`, `ZERO`, or `POSITIVE`: `NEGATIVE` when
+     `x < 0`, `ZERO` when `x == 0`, and `POSITIVE` when `x > 0`;
+   - `band(x)` as one of `MATERIAL_HARM`, `WITHIN_MARGIN`, or `PRACTICAL_BENEFIT`:
+     `MATERIAL_HARM` when `x < -delta`, `WITHIN_MARGIN` when
+     `-delta <= x <= delta`, and `PRACTICAL_BENEFIT` when `x > delta`.
+   For each contrast `c ∈ {B-A, C-B}` and omitted repetition `k ∈ {1,2,3}`,
+   set `SENSITIVITY_DISCORDANT` iff the leave-one-out estimate changes the
+   sign or practical band relative to the primary point estimate. Thus
+   `-1 -> +1` is discordant by sign, while `+1 -> +18` is discordant by
+   practical band. Relative changes are not used.
+5. Report `max_abs_deviation_pp` for each contrast as the maximum absolute
+   leave-one-out departure from its primary point estimate. The sign-permutation
+   p-values and replicate-disagreement rates do not drive the label. The label
+   does not alter the P7 gate. If the primary action is `ADVANCE_P7` or a
+   positive claim is otherwise being made, `SENSITIVITY_DISCORDANT` requires a
+   new blinded replication before making a positive claim. Record the exact
+   sensitivity algorithm and its version/hash in the experiment manifest before
+   task exposure.
 
 ### Secondary end-to-end metrics
 

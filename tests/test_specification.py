@@ -115,6 +115,28 @@ class SpecificationChecks(unittest.TestCase):
                 self.assertIn(phrase, interpretation)
         self.assertNotIn("does not exclude material harm", interpretation)
 
+    def test_sensitivity_discordance_uses_sign_and_practical_band(self):
+        evaluation = read("docs/evaluation.md")
+        sensitivity = evaluation.split("### Frozen sensitivity analyses\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
+        for phrase in (
+            "point-estimate category",
+            "sign(x)",
+            "NEGATIVE`, `ZERO`, or `POSITIVE",
+            "band(x)",
+            "MATERIAL_HARM`, `WITHIN_MARGIN`, or `PRACTICAL_BENEFIT",
+            "x < -delta",
+            "x > delta",
+            "SENSITIVITY_DISCORDANT` iff",
+            "sign or practical band",
+            "max_abs_deviation_pp",
+            "does not alter the P7 gate",
+            "p-values and replicate-disagreement rates do not drive",
+            "new blinded replication before making a positive claim",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, sensitivity)
+        self.assertNotIn("If primary and sensitivity conclusions disagree", sensitivity)
+
     def test_task_artifact_exclusion_is_pre_measurement_only(self):
         evaluation = read("docs/evaluation.md")
         artifact = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("<a id=\"spec-evaluation-measured-evaluation\">", 1)[0]
@@ -344,7 +366,8 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, methodology)
-        self.assertIn("neither sign-only nor 10-point proposal approved", methodology)
+        self.assertIn("Resolved 2026-09-20", methodology)
+        self.assertIn("evaluation.md#frozen-sensitivity-analyses", methodology)
 
     def test_relative_document_links_resolve(self):
         for path in ROOT.rglob("*.md"):
