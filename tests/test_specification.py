@@ -462,6 +462,53 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("not eligible for whole-run replacement", retries)
         self.assertIn("other mandatory evaluator repetition", retries)
 
+    def test_experiment_elapsed_time_is_restart_stable(self):
+        evaluation = read("docs/evaluation.md")
+        budget = evaluation.split("### Experiment resource envelope\n", 1)[1].split("### Pre-P6 frozen artifacts", 1)[0]
+        normalized = " ".join(budget.split())
+        for phrase in (
+            "experiment_started_at_utc",
+            "monotonically non-decreasing `experiment_elapsed_floor_ms`",
+            "max(experiment_elapsed_floor_ms, now_utc_ms - experiment_started_at_utc)",
+            "process-monotonic elapsed time",
+            "every ledger write advances the persisted floor",
+            "can never extend the frozen budget",
+            "keeps its full spend reservation",
+            "restart recovery never makes redispatched work free",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
+    def test_c_startup_failure_has_explicit_no_journal_marker(self):
+        evaluation = read("docs/evaluation.md")
+        raw = evaluation.split("## Raw data and reproducibility\n", 1)[1]
+        marker = next(line for line in raw.splitlines() if "problemforger_run_id = null" in line)
+        normalized = " ".join(marker.split())
+        for phrase in (
+            "`INFRA_PROBLEMFORGER_START`",
+            "before its ProblemForger run is allocated",
+            "terminal reason and startup diagnostics",
+            "must not fabricate an empty journal",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
+    def test_claim_ttl_rejection_is_a_declared_port_result(self):
+        module = read("docs/modules.md")
+        contract = module.split("Conceptual port contract:", 1)[1].split("```", 2)[1]
+        claim = contract.split("claim_proposal(", 1)[1].split("renew_claim(", 1)[0]
+        renewal = contract.split("renew_claim(", 1)[1].split("append_audit(", 1)[0]
+        for name, block in (("claim_proposal", claim), ("renew_claim", renewal)):
+            with self.subTest(op=name):
+                self.assertIn("INVALID_CLAIM_TTL", block)
+        requirements = module.split("Requirements:\n", 1)[1].split("### TelemetrySink", 1)[0]
+        normalized = " ".join(requirements.split())
+        self.assertIn("`claim_ttl_ms` must be a positive finite integer", normalized)
+        self.assertIn("`INVALID_CLAIM_TTL`", normalized)
+        self.assertIn("persisted lease-clock floor unchanged", normalized)
+        suite = module.split("## Contract testing\n", 1)[1]
+        self.assertIn("rejected as `INVALID_CLAIM_TTL`", " ".join(suite.split()))
+
     def test_normative_contract_ids_have_one_owner_and_are_mapped(self):
         expected = {
             "GRAPH.MODEL": "docs/problem-graph.md",
