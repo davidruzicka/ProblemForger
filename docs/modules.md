@@ -45,7 +45,7 @@ Conceptual port contract:
 
 ```text
 create_run(run_id, run_metadata)
-    -> CREATED {graph_version=0, last_journal_position=0}
+    -> CREATED {metadata_hash, graph_version=0, last_journal_position=0}
     | EXISTING {run_metadata, metadata_hash, graph_version, last_journal_position}
     | RUN_METADATA_CONFLICT {metadata_hash, existing_metadata_hash}
 

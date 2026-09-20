@@ -246,8 +246,8 @@ Token usage, billed cost, and all latency components are measured outcomes rathe
 <a id="p6-resource-budget"></a>
 ### Experiment resource envelope
 
-The per-run limits above remain unchanged. Before the first billed probe and task
-exposure, the operator must
+The per-run limits above remain unchanged. Before any capability probe, required
+preflight operation, or task exposure, the operator must
 approve and freeze in `benchmark-adapter-v1` a predeclared experiment resource budget:
 the finite total elapsed-time limit `experiment_wall_clock_limit_seconds` and the
 finite provider-spend guard `experiment_provider_cost_limit_usd`, both positive and
@@ -255,6 +255,8 @@ chosen from available resources and separate development runs.
 Record and enforce these limits, their accounting method, and
 rationale in the manifest; this document
 does not invent a universal price or add a separate token-cap tuning exercise.
+No capability probe or preflight operation may start the experiment clock before
+this budget freeze.
 
 The elapsed limit runs from the first capability probe or required preflight
 operation, whichever is earlier, and includes idle time, setup, retries, measured
@@ -268,6 +270,16 @@ usage afterward, and keep an unknown charge reserved rather than treating it as
 zero. If no conservative reservation can be made, do not issue that request.
 This is an operational estimated-spend guard, not a guarantee of the provider's
 final invoice or a claim to include evaluator/container charges.
+
+The experiment coordinator must persist the start-time anchor, derived deadline,
+configured limits, current elapsed/spend ledger, and every outstanding provider
+spend reservation in a durable experiment record before dispatching work. A
+runner restart reopens that same record; it must not reset the elapsed clock,
+attempt counters, or release an unknown-charge reservation. In-flight operations
+remain reserved until their outcome is reconciled or an explicitly recorded
+recovery decision accounts for the uncertainty. Redispatch after a restart is
+allowed only when the frozen retry policy permits it and the previous operation's
+reservation and outcome are retained.
 
 When another required operation cannot fit the remaining resource envelope, or
 the elapsed deadline is reached, stop as `BUDGET_EXHAUSTED` and mark the analysis

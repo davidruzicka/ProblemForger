@@ -296,6 +296,7 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("create_run(run_id, run_metadata)", contract)
         self.assertIn("RUN_METADATA_CONFLICT", contract)
         self.assertIn("canonical serialization", module)
+        self.assertIn("CREATED {metadata_hash, graph_version=0, last_journal_position=0}", contract)
         self.assertIn("graph_version=0, last_journal_position=0", contract)
         self.assertIn("get_run(run_id)", contract)
         self.assertIn("| NOT_FOUND", contract)
@@ -321,6 +322,20 @@ class SpecificationChecks(unittest.TestCase):
             )
             self.assertIsNotNone(match, operation)
             self.assertIn("NOT_FOUND", match.group("returns"), operation)
+
+    def test_resource_budget_is_frozen_before_probe_and_survives_restart(self):
+        evaluation = read("docs/evaluation.md")
+        budget = evaluation.split("### Experiment resource envelope\n", 1)[1].split("### Pre-P6 frozen artifacts", 1)[0]
+        for phrase in (
+            "Before any capability probe",
+            "No capability probe or preflight operation may start the experiment clock before this budget freeze",
+            "persist the start-time anchor, derived deadline",
+            "runner restart reopens that same record",
+            "must not reset the elapsed clock",
+            "unknown-charge reservation",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, " ".join(budget.split()))
 
     def test_terminal_writes_bind_claim_owner_and_epoch(self):
         module = read("docs/modules.md")
