@@ -133,7 +133,7 @@ class SpecificationChecks(unittest.TestCase):
             "two fresh repetitions",
             "For `k ∈ {1,2}`",
             "SENSITIVITY_DISCORDANT",
-            "sign or the predeclared practical band",
+            "differs in sign or band",
             "delta = 10",
             "max_abs_deviation_pp",
             "does not block the local operational decision",
@@ -141,6 +141,52 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, sensitivity)
+
+    def test_sensitivity_sign_and_closed_neutral_band_are_explicit(self):
+        section = read("docs/evaluation.md").split("### Practical sensitivity report\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
+        normalized = " ".join(section.split())
+        for phrase in (
+            "`sign(x) = -1` for `x < 0`, `0` for `x = 0`, and `+1` for `x > 0`",
+            "`HARM` for `x < -10`",
+            "`NEUTRAL` for `-10 <= x <= +10`",
+            "`BENEFIT` for `x > +10`",
+            "exactly -10 and +10 are `NEUTRAL`",
+            "if and only if at least one leave-one-repetition-out estimate",
+            "differs in sign or band from the full two-repetition point estimate",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
+    def test_provider_retries_require_bounded_progression(self):
+        section = read("docs/evaluation.md").split("### Provider-call transport retries\n", 1)[1].split("### Whole-agent-run replacement\n", 1)[0]
+        normalized = " ".join(section.split())
+        for phrase in (
+            "Every eligible transport failure requires the next transport attempt",
+            "must not voluntarily stop",
+            "until a semantic response is produced, a nonretryable result occurs, the semantic deadline or resource budget is exhausted, or all 3 attempts are exhausted",
+            "`WALL_CLOCK_EXHAUSTED` takes precedence and no whole-run replacement is allowed",
+            "`INFRA_FIRST_PROVIDER_CALL`",
+            "`PRE_SEMANTIC_PROVIDER_FAILURE`",
+            "unresolved `RUN_INTERRUPTED`",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
+    def test_evaluator_retries_require_bounded_progression(self):
+        section = read("docs/evaluation.md").split("### Evaluator infrastructure retries\n", 1)[1].split("### Task/evaluator preflight\n", 1)[0]
+        normalized = " ".join(section.split())
+        for phrase in (
+            "Every eligible pre-test infrastructure failure requires the next evaluator attempt",
+            "must not voluntarily stop",
+            "until a complete required-test vector is produced, a nonretryable result occurs, or all 3 attempts are exhausted",
+            "experiment-wide stop takes precedence",
+            "`EVAL_IMAGE_SETUP`", "`EVAL_CONTAINER_START`", "`EVAL_EVALUATOR_START`",
+            "`EVALUATOR_INVALID`", "`EVALUATION_INCOMPLETE`", "`CANDIDATE_PATCH_INVALID`",
+            "classify the experiment `INCOMPLETE_INFRASTRUCTURE`",
+            "report no primary point delta",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
 
     def test_task_artifact_exclusion_is_pre_measurement_only(self):
         evaluation = read("docs/evaluation.md")
@@ -246,6 +292,13 @@ class SpecificationChecks(unittest.TestCase):
                     self.assertTrue("claim_ttl_ms" in match[1], "Provider must receive a TTL")
                     self.assertFalse("lease_expires_at_ms" in match[1], "Caller cannot set provider time")
 
+    def test_lease_persistence_has_one_complete_requirement(self):
+        protocol = read("docs/protocol.md")
+        bullets = re.findall(r"^- the durable EventStore persists a per-store .*", protocol, re.M)
+        self.assertEqual(bullets, [
+            "- the durable EventStore persists a per-store `lease_clock_floor_ms` and `lease_clock_generation`;",
+        ])
+
     def test_expired_claim_cannot_finalize_or_renew(self):
         protocol = read("docs/protocol.md")
         lease = protocol.split("#### LEASE-CLOCK\n", 1)[1].split("#### Proposal recovery responses", 1)[0]
@@ -346,6 +399,60 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("expected_claim_epoch", audit)
         self.assertIn("expected_owner_id", graph)
         self.assertIn("both expected owner identity and claim epoch", protocol)
+
+    def test_audit_port_has_conditional_terminal_arguments(self):
+        module = read("docs/modules.md")
+        self.assertIn("append_audit(run_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)", module)
+        returns = module.split("append_audit(", 1)[1].split("append_graph(", 1)[0]
+        self.assertIn("INVALID_AUDIT_BATCH", returns)
+        for phrase in (
+            "optional only for non-terminal-only batches",
+            "`run_id`, `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are required and non-null",
+            "[terminal append binding](protocol.md#terminal-append-binding)",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, " ".join(module.split()))
+
+    def test_terminal_binding_validates_stored_claim_and_entire_batch(self):
+        protocol = read("docs/protocol.md")
+        section = protocol.split("#### Terminal append binding\n", 1)[1].split("#### Proposal recovery responses\n", 1)[0]
+        normalized = " ".join(section.split())
+        for phrase in (
+            "`REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`",
+            "Reject missing/null arguments, mismatched terminal record identity, or more than one terminal record",
+            "including duplicates for the same proposal",
+            "before writing any record",
+            "entire batch leaves the journal and proposal state unchanged",
+            "stored claim for the supplied `(run_id, proposal_id)`",
+            "not from owner/epoch fields in submitted records",
+            "same owner and epoch on a different proposal do not authorize this terminalization",
+            "current `lease_clock_generation`",
+            "`lease_expires_at_ms > lease_now_ms`",
+            "no existing terminal outcome",
+            "atomically append the records and finalize the proposal state",
+            "same still-unexpired claim cannot append a second terminal outcome",
+            "`COMMIT` is forbidden in `append_audit`",
+            "exclusively through `append_graph`",
+            "Non-terminal-only audit batches require no claim",
+            "never advance `graph_version`",
+            "`VersionConflict` does not reserve claim validity",
+            "must recheck the claim",
+            "must not return completed `CONFLICT` without its durable record",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+        recovery = protocol.split("#### Proposal recovery responses\n", 1)[1]
+        self.assertIn("without acquiring a fresh claim", recovery)
+
+    def test_benchmark_is_an_independent_completion_criterion(self):
+        criterion = "- at least one controlled benchmark compares the baseline with the complete ProblemForger package;"
+        self.assertIn(criterion, read("PLAN.md").splitlines())
+
+    def test_python_checks_do_not_claim_a_numpy_dependency(self):
+        checks = read("docs/specification-checks.md").split("## Run checks\n", 1)[1].split("## Regression evidence", 1)[0]
+        self.assertIn("The Python checks use only the standard library; no credentials are needed", checks)
+        self.assertNotIn("NumPy", checks)
+        self.assertFalse(any(line.strip() and not line.startswith("#") for line in read("tests/requirements.txt").splitlines()))
 
     def test_candidate_patch_failure_has_frozen_classification(self):
         evaluation = read("docs/evaluation.md")

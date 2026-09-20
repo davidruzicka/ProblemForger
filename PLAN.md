@@ -134,7 +134,7 @@ The PoC is complete when:
 - harness telemetry is not required for graph replay or governance audit;
 - graph mutations cannot be silently committed by the worker model;
 - deterministic evidence and learned evidence are represented separately;
-  - at least one controlled benchmark compares the baseline with the complete ProblemForger package;
+- at least one controlled benchmark compares the baseline with the complete ProblemForger package;
 - calibration claims use task-level held-out data;
 - routing, if enabled, includes uncertainty and exploration controls;
 - all reported improvements include cost/latency and repeated-run statistics;

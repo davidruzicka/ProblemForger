@@ -72,6 +72,7 @@ renew_claim(run_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
 
 append_audit(run_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
     -> last_journal_position
+    | INVALID_AUDIT_BATCH
     | STALE_CLAIM
     | NOT_FOUND
 
@@ -100,7 +101,7 @@ Requirements:
 - obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
 - claims owned by a previous provider `lease_clock_generation` are inactive on reopen and require a new recovery claim epoch; restart must not revive them by moving lease time backward;
-- generic audit append without both expected owner and claim epoch cannot create proposal terminal records;
+- `append_audit` claim arguments are optional only for non-terminal-only batches; for a batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`, `run_id`, `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are required and non-null. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
 - terminal audit and graph appends must atomically match both the service-assigned claim owner and claim epoch; a claim epoch alone is not sufficient authority;
 - assign monotonic per-run `journal_position` to every durable record;
 - require an explicit positive `limit` for `read_journal`; `after_journal_position` is an exclusive cursor, records are returned in ascending position order, and `next_after_journal_position` plus `has_more` make continuation explicit. Providers must enforce a finite configured maximum and must not return an unbounded journal response;

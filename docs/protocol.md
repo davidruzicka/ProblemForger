@@ -110,7 +110,6 @@ Concurrent workers still use atomic proposal claims, fencing epochs, and graph-v
 
 Lease expiry uses a **restart-stable lease-time domain**, never a process-local monotonic timestamp persisted directly:
 
-- the durable EventStore persists a per-store `lease_clock_floor_ms`;
 - the durable EventStore persists a per-store `lease_clock_floor_ms` and `lease_clock_generation`;
 - after acquiring store ownership, provider/service open atomically increments `lease_clock_generation`, samples UTC Unix time in milliseconds, and sets `lease_clock_anchor_ms = max(persisted lease_clock_floor_ms, sampled_utc_ms)`; it also captures a process-local monotonic anchor;
 - during that provider instance, compute `lease_now_ms = lease_clock_anchor_ms + elapsed_monotonic_ms`; later wall-clock jumps do not move lease time backward or forward;
@@ -135,11 +134,44 @@ The operation signatures are owned by the [EventStore port](modules.md#spec-modu
 This section defines their atomic lease, fencing, recovery, and graph-version
 preconditions; provider summaries must not copy this algorithm.
 
+#### Terminal append binding
+
+A batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or
+`ABANDONED` requires non-null `run_id`, `proposal_id`, `expected_owner_id`, and
+`expected_claim_epoch`. The terminal record must explicitly reference the
+supplied `(run_id, proposal_id)`. Reject missing/null arguments, mismatched
+terminal record identity, or more than one terminal record (including duplicates
+for the same proposal) with `INVALID_AUDIT_BATCH` before writing any record.
+Non-terminal records may accompany one terminal record, but validation applies
+to the complete batch: rejection of the entire batch leaves the journal and
+proposal state unchanged.
+
+Resolve authority from the stored claim for the supplied `(run_id, proposal_id)`,
+not from owner/epoch fields in submitted records; the same owner and epoch on a
+different proposal do not authorize this terminalization. In one transaction,
+validate the complete batch and require the current `lease_clock_generation`,
+matching expected owner/epoch, `lease_expires_at_ms > lease_now_ms`, and no existing
+terminal outcome. An unknown run/proposal returns `NOT_FOUND`; an inactive,
+expired, mismatched, or already-finalized claim returns `STALE_CLAIM` without
+writes. On success, atomically append the records and finalize the proposal state
+so the same still-unexpired claim cannot append a second terminal outcome.
+
+`COMMIT` is forbidden in `append_audit` and returns `INVALID_AUDIT_BATCH`; its
+decision and graph events are persisted exclusively through `append_graph`, with
+the same proposal binding, active-claim and single-terminal checks plus the
+graph-version check. Non-terminal-only audit batches require no claim and never
+advance `graph_version`; non-commit terminal appends also leave it unchanged.
+
+`VersionConflict` does not reserve claim validity: a subsequent audit append
+must recheck the claim. If it expires or is superseded between calls, the service
+must not return completed `CONFLICT` without its durable record; return a
+persistence/service failure instead, as required by ADR 0006.
+
 #### Proposal recovery responses
 
 Subsequent submissions follow these rules:
 
-- same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata; do not re-run governance or mutate the graph;
+- same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata without acquiring a fresh claim; do not re-run governance or mutate the graph;
 - same `proposal_id` + same canonical request hash + proposal has an active, unexpired processing claim according to the restart-stable lease clock → return `PENDING` with current recovery metadata; do not create a second proposal attempt;
 - same `proposal_id` + same canonical request hash + proposal is incomplete and unclaimed/claim-expired → a mutation resubmission must attempt to atomically acquire a new recovery claim; the winner resumes governance from the durable normalized request under the new epoch, while a loser observes the new active claim and returns `PENDING`;
 - same `proposal_id` + different canonical request hash → return `IDEMPOTENCY_CONFLICT`; do not evaluate or mutate;

@@ -13,8 +13,8 @@ permissions:
   issues: write
 
 concurrency:
-  group: codex-review-request-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: codex-review-request-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
 
 jobs:
   request-review:

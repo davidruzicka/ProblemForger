@@ -36,6 +36,7 @@ async function invoke(comments, { listError, createError } = {}) {
       createComment: async (args) => {
         if (createError) throw createError;
         created.push(args);
+        comments.push(comment('github-actions[bot]', 'Bot', args.body));
       },
     } },
   };
@@ -65,6 +66,26 @@ for (const [name, comments, expected] of [
 test('list failure is surfaced instead of posting a duplicate', async () => {
   const error = new Error('list failed');
   await assert.rejects(invoke([], { listError: error }), (actual) => actual === error);
+});
+
+test('serialized same-head invocations share one durable comment', async () => {
+  const comments = [];
+  assert.equal((await invoke(comments)).length, 1);
+  assert.equal((await invoke(comments)).length, 0);
+  assert.equal(comments.length, 1);
+});
+
+test('same PR and payload head serialize without cancellation', () => {
+  const concurrency = workflow.match(/^concurrency:\n((?: {2}[^\n]*\n)*)/m)?.[1];
+  assert.equal(concurrency,
+    '  group: codex-review-request-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}\n' +
+    '  cancel-in-progress: false\n');
+});
+
+test('privileged review workflow never executes PR-head code', () => {
+  assert.match(workflow, /\n  pull_request_target:\n/);
+  assert.doesNotMatch(workflow, /uses: actions\/checkout@|^\s+(?:run|ref):/m);
+  assert.doesNotMatch(source, /require\(|import\(|child_process|exec\(|eval\(/);
 });
 
 test('comment failure is surfaced for a workflow retry', async () => {

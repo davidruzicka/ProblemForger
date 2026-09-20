@@ -29,7 +29,7 @@ single navigation map; the linked document is the only normative definition.
 
 ## Run checks
 
-From the repository root, use Python 3.12+ in a virtual environment and Node.js 18+. The pinned NumPy dependency is only for the analysis reference checks; no credentials are needed:
+From the repository root, use Python 3.12+ in a virtual environment and Node.js 18+. The Python checks use only the standard library; no credentials are needed:
 
 ```sh
 python3 -m pip install -r tests/requirements.txt

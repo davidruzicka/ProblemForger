@@ -631,8 +631,13 @@ variation, not to support a population-level uncertainty claim.
 
 For `k ∈ {1,2}`, remove repetition `k` from both configurations, recompute the
 single-repetition C-A delta, and report both leave-one-repetition-out estimates.
-Define `SENSITIVITY_DISCORDANT` when either estimate changes the sign or the
-predeclared practical band relative to the full two-repetition point estimate.
+For an estimate `x` in percentage points, define
+`sign(x) = -1` for `x < 0`, `0` for `x = 0`, and `+1` for `x > 0`.
+The predeclared practical bands are `HARM` for `x < -10`,
+`NEUTRAL` for `-10 <= x <= +10`, and `BENEFIT` for `x > +10`;
+exactly -10 and +10 are `NEUTRAL`.
+Set `SENSITIVITY_DISCORDANT` if and only if at least one leave-one-repetition-out
+estimate differs in sign or band from the full two-repetition point estimate.
 Use `delta = 10` percentage points only as a descriptive band boundary; it does
 not block the local operational decision or automatically trigger P7. Report
 `max_abs_deviation_pp` and both individual repetition deltas. A positive claim
@@ -802,6 +807,13 @@ For each individual model call, including calls after semantic execution has beg
 - do not retry semantic/API validation failures, malformed provider responses that do not produce an accepted semantic response, content/tool behavior, or ordinary 4xx responses other than 408/429;
 - all transport attempts and reason codes are retained in raw telemetry.
 
+Every eligible transport failure requires the next transport attempt while an
+attempt remains; the runner must not voluntarily stop. Continue until a semantic
+response is produced, a nonretryable result occurs, the semantic deadline or
+resource budget is exhausted, or all 3 attempts are exhausted. The existing
+semantic-deadline and experiment-wide stop rules take precedence over this
+retry obligation; neither the timer nor the resource ledger is reset.
+
 A nonretryable provider failure that occurs **before the run has accepted its first semantic model response** terminates the schedule slot as `PRE_SEMANTIC_PROVIDER_FAILURE`, is scored unresolved, and is **not** eligible for whole-run replacement. This includes API/request validation failures, malformed provider responses not accepted into agent state, and ordinary nonretryable 4xx responses. The specific provider/error code remains in raw data.
 
 Exhausting the transport budget on the **first** model call without any semantic response terminates the attempt as `INFRA_FIRST_PROVIDER_CALL` and is eligible for whole-run replacement under the fixed attempt budget **only if the semantic deadline still has positive remaining time**. If the semantic deadline reaches zero first or simultaneously, `WALL_CLOCK_EXHAUSTED` takes precedence and no whole-run replacement is allowed. Exhausting a later model call's transport budget after semantic execution has begun terminates the slot as unresolved `RUN_INTERRUPTED`, unless semantic deadline expiry caused/preceded that termination, in which case `WALL_CLOCK_EXHAUSTED` takes precedence.
@@ -847,6 +859,14 @@ For each required control/candidate evaluation repetition:
 - if the canonical candidate patch is absent, malformed, or cannot be applied before repository tests start, record `CANDIDATE_PATCH_INVALID` for that evaluator repetition with the exact patch digest and application error; this is a nonretryable agent/system outcome, is not eligible for whole-run replacement, and scores the measured run unresolved rather than being reclassified as evaluator infrastructure failure;
 - after such a measured missing-vector outcome, continue with the other mandatory evaluator repetition in a separate fresh environment. It must not be skipped merely because the first repetition is already unresolved; the only exception is an experiment-wide stop already required by this policy (for example, `INCOMPLETE_INFRASTRUCTURE`, `BUDGET_EXHAUSTED`, or `INVALID_EXPERIMENT_STATE`);
 - if the 3-attempt pre-test evaluator infrastructure budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point delta.
+
+Every eligible pre-test infrastructure failure requires the next evaluator
+attempt while an attempt remains; the runner must not voluntarily stop.
+Continue until a complete required-test vector is produced, a nonretryable
+result occurs, or all 3 attempts are exhausted. An already-required
+experiment-wide stop takes precedence over this retry obligation, including
+resource-budget exhaustion. Each retry evaluates the same retained patch/control
+in a fresh environment; it never restarts the agent trajectory.
 
 Infrastructure-invalid attempts are reported separately from valid agent outcomes in cost/latency accounting; they are never silently deleted.
 
