@@ -33,7 +33,7 @@ linked ADRs and requirement IDs:
 - harness-neutral service boundary, graph vocabulary, and separated lifecycle/evidence axes — [GRAPH.MODEL](docs/problem-graph.md#spec-graph-model), ADRs 0001–0005, 0007–0009;
 - durable journal, graph-version atomicity, provider ownership, claims, and recovery — [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), [PROTOCOL.STORE-OWNER](docs/protocol.md#spec-protocol-store-owner), [PROTOCOL.LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock), ADR 0006;
 - evidence trust/binding/recovery and review-loop checkpoints — [VERIFICATION.EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [VERIFICATION.EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), [VERIFICATION.EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery), [REVIEW.LOOP](docs/review-loop.md#spec-review-loop);
-- the frozen P6 A/B/C experiment — [EVALUATION.MODEL](docs/evaluation.md#spec-evaluation-model), [EVALUATION.PRE-P6](docs/evaluation.md#spec-evaluation-pre-p6), [EVALUATION.BOOTSTRAP-RNG](docs/evaluation.md#spec-evaluation-bootstrap-rng), [EVALUATION.PREFLIGHT](docs/evaluation.md#spec-evaluation-preflight), [EVALUATION.MEASURED-EVALUATION](docs/evaluation.md#spec-evaluation-measured-evaluation).
+- the frozen P6-AC practical experiment — [EVALUATION.MODEL](docs/evaluation.md#spec-evaluation-model), [EVALUATION.PRE-P6](docs/evaluation.md#spec-evaluation-pre-p6), [EVALUATION.PREFLIGHT](docs/evaluation.md#spec-evaluation-preflight), [EVALUATION.MEASURED-EVALUATION](docs/evaluation.md#spec-evaluation-measured-evaluation).
 
 See ADRs 0001–0009.
 
@@ -42,7 +42,7 @@ See ADRs 0001–0009.
 - [ ] **P0 — Specification audit and experiment contract**
   - [x] audit specifications/ADRs for contradictions and hidden assumptions;
   - [x] verify and expand related work from current primary sources;
-  - [x] freeze the first A/B/C evaluation protocol;
+  - [x] freeze the first P6-AC practical evaluation protocol;
   - [x] resolve event, lifecycle, evidence, runtime-boundary, and graph-interaction ambiguities;
   - [x] decompose P1 into bounded implementation issues;
   - [ ] merge/review the P0 specification PR.
@@ -83,11 +83,12 @@ See ADRs 0001–0009.
   - thin TypeScript extension/client;
   - minimal native TUI status only.
 
-- [ ] **P6 — Baseline and deterministic-governance experiment**
+- [ ] **P6 — Practical whole-system evaluation**
   - implement issue #8 against the normative evaluation IDs in `docs/evaluation.md`;
-  - freeze/hash the benchmark, intervention, governance, metrics, ordered model chain, and complete HarnessX runtime before exposing selected tasks;
+  - freeze/hash the benchmark, complete ProblemForger package, metrics, ordered model chain, and complete HarnessX runtime before exposing selected tasks;
   - materialize the pinned manifest/schedule, enforce preflight/isolation/deadline/retry rules, retain raw artifacts, and compute the frozen paired outcomes and efficiency metrics;
-  - preserve null/negative results and report the declared validity limitations.
+  - preserve null/negative results and report the declared validity limitations;
+  - run the optional B diagnostic only as a separately frozen experiment when mechanism attribution is needed.
 
 - [ ] **P7 — Learned verifier**
   - verifier port and baseline implementation;
@@ -133,7 +134,7 @@ The PoC is complete when:
 - harness telemetry is not required for graph replay or governance audit;
 - graph mutations cannot be silently committed by the worker model;
 - deterministic evidence and learned evidence are represented separately;
-- at least one controlled benchmark compares the planned ablations;
+  - at least one controlled benchmark compares the baseline with the complete ProblemForger package;
 - calibration claims use task-level held-out data;
 - routing, if enabled, includes uncertainty and exploration controls;
 - all reported improvements include cost/latency and repeated-run statistics;

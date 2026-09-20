@@ -5,11 +5,17 @@
 - Date: 2026-09-18
 - Status: Ready for human review; no production implementation started.
 
+Historical amendment (2026-09-20): the unpublished A/B/C mechanism draft was
+replaced by the practical P6-AC whole-system contract in `docs/evaluation.md`.
+The A/B/C references below describe the audited draft; they are not the current
+P6 execution plan.
+
 ## Audit objective
 
 The bootstrap specification was reviewed for contradictions, hidden coupling, ambiguous ownership, untestable requirements, premature abstractions, and threats to the planned ablation study.
 
-The audit also re-checked the adjacent-work map and froze a small first A/B/C mechanism experiment before implementation can optimize against it.
+The audit also re-checked the adjacent-work map and froze a small first mechanism
+experiment before implementation can optimize against it.
 
 ## Problems found
 
@@ -73,7 +79,8 @@ Resolution: P1 introduces only currently required ports. Later ports appear in t
 
 The original document listed metrics but did not define a task set, model, run count, failure policy, or precise A/B/C parity.
 
-Resolution: `docs/evaluation.md` now contains a versioned P6 mechanism experiment contract with deterministic task selection and paired comparisons.
+Resolution: `docs/evaluation.md` now contains a versioned P6-AC practical package
+experiment contract with deterministic task selection and paired comparison.
 
 ## Architectural decisions added
 
@@ -113,7 +120,7 @@ This is a differentiation hypothesis, not a novelty claim.
 
 ## Evaluation contract frozen for P6
 
-The first A/B/C mechanism experiment is specified in `docs/evaluation.md`.
+The first P6-AC whole-system experiment is specified in `docs/evaluation.md`.
 
 The normative contract owns task selection, preflight, failure classification, ordering, statistical analysis, efficiency metrics, and raw-data retention. This audit records the rationale and changes; it does not duplicate the operational rules.
 
@@ -123,7 +130,7 @@ The follow-up audit identified five issues and the user authorized their correct
 
 - **Lease ownership:** restrict P1 to one live provider per durable store rather than coordinate independent process clock anchors. ADR 0006 records the decision; `STORE-OWNER` defines enforcement and future tests.
 - **Evidence trust:** distinguish worker claims from service-assigned provenance and bind support to immutable checked content. ADR 0007 records the decision; `EVIDENCE-TRUST`, `EVIDENCE-BINDING`, and `EVIDENCE-RECOVERY` define the operational contract.
-- **Preflight:** the first two disagreeing complete vectors now determine instability immediately. Optional diagnostics occur after primary execution and cannot invalidate it. This explicitly amends the pre-implementation P6 envelope; it does not change the selected population, A/B/C treatment, or primary estimator.
+- **Preflight:** the first two disagreeing complete vectors now determine instability immediately. Optional diagnostics occur after primary execution and cannot invalidate it. This explicitly amends the pre-implementation P6 envelope; the current P6-AC contract also permits only predeclared reserve activation for patch-independent defects before measurement.
 - **Document ownership:** detailed algorithms now have one normative home, linked from instructions, planning, ADR rationale, and implementation issues.
 - **Verification:** checked-in specification regression checks and tests of the actual inline review-request script replace unreproducible claims of local checks. The PR also includes executable GitHub Actions automation, not only documentation.
 
@@ -138,7 +145,7 @@ operational rules remain in their normative documents:
 | --- | --- | --- |
 | lease TTL, fencing, and expiry-before-reclaim | [PROTOCOL.LEASE-CLOCK](protocol.md#spec-protocol-lease-clock), [MODULES.EVENTSTORE-PORT](modules.md#spec-modules-eventstore-port) | `test_expired_claim_cannot_finalize_or_renew`, issue #16 |
 | one fenced EventStore graph-append port | [MODULES.EVENTSTORE-PORT](modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) | `test_every_graph_append_signature_requires_fencing` |
-| deterministic shared bootstrap stream | [EVALUATION.BOOTSTRAP-RNG](evaluation.md#spec-evaluation-bootstrap-rng) | bootstrap fixtures/reference tests, issue #8 |
+| superseded bootstrap stream | historical `docs/evaluation.md` draft | `tests/fixtures/bootstrap-v1.json` retained as audit evidence |
 | ordered model fallback and post-exposure exhaustion | [EVALUATION.MODEL](evaluation.md#spec-evaluation-model) | `test_model_chain_handles_post_exposure_exhaustion` |
 | content-addressed HarnessX runtime | [EVALUATION.PRE-P6](evaluation.md#spec-evaluation-pre-p6) | `test_harness_runtime_is_fully_content_addressed` |
 | mandatory candidate evaluator repetitions | [EVALUATION.MEASURED-EVALUATION](evaluation.md#spec-evaluation-measured-evaluation) | `test_missing_candidate_vector_does_not_skip_other_repetition` |
@@ -153,7 +160,7 @@ The following are deliberately deferred and must not be silently decided inside 
 
 1. **Local service transport.** P1 includes a bounded spike comparing practical Python/TypeScript options. The selected transport requires an ADR.
 2. **Exact initial graph node/edge schema.** P1 defines the command/wire contracts; P2 finalizes the minimal graph schema under ADR/spec constraints.
-3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 20 IDs are materialized and hashed only after the benchmark adapter, graph intervention, governance policy, graph metric rules, and telemetry metric rules are frozen; they are not hand-picked or used for artifact development.
+3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 12 primary/reserve IDs are materialized and hashed only after the benchmark adapter, graph intervention, governance policy, graph metric rules, and telemetry metric rules are frozen; the eight holdout identifiers remain separate and their images do not block P6. None are hand-picked or used for artifact development.
 4. **P8 calibration dataset size.** The eight reserved P6 tasks are only an initial task-level holdout. P8 must expand it before making calibration claims.
 5. **P11 external-validity benchmark.** It is intentionally re-audited close to P11 because coding benchmarks are changing quickly.
 
@@ -183,7 +190,7 @@ The following are deliberately deferred and must not be silently decided inside 
 - `tests/fixtures/bootstrap-v1.json`
 - `tests/requirements.txt`
 - `tests/review-workflow.test.mjs`
-- `tests/test_bootstrap_reference.py`
+- `tests/test_practical_effect_reference.py`
 - `tests/test_specification.py`
 
 ## P1 readiness

@@ -123,7 +123,7 @@ SWE-smith generates executable software-engineering tasks at scale and publishes
 - Repository: https://github.com/SWE-bench/SWE-smith
 - Dataset: https://huggingface.co/datasets/SWE-bench/SWE-smith
 
-ProblemForger uses a pinned deterministic subset for the first small A/B/C mechanism experiment. Because the dataset is public and has been used for model training, results are not presented as uncontaminated capability measurements.
+ProblemForger uses a pinned deterministic subset for the first small A/C whole-system practical experiment. Because the dataset is public and has been used for model training, results are not presented as uncontaminated capability measurements. A/B/C mechanism attribution is deferred to a separate diagnostic experiment.
 
 ### SWE-bench Verified
 

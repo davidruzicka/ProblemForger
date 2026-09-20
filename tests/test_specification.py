@@ -40,7 +40,7 @@ class SpecificationChecks(unittest.TestCase):
         evaluation = read("docs/evaluation.md")
         preflight = evaluation.split("### Task/evaluator preflight\n", 1)[1].split("### Measured candidate patches", 1)[0]
         self.assertNotIn("run one third control evaluation", preflight)
-        self.assertIn("classify the task as `EVALUATOR_UNSTABLE` immediately", preflight)
+        self.assertIn("classify the candidate as `EVALUATOR_UNSTABLE` immediately", preflight)
         self.assertIn("cannot abort the experiment", preflight)
         self.assertIn("diagnostic", preflight)
 
@@ -80,7 +80,7 @@ class SpecificationChecks(unittest.TestCase):
             "absence from a request is not evidence",
             "do not emulate it",
             "interleaved harness/configuration schedule",
-            "difference-in-differences",
+            "A 2×2 harness-by-A/C design",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, comparison)
@@ -89,68 +89,58 @@ class SpecificationChecks(unittest.TestCase):
         evaluation = read("docs/evaluation.md")
         normalized = " ".join(evaluation.split())
         for phrase in (
-            "practical feasibility/mechanism pilot",
+            "practical whole-system feasibility pilot",
+            "P6-AC",
+            "eight target tasks and four predeclared reserves",
+            "two independent agent runs per task and configuration",
+            "32 measured slots",
+            "C - A",
+            "CONTINUE",
+            "ADAPT",
+            "STOP",
             "Academic uncertainty is acceptable",
             "finite total elapsed-time limit",
             "finite provider-spend guard",
             "runtime digest identifies the retained runtime/harness bytes, **not hosted model identity**",
-            "does not automatically launch P7",
-            "no primary point estimate or confidence interval",
+            "do not automatically start P7",
+            "No primary point delta",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, normalized)
 
-    def test_continuation_and_sensitivity_rules_are_frozen(self):
+    def test_practical_continuation_rule_is_frozen(self):
         evaluation = read("docs/evaluation.md")
-        interpretation = evaluation.split("### Frozen continuation and interpretation rule\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
+        interpretation = evaluation.split("### Practical continuation decision\n", 1)[1].split("### Practical sensitivity report\n", 1)[0]
+        interpretation = " ".join(interpretation.split())
 
         for phrase in (
-            "delta = 10",
-            "U < -delta",
-            "L > delta",
-            "L >= -delta",
-            "U <= delta",
-            "Equality at either boundary",
-            "REDESIGN",
-            "PRACTICALLY_NULL",
-            "ADVANCE_P7",
-            "B-A point estimate is at least `+delta`",
-            "B-A lower\n  bound is greater than `-delta`",
-            "C-B lower bound is greater than `-delta`",
-            "No\nanalyst may choose a different threshold",
-            "SENSITIVITY_DISCORDANT",
-            "zero effects fixed",
-            "all `2^m` assignments",
-            "inclusive tail `abs(T*) >= abs(T_observed)`",
-            "replicate-disagreement rate",
-            "leave-one-repetition-out",
-            "Do not select a favorable omitted replicate",
+            "CONTINUE",
+            "ADAPT",
+            "STOP",
+            "critical correctness, isolation, security, or operational regression",
+            "operational overhead is acceptable",
+            "not a statistical gate",
+            "can be deduced from the current plan",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, interpretation)
-        self.assertNotIn("does not exclude material harm", interpretation)
 
-    def test_sensitivity_discordance_uses_sign_and_practical_band(self):
+    def test_sensitivity_discordance_is_a_practical_warning(self):
         evaluation = read("docs/evaluation.md")
-        sensitivity = evaluation.split("### Frozen sensitivity analyses\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
+        sensitivity = evaluation.split("### Practical sensitivity report\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
+        sensitivity = " ".join(sensitivity.split())
         for phrase in (
-            "point-estimate category",
-            "sign(x)",
-            "NEGATIVE`, `ZERO`, or `POSITIVE",
-            "band(x)",
-            "MATERIAL_HARM`, `WITHIN_MARGIN`, or `PRACTICAL_BENEFIT",
-            "x < -delta",
-            "x > delta",
-            "SENSITIVITY_DISCORDANT` iff",
-            "sign or practical band",
+            "two fresh repetitions",
+            "For `k ∈ {1,2}`",
+            "SENSITIVITY_DISCORDANT",
+            "sign or the predeclared practical band",
+            "delta = 10",
             "max_abs_deviation_pp",
-            "does not alter the P7 gate",
-            "p-values and replicate-disagreement rates do not drive",
-            "new blinded replication before making a positive claim",
+            "does not block the local operational decision",
+            "No bootstrap, p-value, confidence interval",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, sensitivity)
-        self.assertNotIn("If primary and sensitivity conclusions disagree", sensitivity)
 
     def test_task_artifact_exclusion_is_pre_measurement_only(self):
         evaluation = read("docs/evaluation.md")
@@ -159,13 +149,13 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "`INFRA_TASK_ARTIFACT`",
             "configuration-neutral, patch-independent preflight",
-            "before `N` is computed",
+            "before the eligible-task count\n`N` is computed",
             "before\nthe measured schedule is hashed",
             "missing, corrupt, or schema-incompatible",
             "Network/image-pull failures",
             "must not be relabeled as task invalidity",
-            "every A/B/C\nconfiguration and all three repetitions",
-            "with no replacement task",
+            "primary/reserve\npool before measurement",
+            "with the next predeclared reserve",
             "after the first measured slot starts",
             "INCOMPLETE_INFRASTRUCTURE",
             "unknown/mixed",
@@ -201,7 +191,7 @@ class SpecificationChecks(unittest.TestCase):
             "Unavailable image content takes precedence over `INFRA_TASK_ARTIFACT`",
             "`EVAL_IMAGE_SETUP`",
             "missing mirror/cache object",
-            "cannot change `N`",
+            "does not change `N`",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, normalized)
@@ -362,7 +352,6 @@ class SpecificationChecks(unittest.TestCase):
             "VERIFICATION.EVIDENCE-RECOVERY": "docs/verification.md",
             "EVALUATION.MODEL": "docs/evaluation.md",
             "EVALUATION.PRE-P6": "docs/evaluation.md",
-            "EVALUATION.BOOTSTRAP-RNG": "docs/evaluation.md",
             "EVALUATION.PREFLIGHT": "docs/evaluation.md",
             "EVALUATION.MEASURED-EVALUATION": "docs/evaluation.md",
             "REVIEW.LOOP": "docs/review-loop.md",
@@ -381,13 +370,6 @@ class SpecificationChecks(unittest.TestCase):
                 self.assertIn(f'<a id="{anchor}"></a>', owner)
                 self.assertIn(f"`{spec_id}`", ownership)
                 self.assertIn(f"({Path(expected[spec_id]).name}#{anchor})", ownership)
-
-    def test_bootstrap_has_one_shared_index_draw(self):
-        evaluation = read("docs/evaluation.md")
-        self.assertTrue("#### BOOTSTRAP-RNG" in evaluation, "Missing canonical RNG contract")
-        self.assertTrue("size=(100_000, n)" in evaluation, "Missing draw shape")
-        self.assertTrue("dtype=np.int64" in evaluation, "Missing integer dtype")
-        self.assertTrue("shared" in evaluation and "instance_id" in evaluation)
 
     def test_hash_inputs_have_explicit_cross_implementation_serialization(self):
         evaluation = read("docs/evaluation.md")
@@ -409,7 +391,7 @@ class SpecificationChecks(unittest.TestCase):
             "only added path",
             "No contradiction with an accepted ADR",
             "conditional",
-            "do not include the degenerate",
+            "superseded A/B/C draft",
             "generation-policy-v1` record",
             "Secondary-metric multiplicity",
             "Benefit/cost utility",
@@ -421,7 +403,7 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, methodology)
         self.assertIn("Resolved 2026-09-20", methodology)
-        self.assertIn("evaluation.md#frozen-sensitivity-analyses", methodology)
+        self.assertIn("evaluation.md#practical-sensitivity-report", methodology)
 
     def test_methodology_register_is_discoverable_from_readme(self):
         self.assertIn("[Methodology audit and decision register](docs/methodology.md)", read("README.md"))

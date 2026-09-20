@@ -16,9 +16,13 @@ Mitigation: protected root anchors, global revalidation, decomposition evaluatio
 
 ### Intervention confounding
 
-Adding a graph also adds tools, instructions, latency, and context. A→B therefore cannot be interpreted as "the graph data structure alone caused the effect."
+Adding the complete package also adds tools, instructions, latency, context, and
+governance. The practical P6 A→C result therefore cannot be interpreted as an
+isolated graph or governance effect.
 
-Mitigation: predeclare A→B as the graph-interaction package; make B and C share exactly the same graph interface/instructions so B→C isolates deterministic governance more cleanly.
+Mitigation: use P6 to decide whether the complete package is useful in the tested
+workflow. If mechanism attribution is needed, run B as a separately frozen
+diagnostic with the same graph interface as C and governance disabled.
 
 ### Calibration shift
 
@@ -36,13 +40,16 @@ Mitigation: controlled exploration/shadow evaluation and explicit policy logging
 
 Repeated development against one task set can turn evaluation into training. Public coding datasets may also appear in model training.
 
-Mitigation: freeze the P6 selector before implementation, keep task-level holdouts, use P6 only for mechanism comparison, and choose an independent later external-validity benchmark.
+Mitigation: freeze the P6 selector before implementation, keep task-level holdouts, use P6 only for the bounded whole-system workflow comparison, and choose an independent later external-validity benchmark.
 
 ### Small-sample overinterpretation
 
-The first P6 experiment deliberately uses few tasks.
+The first P6-AC experiment deliberately uses eight tasks, two repetitions, and 32
+measured slots before retries.
 
-Mitigation: report per-task results and task-level bootstrap intervals; do not convert the PoC into population-level or state-of-the-art claims.
+Mitigation: report per-task results, both repetitions, operational cost/latency,
+and the exact tested workflow. Do not convert the PoC into population-level,
+statistical-equivalence, or state-of-the-art claims.
 
 ### Provider/model drift
 

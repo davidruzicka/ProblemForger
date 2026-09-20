@@ -170,7 +170,10 @@ This prevents the protocol from collapsing to the least-capable harness.
 
 ## Initial graph tool surface
 
-For the first A/B/C ablation, adapters should expose the same ProblemForger graph interaction surface in B and C.
+For the first P6-AC whole-system comparison, the C adapter exposes the frozen
+ProblemForger graph interaction and governance surface while A exposes neither.
+If a later B/C diagnostic is run, B and C must expose the same graph interaction
+surface and differ only in governance activation.
 
 Conceptually:
 

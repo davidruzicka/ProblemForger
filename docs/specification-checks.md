@@ -23,7 +23,6 @@ single navigation map; the linked document is the only normative definition.
 | `VERIFICATION.EVIDENCE-RECOVERY` | Evidence retention and restart behavior | [Verification — EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery) |
 | `EVALUATION.MODEL` | P6 model and runtime selection | [Evaluation — Model](evaluation.md#spec-evaluation-model) |
 | `EVALUATION.PRE-P6` | Pre-P6 frozen artifacts | [Evaluation — frozen artifacts](evaluation.md#spec-evaluation-pre-p6) |
-| `EVALUATION.BOOTSTRAP-RNG` | Bootstrap stream and reference computation | [Evaluation — BOOTSTRAP-RNG](evaluation.md#spec-evaluation-bootstrap-rng) |
 | `EVALUATION.PREFLIGHT` | Task/evaluator preflight | [Evaluation — preflight](evaluation.md#spec-evaluation-preflight) |
 | `EVALUATION.MEASURED-EVALUATION` | Measured candidate patches | [Evaluation — measured runs](evaluation.md#spec-evaluation-measured-evaluation) |
 | `REVIEW.LOOP` | Review automation and human checkpoints | [Review loop](review-loop.md#spec-review-loop) |
@@ -39,7 +38,21 @@ node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The Python suite executes the normative bootstrap reference against golden synthetic fixtures for N=8..12, verifies input-order and RNG-state isolation, and checks invalid inputs. It also checks the corrected specification boundaries, including the practical pilot/resource-envelope interpretation, predeclared model/fallback behavior, content-addressed runtime identity with explicit hosted-model limitations, conditional native-generation controls and the separate harness-comparison contract, frozen continuation/sensitivity rules, distinct image materialization/setup phases, pre-measurement task-artifact exclusions, candidate-patch failure classification, durable run registration with metadata-conflict protection and bounded journal reads, owner-plus-epoch fencing, non-rewindable lease recovery across provider generations, mandatory completion of both evaluator repetitions unless an experiment-wide stop applies, the absence of the obsolete mandatory third control, single normative homes for the lease-clock and EventStore port contracts, mapped requirement anchors, and relative document links. These are document regression checks, not proof that a future provider or governor implements the prose.
+The Python suite checks the P6-AC practical contract, including the direct A/C
+comparison, eight-task target with predeclared reserves, operational continuation
+decision, resource-envelope interpretation, predeclared model/fallback behavior,
+content-addressed runtime identity with explicit hosted-model limitations,
+conditional native-generation controls and the separate harness-comparison
+contract, sensitivity reporting, distinct image materialization/setup phases,
+pre-measurement task-artifact exclusions, candidate-patch failure
+classification, durable run registration with metadata-conflict protection and
+bounded journal reads, owner-plus-epoch fencing, non-rewindable lease recovery
+across provider generations, mandatory completion of both evaluator repetitions
+unless an experiment-wide stop applies, the absence of the obsolete mandatory
+third control, single normative homes for the lease-clock and EventStore port
+contracts, mapped requirement anchors, and relative document links. These are
+document regression checks, not proof that a future provider or governor
+implements the prose.
 
 In CI, the whitespace check uses the actual event range: pull requests compare the base and head SHAs, while pushes compare the event's previous and current SHAs. The checkout fetches complete history so both endpoints are available; a new-branch push falls back to the new commit's parent.
 
@@ -80,4 +93,7 @@ harness comparison separate from P6, and constrain task-artifact exclusions to t
 pre-measurement common-task freeze. These checks protect the contract wording; they
 do not substitute for adapter capability probes or live harness/evaluator tests.
 
-The bootstrap fixtures fix the full index-matrix digest and both confidence intervals for every permitted retained task count. The reference sorts tasks, initializes once, draws once, and shares the draw across ordered comparisons. A separate scalar calculation verified the interval reductions for N=8 and N=12. P1 provider tests must still prove transactional TTL calculation, expiry-before-reclaim rejection, and rejection of missing/stale fencing; document checks are not a substitute for those runtime tests.
+The superseded bootstrap fixtures remain only as historical audit evidence and are
+not part of P6-AC. P1 provider tests must still prove transactional TTL
+calculation, expiry-before-reclaim rejection, and rejection of missing/stale
+fencing; document checks are not a substitute for those runtime tests.
