@@ -63,11 +63,13 @@ claim_proposal(run_id, proposal_id, owner_id, claim_ttl_ms)
     | PENDING {claim_epoch, lease_expires_at_ms}
     | FINAL
     | ABANDONED
+    | INVALID_CLAIM_TTL
     | NOT_FOUND
 
 renew_claim(run_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
     -> RENEWED
     | STALE_CLAIM
+    | INVALID_CLAIM_TTL
     | NOT_FOUND
 
 append_audit(run_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
@@ -99,6 +101,7 @@ Requirements:
 - canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and fenced terminalization;
 - obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
+- `claim_ttl_ms` must be a positive finite integer whose lease-deadline computation cannot overflow; `claim_proposal` and `renew_claim` reject any other value atomically with `INVALID_CLAIM_TTL`, leaving the claim state and persisted lease-clock floor unchanged;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
 - claims owned by a previous provider `lease_clock_generation` are inactive on reopen and require a new recovery claim epoch; restart must not revive them by moving lease time backward;
 - `append_audit` claim arguments are optional only for non-terminal-only batches; for a batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`, `run_id`, `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are required and non-null. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
@@ -241,7 +244,7 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - stale-worker finalization/graph append rejected with no partial writes;
 - current-but-expired-worker finalization/graph append and expired-claim renewal rejected before reclaim, with no partial writes;
 - missing/null proposal identity or fencing epoch rejected before a graph append;
-- claim/renewal deadlines computed from provider time plus validated TTL, independent of caller time, with invalid TTL/overflow leaving claim and floor unchanged;
+- claim/renewal deadlines computed from provider time plus validated TTL, independent of caller time, with invalid TTL/overflow rejected as `INVALID_CLAIM_TTL` and leaving claim and floor unchanged;
 - terminal `ABANDONED` recovery status without graph mutation;
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;
