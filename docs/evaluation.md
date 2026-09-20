@@ -283,17 +283,22 @@ reservation and outcome are retained.
 
 Experiment elapsed time uses a restart-stable clock domain. The durable
 experiment record persists `experiment_started_at_utc` (RFC 3339 UTC) and a
-monotonically non-decreasing `experiment_elapsed_floor_ms`. On coordinator open,
-elapsed time is anchored at
-`max(experiment_elapsed_floor_ms, now_utc_ms - experiment_started_at_utc)`;
-within one process it advances only by process-monotonic elapsed time, and every
-ledger write advances the persisted floor. The experiment deadline is
-`experiment_started_at_utc + experiment_wall_clock_limit_seconds` expressed in
-this domain, so a backward UTC shift across a restart can never extend the
-frozen budget and a forward shift may only expire it earlier. An operation in
-flight across a restart keeps its full spend reservation, and its elapsed
-interval is conservatively counted up to the reopen anchor; restart recovery
-never makes redispatched work free.
+monotonically non-decreasing `experiment_elapsed_floor_ms`. Within one process,
+elapsed time advances only by process-monotonic elapsed time, and every ledger
+write advances the persisted floor. When dispatching any operation, the
+coordinator durably records the operation's elapsed-time deadline: the elapsed
+value at dispatch plus the operation's finite timeout. On coordinator open,
+elapsed time is anchored at `max(experiment_elapsed_floor_ms, now_utc_ms -
+experiment_started_at_utc, max outstanding recorded operation deadline)`; once
+an outstanding operation is reconciled, its recorded deadline no longer
+contributes to the anchor. The anchor is capped at the experiment deadline: if
+it reaches `experiment_started_at_utc + experiment_wall_clock_limit_seconds`,
+the existing `BUDGET_EXHAUSTED` stop applies. A backward UTC shift or a crash
+before the next ledger write can therefore never extend the frozen budget — an
+in-flight interval is conservatively charged up to its recorded timeout — and a
+forward shift may only expire it earlier. An operation in flight across a
+restart keeps its full spend reservation, and restart recovery never makes
+redispatched work free.
 
 When another required operation cannot fit the remaining resource envelope, or
 the elapsed deadline is reached, stop as `BUDGET_EXHAUSTED` and mark the analysis
