@@ -469,10 +469,15 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "experiment_started_at_utc",
             "monotonically non-decreasing `experiment_elapsed_floor_ms`",
-            "max(experiment_elapsed_floor_ms, now_utc_ms - experiment_started_at_utc)",
+            "max(experiment_elapsed_floor_ms, now_utc_ms - experiment_started_at_utc, max outstanding recorded operation deadline)",
             "process-monotonic elapsed time",
             "every ledger write advances the persisted floor",
-            "can never extend the frozen budget",
+            "the operation's elapsed-time deadline",
+            "elapsed value at dispatch plus the operation's finite timeout",
+            "no longer contributes to the anchor",
+            "capped at the experiment deadline",
+            "conservatively charged up to its recorded timeout",
+            "never extend the frozen budget",
             "keeps its full spend reservation",
             "restart recovery never makes redispatched work free",
         ):
