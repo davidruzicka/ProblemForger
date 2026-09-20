@@ -73,6 +73,7 @@ This repository is in the **specification and PoC stage**. Claims about reliabil
 - [PLAN.md](PLAN.md) — roadmap, phases, and exit criteria.
 - [AGENTS.md](AGENTS.md) — rules for AI-assisted implementation.
 - [P0 specification audit](docs/p0-audit.md)
+- [Methodology audit and decision register](docs/methodology.md)
 - [Vision](docs/vision.md)
 - [Architecture](docs/architecture.md)
 - [Ports, adapters, and modules](docs/modules.md)

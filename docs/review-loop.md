@@ -8,6 +8,11 @@ Use Codex review as an iterative quality gate without allowing the reviewer to s
 
 The repository supports an opt-in `review-loop` label. When the automation is active on `main`, each relevant PR update that produces a new head SHA requests a fresh Codex review, including updates authored by Codex/connector automation. The workflow itself only creates an issue comment and does not listen to issue-comment events, so no actor-level exclusion is needed to prevent recursion. Deduplication accepts a per-head marker only from the `github-actions[bot]` identity; untrusted PR comments cannot suppress a review request by copying the marker.
 
+The automation is bounded to one request per head SHA and is non-mutating: it does
+not create commits or change the PR. After the final implementation push, a human
+may record a waiver for that head and remove the `review-loop` label; the waiver is
+an explicit completion decision, not an implicit claim that a review was delivered.
+
 ## Loop
 
 ```text

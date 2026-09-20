@@ -13,6 +13,12 @@ content. It records the parameter review and subsequent discussion, not an
 approved replacement experiment. Creating this document does not approve its
 proposals. No selected benchmark tasks were opened or executed for this audit.
 
+Update 2026-09-20: the user approved prioritizing practical usability over full
+academic exactness, while retaining the existing infrastructure hard stops,
+retry limits, sensitivity semantics, and evaluator requirements. The corresponding
+amendment is in [Evaluation](evaluation.md); this register records its rationale
+and remaining decisions, rather than independently authorizing new policies.
+
 The [evaluation contract](evaluation.md), accepted ADRs, and the
 [contract ownership map](specification-checks.md#contract-ownership) remain
 authoritative. Values mentioned here describe the audited snapshot; operational
@@ -30,7 +36,20 @@ Optimal numeric settings cannot be inferred without development/pilot evidence.
 The design specifies reproducibility more precisely than it justifies its
 parameters. Freezing a number prevents post-hoc choice; it does not establish
 that the number is appropriate. Evaluate parameter interactions before adding
-more isolated thresholds.
+more isolated thresholds. The practical response is to limit what P6 claims, not
+to require a full statistical validation program before a feasibility run. Preserve
+auditable measurements and useful failures; defer population/confirmatory claims.
+
+### Practical-PoC disposition (2026-09-20)
+
+| Concern | Current disposition and normative anchor |
+| --- | --- |
+| Evidential role | P6 is a practical feasibility/mechanism pilot, not confirmatory or population proof. See [pilot scope](evaluation.md#p6-practical-pilot). |
+| Incomplete infrastructure | Preserve the hard experiment-wide stop and raw/descriptive evidence, with no primary estimate/CI or selected replacement. See [incomplete reporting](evaluation.md#p6-incomplete-reporting). |
+| Finite resources | Predeclare, record, and enforce an experiment wall-clock limit and provider-spend guard; choose actual values before exposure. See [resource budget](evaluation.md#p6-resource-budget). |
+| Opaque hosted model | Keep explicit `temperature=0`; acceptance evidence is sufficient when effective value/revision metadata is `UNKNOWN`. See [provider metadata](evaluation.md#p6-hosted-model-metadata). |
+| Image identity | Digest identifies runtime/harness bytes, not hosted model identity or exact future inference. See [runtime identity](evaluation.md#p6-runtime-image-identity). |
+| Progression and sensitivity | Keep the computed labels and `delta = 10` pp sensitivity predicate; record human development decisions separately. Sensitivity does not automatically change P7, and its positive-claim replication restriction remains. See [interpretation](evaluation.md#frozen-continuation-and-interpretation-rule) and [sensitivity](evaluation.md#frozen-sensitivity-analyses). |
 
 Distinguish these evidence levels throughout this register:
 
@@ -50,9 +69,11 @@ counterexample in §1.
 
 ## 1. Estimand and interpretation
 
-The first decision is whether P6 is a feasibility pilot or evidence for a
-practically useful improvement. Its current small budget and automatic
-continuation/equivalence rules serve different purposes.
+The evidential role is resolved for the practical PoC: P6 is a feasibility/mechanism
+pilot on the fixed retained tasks and observed executions. The small budget may
+inform whether further development is worthwhile; it does not establish population
+benefit or equivalence. The frozen numerical labels remain pilot summaries, while
+the decision to start/fund P7 is recorded separately by a human.
 
 Before revising the analysis, distinguish:
 
@@ -90,8 +111,10 @@ often the problem occurs. It does not prove the underlying success probabilities
 differ; it demonstrates that a collapsed empirical interval cannot establish
 their equality.
 
-Proposal: simulate coverage and decision errors before treating these intervals
-as evidence for equivalence or progression. Do not automatically substitute BCa,
+Proposal for stronger claims: simulate coverage and decision errors before treating
+these intervals as population equivalence or confirmatory progression evidence.
+This is not a blocker for feasibility data collection or exploratory development.
+Do not automatically substitute BCa,
 a hierarchical bootstrap, or a parametric model: each has assumptions that must
 match the estimand and sampling design.
 Before making stronger equivalence or progression claims, add this counterexample
@@ -178,9 +201,11 @@ a C-B effect near -9 when their lower bounds meet its conditions. The complete
 C-A gain can then be near +1, before accounting for overhead. This is an
 illustrative gate interaction, not an observed experiment.
 
-Proposal: report the complete-system C-A effect and costs when deciding whether
-the package is useful. Adding a new primary contrast or decision gate would be
-a research amendment, not a mechanical fix.
+Practical disposition: report the complete-system C-A point effect descriptively
+alongside costs when the comparison is complete, without adding a third primary
+hypothesis or changing the numerical gate. The human progression decision cites
+this evidence and the observed failure mechanisms separately from the frozen
+label. Adding a new primary contrast or numerical gate still requires approval.
 
 A learned verifier also need not be justified by the same condition as graph
 adoption. Failure of deterministic governance could motivate investigating a
@@ -195,14 +220,16 @@ research decision.
 | One model and one harness for P6 | Controls scope; conclusions remain conditional on that stack. | Retain for the first pilot; replicate before broad claims. |
 | Named primary model, thinking disabled | Rationale relative to intended deployment is not established. | Choose on separate development tasks and intended operating conditions. |
 | Temperature zero | Legitimate operating policy, not a determinism guarantee. | Retain only with that interpretation. |
-| Verification of effective temperature | Accepted requests establish API acceptance, not hidden provider implementation. Effective-value acknowledgement may be unavailable. | Distinguish requested, accepted, provider-reported, and unobservable values. |
+| Verification of effective temperature | Accepted requests establish API acceptance, not hidden provider implementation. Effective-value acknowledgement may be unavailable. | Resolved: require explicit `temperature=0` and observed acceptance; record effective value `UNKNOWN` when not reported, without rejecting the stack solely for this uncertainty. |
 | EXPLICIT / OMITTED_NATIVE / UNSUPPORTED / UNKNOWN statuses | These statuses summarize the richer `generation-policy-v1` record; the status alone must not be read as proof of an effective value. | Preserve the normative record. Derive separate capability, request-mode, and effective-value fields only if analysis needs them, and never infer an effective value from acceptance or documentation. |
 | 16,384 output tokens per response | Not a run-level cost/token cap. | Justify on development data; measure truncation and total usage. |
 | 60 agent steps | A step need not correspond to one tool call; graph work consumes budget. | Define step semantics and interpret effects at that budget, including graph overhead. |
 | 30-minute semantic deadline | Mixes model speed, provider delays, tests, and service overhead. Appropriate for end-to-end utility, not isolated reasoning quality. | Report the binding limit and latency breakdown. |
 | Setup outside semantic deadline | Separates startup from interaction budget but does not make startup cost disappear. | Retain end-to-end time/cost alongside semantic time. |
+| Experiment resource envelope | Per-response/per-run limits alone do not bound total pilot spend. | Record and enforce finite wall-clock and provider-spend limits before exposure; actual amounts require operator approval. A budget stop cannot purchase extra retries or a favorable subset. |
 | Same model and effort across harnesses | Does not establish equivalent prompts, sampling, reasoning budget, or tool policy. | Compare packaged systems unless actual parity is demonstrated. |
 | Freezing hidden prompts/defaults | May be impossible for opaque hosted systems. | Pin observable versions/configuration and record unobservable behavior as a limitation. |
+| Runtime image digest | Identifies runtime/harness bytes, not hosted weights or provider execution. | Retain for local-stack parity; record provider revision metadata when available and `UNKNOWN` otherwise. Do not promise exact inference replay. |
 | Interleaved frozen execution order | Reduces some temporal confounding but does not guarantee balanced positions or independence under drift. | Examine scheduling behavior on synthetic manifests and record provider/version changes. |
 | Separate harness comparison | Correct separation from P6 attribution; two harnesses by three configurations increases cost and interaction-analysis complexity. | Freeze scope and analysis before exposure; do not assume P6 sample size is sufficient. |
 
@@ -217,11 +244,11 @@ they should not emulate unsupported controls or inspect selected evaluation task
 | Two matching baseline evaluations | Can detect instability; agreement twice does not prove stability. | Describe as passing a check, not proof of deterministic behavior. |
 | Candidate must pass twice | Measures repeatable benchmark success, not only patch semantics. | Preserve this distinction and report individual evaluation outcomes. |
 | Three transport attempts and three whole-run attempts | Nested budgets permit up to nine first-call transport attempts if replacement conditions hold. | Measure aggregate budgets, timeouts, and backoff, not only local retry counts. |
-| One exhausted slot stops the experiment | Conservative missing-data policy; completion probability declines as required slots increase. | Consider a predeclared pause/resume policy without regenerating accepted trajectories. Requires approval. |
+| One exhausted slot stops the experiment | Conservative missing-data policy; completion probability declines as required slots increase. | Retained by explicit user direction. Stop measured execution and preserve a descriptive partial report; continuing measured slots after exhaustion is not permitted. |
 | No task exclusion after measurement starts | Strong protection against outcome-dependent selection. | Retain. |
 | Intrinsic task defects versus unavailable images | Necessary distinction: inability to retrieve verified content does not establish an intrinsic defect. | Retain the normative preflight/infrastructure precedence. |
 | New blinded selection after fallback-chain exhaustion | Prevents informed model selection, but repeated aborted experiments can themselves create selection. | Retain all attempted experiment versions and report reasons for failure. |
-| No primary estimate for incomplete experiment | Defensible conservative rule; partial evidence still has descriptive value. | Preserve raw/descriptive outputs without claiming a complete paired comparison. |
+| No primary estimate for incomplete experiment | Partial evidence still has practical debugging and feasibility value. | Preserve raw/descriptive outputs, missing/not-started reasons, planned/observed counts and costs. No complete-case primary estimate/CI, imputation, or progression label. |
 | No regeneration after accepted semantic response | Protects against choosing favorable trajectories. | Retain; recovery proposals must preserve that boundary. |
 
 Illustrative calculations, not measured project failure rates:
@@ -236,6 +263,14 @@ Actual failures may be correlated. These examples show why local attempt counts
 must be assessed together with experiment-level stopping rules; they do not
 predict actual reliability.
 
+The audit's earlier pause/resume suggestion is a future option only, not the
+current policy. It requires explicit human approval and a predeclared amendment;
+non-measured recovery or offline debugging cannot reopen exhausted slots. Keep the
+maximum 3 attempts at each retry layer, mandatory second candidate evaluator
+(except an experiment-wide stop), eligible pre-semantic replacement boundary, and
+prohibition on post-semantic replacement. These operational protections are not
+academic uncertainties to relax.
+
 ## 6. Metrics and causal claims
 
 | Metric/design | Interpretation risk | Proposed disposition |
@@ -248,7 +283,7 @@ predict actual reliability.
 | Downstream graph dependencies | Depends on agent-selected granularity; a graph edge alone does not establish causality. | Call it structural reach unless causal evidence is available. |
 | Cost per resolved slot | Unstable with few successes and undefined with none. | Preserve numerator, denominator, and uncertainty rather than only the ratio. |
 | Secondary-metric multiplicity | Multiple frozen secondary outcomes still create selection pressure even when the primary gate is frozen. | Predeclare reporting order and interpretation; treat secondary metrics as hypothesis-generating unless separately powered. |
-| Benefit/cost utility | A small measured benefit can be outweighed by direct or induced cost; the frozen contract has no cost-effectiveness decision rule. | Decide utility together with the benefit/harm margins before cost is used to justify progression. |
+| Benefit/cost utility | A small measured benefit can be outweighed by direct or induced cost; there is no validated cost-effectiveness threshold. | Report C-A, overhead, and cost transparently; record practical human judgment separately, without rewriting the frozen labels or claiming validated utility. A new quantitative gate needs approval. |
 | Provider cost | Excludes other system/evaluator infrastructure cost. | Do not label as total system cost. |
 | Attributed token/latency overhead | Direct graph calls are observable; induced changes to later trajectories are not uniquely attributable. | Separate direct overhead from total A/B/C differences. |
 | UNKNOWN/UNRESOLVED buckets | Honest treatment of ambiguity but missingness can differ by configuration. | Report frequency and denominators; do not silently convert unknowns to favorable values. |
@@ -276,25 +311,33 @@ invariants. The detailed contracts remain in [Protocol](protocol.md),
 | Pi before P6 | Valid portability objective but delays the first usefulness result. A minimal portability smoke test is an alternative requiring planning approval. |
 | Text-based specification tests | Guard wording, not scientific validity. Add executable synthetic decision/boundary and simulation checks where decisions depend on numbers. |
 
-## 8. Proposed evidence and decision workflow
+## 8. Practical evidence and decision workflow
 
-This is a proposal for resolving the audit, not an authorization to alter P6.
+This workflow summarizes the amended Evaluation contract; it does not replace its
+algorithms or authorize additional changes.
 
-1. Define the estimand, population, and whether P6 is feasibility or a benefit
-   decision. Separate scientific claims from further-research decisions.
-2. Simulate the complete estimator and gate together, before selecting thresholds.
-   Include zero/small/large effects, task and family heterogeneity, stochastic
-   repeats, rare successes, degenerate task differences, and infrastructure loss.
-3. Measure interval coverage, false benefit/equivalence decisions, progression
-   rates, completion probability, and expected cost under those assumptions.
-   Record simulation inputs, versions, and limits; simulation is not real evidence
-   of the intervention's effectiveness.
-4. Run an operational pilot only on separate development tasks. Measure execution
-   variance, truncation, binding budgets, service latency, and retry behavior.
-5. Select task/repetition counts and distinguish benefit, harm, and sensitivity
-   margins using the resulting evidence and explicit utility assumptions.
-6. Obtain human approval, amend the normative owners once, and freeze the final
-   experiment configuration before task exposure. Do not pool changed versions.
+1. Develop/check adapters and operating limits on synthetic or separate development
+   tasks. Confirm acceptance of explicit controls and record unknown provider data;
+   do not demand access to hidden model implementation details.
+2. Obtain approval for concrete resource limits and freeze artifacts before task
+   exposure. Keep the existing selector, task counts, repetitions, primary
+   estimator, sensitivity predicate, and numerical label rules unchanged.
+3. Run the bounded P6 pilot with the existing retry/exclusion/isolation contract.
+   Infrastructure-budget exhaustion stops measured execution. Keep partial evidence
+   useful through descriptive reporting, not by selectively completing the sample.
+4. Report complete paired results only when eligible; otherwise report coverage,
+   missing reasons, observed outcomes, and accrued costs without primary estimates
+   or CI. Preserve negative/null outcomes and all failed attempts.
+5. Record a human next-step decision separately from the computed pilot labels.
+   Debugging and exploratory development do not require confirmatory evidence;
+   positive claims retain the sensitivity/replication restrictions in Evaluation.
+
+Before stronger population/equivalence claims, separately propose simulations of
+estimator/gate operating characteristics, including task/family heterogeneity,
+stochastic repeats, sparse outcomes, and infrastructure loss. A later study may
+change sample allocation or utility thresholds only with approval and a new freeze.
+Neither such simulations nor a power study are prerequisites for this feasibility
+pilot; simulation would not itself establish intervention effectiveness.
 
 ### Required synthetic checks before stronger decision claims
 
@@ -311,13 +354,14 @@ This is a proposal for resolving the audit, not an authorization to alter P6.
 
 | Priority | Decision | State | Normative owner if accepted |
 | --- | --- | --- | --- |
-| High | Intended estimand and evidential role of P6 | Needs explicit clarification | `evaluation.md` |
-| High | Bootstrap/gate operating characteristics | Needs simulation evidence | `evaluation.md` |
+| Resolved | Intended estimand and evidential role of P6 | Resolved 2026-09-20: [practical pilot](evaluation.md#p6-practical-pilot), not population proof | `evaluation.md` |
+| Later | Bootstrap/gate operating characteristics | Needed before stronger claims; not a feasibility blocker | `evaluation.md` |
 | High | Mechanical sensitivity-discordance rule and its consequence | Resolved 2026-09-20; see [Evaluation](evaluation.md#frozen-sensitivity-analyses) | `evaluation.md` |
-| High | Benefit/harm margins and complete-system utility | Needs rationale and approval | `evaluation.md` |
-| Medium | Sample/repetition allocation and family dependence | Needs pilot/simulation evidence | `evaluation.md` |
-| Medium | Observable generation-control record | Needs schema clarification | `evaluation.md` (and `protocol.md` only if service-boundary semantics change) |
-| Medium | Experiment pause/resume versus fatal infrastructure stop | Alternative requiring approval | `evaluation.md` |
+| Later | Benefit/harm margins and complete-system utility | Keep current pilot margin; changing it or adding a utility gate needs approval | `evaluation.md` |
+| Later | Sample/repetition allocation and family dependence | Keep pilot allocation; scope conclusions and revisit for a later study | `evaluation.md` |
+| Resolved | Observable generation-control/model record | Resolved 2026-09-20: accepted explicit requests and [unknown provider metadata](evaluation.md#p6-hosted-model-metadata) are distinguished from effective behavior | `evaluation.md` |
+| Before P6 exposure | Concrete experiment resource limits and accounting | Operator must approve finite values and accounting/reservation method in the [resource envelope](evaluation.md#p6-resource-budget); no arbitrary amounts fixed by this audit | `evaluation.md` |
+| Retained | Experiment pause/resume versus fatal infrastructure stop | Hard stop retained; any future continuation option requires explicit approval and amendment | `evaluation.md` |
 | Later | Calibration/routing thresholds and technical runtime limits | Resolve in owning implementation/research phase | `verification.md` / `model-routing.md` / `protocol.md` / `modules.md` in their respective phases |
 
 ## Maintenance and references

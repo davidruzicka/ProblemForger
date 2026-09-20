@@ -1,10 +1,17 @@
 # Evaluation
 
+<a id="p6-practical-pilot"></a>
 ## Rule
 
 Evaluation design is part of the specification, not an afterthought.
 
-The first experiment is intentionally small and mechanistic. It is not intended to establish state-of-the-art coding performance.
+The first experiment is a **practical feasibility/mechanism pilot**: can the graph
+and governance packages run usefully, at tolerable cost, on a small fixed task set?
+It is not intended to establish state-of-the-art coding performance, population
+equivalence, or exact reproducibility of hosted model behavior. Academic uncertainty
+is acceptable when reported; outcome-dependent selection and missing audit evidence
+are not. Correctness, isolation, and security invariants remain unchanged.
+P6 is not confirmatory evidence or population-level proof of benefit or equivalence.
 
 ## Ablation ladder
 
@@ -30,6 +37,14 @@ B→C is the cleaner early governance ablation: B and C must expose the same Pro
 This section is the P0 experiment contract for configurations A/B/C.
 
 Changes after implementation begins require an explicit documented amendment before any affected measured run. Never silently replace a task/model/metric after seeing results.
+
+Practical-PoC amendment (2026-09-20): the user-approved direction is implemented by
+the pilot interpretation, observable provider metadata, resource bounds, and
+incomplete-reporting rules below. Infrastructure exhaustion remains a hard stop.
+Apply this amendment before measured execution; it does
+not retroactively reopen exhausted attempts or reclassify an existing experiment.
+An already-started experiment keeps its recorded contract/version. No selected
+tasks or live provider calls are needed to prepare this documentation amendment.
 
 ### Harness
 
@@ -65,12 +80,16 @@ Primary P6 model (the first chain entry):
 The explicit `temperature=0` setting is part of this pinned HarnessX treatment, not an
 assumption about other harnesses. Before task exposure, the benchmark adapter must run
 a non-task capability probe in the pinned HarnessX environment and verify that the
-setting is accepted and effective (or that the provider exposes an equivalent
-verifiable acknowledgement). If it cannot be verified, this chain entry is
+serialized setting is accepted. Record requested `temperature=0`, acceptance
+evidence, and the provider-reported effective value if available; otherwise record
+effective value `UNKNOWN`. Acceptance does not prove a hidden implementation or
+deterministic output. Lack of an effective-value acknowledgement alone does not
+disqualify the model. If the request is rejected or the bounded availability probe
+fails under the provider retry policy, this chain entry is
 unavailable; do not silently omit the field, emulate it, or infer an undocumented
-default. The frozen model-chain rule then selects the next predeclared entry before
-exposure, or terminates the experiment if no entry remains. Record the probe request,
-result, evidence, and environment/configuration hashes in the run manifest.
+default. The frozen model-chain rule then selects the next predeclared entry, or
+terminates the experiment if no entry remains. Record the probe request, result,
+evidence, and environment/configuration hashes in the run manifest.
 
 From chain freeze until the first measured run starts, a model-unavailability event
 consumes the next unused chain entry in order, subject to the frozen provider
@@ -79,7 +98,8 @@ becomes unavailable before measurement. The entry selected when that window clos
 is then locked for every A/B/C run. The same predeclared chain rule also applies after
 the task manifest or patch-independent preflight results have been exposed, so
 knowledge of the evaluation set cannot affect which fallback is selected. Record the
-selected chain index, exact effective model identity, and every exhausted entry in
+selected chain index, exact requested provider/model identifier, any exposed revision
+metadata, and every exhausted entry in
 the run manifest.
 
 If all chain entries are unavailable after task-manifest or preflight exposure and
@@ -97,6 +117,20 @@ after the first measured run starts, do not select a fallback or regenerate an
 already-started run; apply the frozen provider/whole-run retry policy to the affected
 schedule slots and stop/report the experiment only if that policy's experiment-wide
 stop condition is reached. Models are never mixed within one v1 comparison.
+
+<a id="p6-hosted-model-metadata"></a>
+#### Hosted model metadata and identity limits
+
+Here, model identity means the selected API entry and observable settings, not
+verified access to immutable hosted weights. Record provider/API revision,
+deployment/build identifiers, response-version headers, and timestamps when exposed;
+use status `UNKNOWN` with value `null/unavailable` when they are not. Hosted model
+revision/provider metadata may be `UNKNOWN`; this alone is not a PoC blocker.
+Record observed provider-side changes against the affected slots and discuss drift
+as a limitation; neither missing metadata nor an incidental response-version change
+permits exclusion, replacement, or changing the selected API entry. An intentional
+model/settings switch still requires a new experiment version. Do not claim that
+one model name or a runtime image hash guarantees identical future inference.
 
 ### Separate harness-comparison experiment
 
@@ -125,7 +159,8 @@ when the interface reports one), source/evidence, configuration/environment
 precedence, and relevant version/configuration hashes. Use these statuses:
 
 - `EXPLICIT(value)` — the control was serialized and the pinned interface accepted
-  it, with evidence of the effective value;
+  it; retain acceptance evidence separately from the effective value, which remains
+  `UNKNOWN` unless reported by the interface;
 - `OMITTED_NATIVE` — the control was intentionally not serialized and native
   behavior was selected; absence from a request is not evidence of a particular
   default, so the effective value remains `UNKNOWN` unless the interface reports it;
@@ -139,7 +174,9 @@ record an inferred zero or silently call native defaults equivalent to zero. If 
 project deliberately chooses native behavior instead, record `OMITTED_NATIVE` and
 keep the effective value unknown unless the runtime reports it. Documentation may
 support the record only with a pinned retrieval/version hash; it cannot replace an
-observed capability/effective-value check.
+observed acceptance check or establish an unobservable effective value. Record an
+accepted explicit request with an unknown effective value without rejecting the
+stack solely for that uncertainty.
 
 Freeze an interleaved harness/configuration schedule, use the same task-level
 repetitions and evaluator contract, and retain adapter-owned native trajectories.
@@ -176,6 +213,43 @@ Latency reporting remains end-to-end rather than hiding setup cost. Record separ
 
 Token usage, billed cost, and all latency components are measured outcomes rather than normalized away. Added graph context/tool calls must pay their actual overhead.
 
+<a id="p6-resource-budget"></a>
+### Experiment resource envelope
+
+The per-run limits above remain unchanged. Before the first billed probe and task
+exposure, the operator must
+approve and freeze in `benchmark-adapter-v1` a predeclared experiment resource budget:
+the finite total elapsed-time limit `experiment_wall_clock_limit_seconds` and the
+finite provider-spend guard `experiment_provider_cost_limit_usd`, both positive and
+chosen from available resources and separate development runs.
+Record and enforce these limits, their accounting method, and
+rationale in the manifest; this document
+does not invent a universal price or add a separate token-cap tuning exercise.
+
+The elapsed limit runs from the first capability probe or required preflight
+operation, whichever is earlier, and includes idle time, setup, retries, measured
+runs, and evaluator work. All such operations use
+finite timeouts bounded by the remaining experiment time as well as any applicable
+semantic deadline. The spend guard includes probes, failed/retried requests, and
+all A/B/C work; shared costs are reported separately from per-slot costs. Freeze
+the accounting/reservation method and price schedule before exposure: reserve a
+conservative estimated charge for an API request before dispatch, reconcile known
+usage afterward, and keep an unknown charge reserved rather than treating it as
+zero. If no conservative reservation can be made, do not issue that request.
+This is an operational estimated-spend guard, not a guarantee of the provider's
+final invoice or a claim to include evaluator/container charges.
+
+When another required operation cannot fit the remaining resource envelope, or
+the elapsed deadline is reached, stop as `BUDGET_EXHAUSTED` and mark the analysis
+`INCOMPLETE_BUDGET` if required work is unfinished. Cancel active work best-effort,
+retain its trajectory/workspace/patch and all accrued costs, and record every
+unfinished or unstarted required operation. Budget stops do not authorize a clean
+replacement, extended retry budget, selective task removal, or primary analysis
+with missing outcomes. They take precedence over a pending retry obligation; do
+not reopen a budget-stopped experiment by increasing its cap after seeing results.
+Any later differently budgeted pilot is a separately versioned, explicitly labeled
+experiment, not completion of this comparison.
+
 <a id="spec-evaluation-pre-p6"></a>
 <!-- spec-id: EVALUATION.PRE-P6 -->
 ### Pre-P6 frozen artifacts
@@ -190,6 +264,7 @@ Before any task selected by the P6 selector is intentionally identified, inspect
    - exact workspace setup/startup procedure and finite setup/startup timeouts, patch extraction, result serialization, and complete harness-specific raw trajectory capture/serialization shared by A/B/C;
    - exact evaluator invocation using the SWE-smith dataset/`train` split, plus pinned `swebench` dependency/tooling version and deterministic per-task immutable-image resolution/cache policy;
    - exact infrastructure reason-code classifier, provider-call retry behavior, whole-agent-run replacement behavior, and evaluator retry behavior specified by this document;
+   - the approved experiment resource envelope, accounting/reservation method, and resource-stop classification above;
    - the `INFRA_TASK_ARTIFACT` classifier follows the intrinsic-defect and infrastructure-precedence rules in Task-artifact preflight exclusions below;
    - explicit prohibition on inheriting HarnessX's built-in SWE-bench Verified/`test` dataset defaults;
    - no ProblemForger graph/governance behavior;
@@ -238,6 +313,16 @@ All five contract artifacts, `model-chain-v1`, and `harnessx-runtime-v1` must be
 content-addressed (for example SHA-256) and their hashes recorded in every P6 run
 manifest. Every A/B/C attempt must execute the recorded runtime image/archive and
 resolved lockfile; the HarnessX commit alone is not a sufficient runtime identity.
+
+<a id="p6-runtime-image-identity"></a>
+The runtime digest identifies the retained runtime/harness bytes, **not hosted model identity**.
+It supports restoring the local stack and checking A/B/C runtime parity, not exact
+future model-output replay. A local model's weights/configuration can be identified
+only when those artifacts are also retained and hashed; a hosted provider's exposed
+version is recorded as metadata with that provider's stated guarantees. Neither
+weight hashing nor provider versioning is mandatory for this hosted-model PoC.
+Graph/journal replay and analysis of retained outcomes remain distinct from
+rerunning inference, which may differ even with the same observable configuration.
 
 Development of these artifacts must use synthetic fixtures or separate development tasks. The selected P6 primary and reserved holdout tasks may not be used to tune any of the five contract artifacts, the model chain, or the runtime environment.
 
@@ -333,6 +418,13 @@ For **every** materialized primary and holdout task, resolve its dataset `image_
 
 The task manifest records the original `image_name`, execution platform, immutable digest/content identity, and content-addressed mirror/cache reference where used. Materialization must fail if any selected task cannot be resolved and verified to an immutable execution identity.
 
+A materialization-time image resolution failure prevents manifest creation and
+does not enter preflight or consume a required evaluator repetition. Retain selected
+IDs and resolution diagnostics as incomplete materialization artifacts, not a valid
+experiment manifest; do not silently skip or backfill the task. Publish/freeze the
+final manifest and its hash only after every selected image has a verified,
+recorded immutable identity.
+
 All preflight evaluations, A/B/C measured runs, repeated candidate evaluations, and later reserved-holdout use must execute the recorded immutable identity, never re-resolve the original mutable tag. If the immutable content later becomes unavailable, treat that as infrastructure unavailability; do not fall back to a mutable tag or newly resolved image.
 
 Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
@@ -407,6 +499,13 @@ The model/agent is not shown the gold patch or hidden evaluator result during ex
 
 ### Primary outcomes
 
+Primary estimates require a completed common schedule with all required binary
+outcomes and no invalid/incomplete analysis flag. Follow
+[Operational reporting of incomplete experiments](#p6-incomplete-reporting)
+when required infrastructure work is missing. The task bootstrap below describes observed paired
+task effects; it does not separately quantify hidden provider drift or the
+uncertainty of future executions on the same tasks.
+
 Predeclare two paired comparisons:
 
 1. **B - A:** change in mean task resolution rate from adding explicit problem-graph interaction.
@@ -418,6 +517,11 @@ Report:
 - paired percentage-point difference;
 - bootstrap 95% confidence interval using the frozen procedure below;
 - all raw task-run outcomes.
+
+Also report the descriptive complete-system C-A point difference alongside B-A,
+C-B, overhead, failure reasons, and resource use. C-A is not a third primary
+hypothesis or a new progression threshold. For incomplete experiments, use only
+the partial-data reporting contract below.
 
 ### Frozen primary effect estimator and bootstrap
 
@@ -439,7 +543,7 @@ exclusions, including the frozen task-artifact rule below. Compute it once befor
 measured schedule is materialized; no measured outcome may change the task set.
 
 - If `N < 8` (fewer than two thirds of the planned 12-task primary set), classify the experiment as `INSUFFICIENT_VALID_TASKS`. This threshold is frozen before measured outcomes and prevents a materially smaller retained sample from silently being treated as the planned P6 experiment. Do not start measured A/B/C agent runs, do not report a primary point estimate, and do not compute a primary confidence interval. Preserve/report the manifest, all preflight outputs, exclusions, and the retained-task count.
-- If `8 <= N <= 12`, proceed with the frozen measured experiment. The reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
+- If `8 <= N <= 12`, proceed with the frozen measured experiment. Once the primary-completeness conditions above hold, the reported point estimate for each primary comparison is the arithmetic mean of its `d_i` values across the common included task set, expressed in percentage points.
 
 The 95% confidence interval for a proceeding experiment is a **percentile task bootstrap** with these frozen parameters:
 
@@ -526,13 +630,27 @@ also frozen in precedence order:
 - `INCONCLUSIVE` otherwise.
 
 The `ADVANCE_P7` rule is a pilot progression signal, not confirmatory inference; the
-95% intervals are marginal and carry no multiplicity guarantee. A materially harmful
-contrast requires redesign of the affected intervention. A practically null result
-is reportable and carries no benefit claim. An inconclusive result creates no positive
-claim and requires a new blinded experiment before promoting the intervention. No
+95% intervals are marginal and carry no multiplicity guarantee. These fixed labels
+summarize the observed pilot, not proof of population benefit, equivalence, or harm.
+In particular, a collapsed empirical interval is not evidence of deterministic
+behavior or true equivalence. A materially harmful contrast calls for redesign
+review of the affected intervention. A practically null result is reportable and
+carries no benefit claim. An inconclusive result creates no positive claim; a new
+blinded experiment is required before promoting an intervention as beneficial, not
+before ordinary development, debugging, or exploratory feasibility work. No
 analyst may choose a different threshold, interval rule, or precedence after outcomes
 are known. Record `delta`, the interval labels, and the action rule in the immutable
 experiment manifest before task exposure.
+
+Keep the computed action label separate from the human decision to fund or start
+P7. `ADVANCE_P7` does not automatically launch P7, and another label does not forbid
+explicitly exploratory development. Record the human decision and its rationale
+using the complete-system C-A result, costs, failure mechanisms, and limitations;
+do not rewrite the label to match that decision or present it as a benefit claim.
+Incomplete experiments have no primary action label. Operating-characteristic
+simulations and independent replication are appropriate before stronger scientific
+claims, but are not prerequisites for collecting this feasibility pilot. The
+sensitivity semantics and positive-claim restriction below are unchanged.
 
 ### Frozen sensitivity analyses
 
@@ -617,7 +735,7 @@ Cost unit is USD. If the provider/API exposes an exact monetary charge for a req
 
 Infrastructure-invalid/replaced attempts are included because they are real operational cost/latency attributable to that configuration's scheduled work. Benchmark evaluator/container compute is not included in `total_provider_cost_usd_X`; it is retained separately as evaluation infrastructure.
 
-If `resolved_slots_X = 0`, both per-resolved-slot ratios are **undefined/NA**, not zero or infinity; report the numerator and zero denominator explicitly. If the experiment stops as `INCOMPLETE_INFRASTRUCTURE` or `INVALID_EXPERIMENT_STATE` before the frozen schedule completes, retain/report accrued raw cost/latency but do not report cross-configuration per-resolution aggregates for the incomplete experiment.
+If `resolved_slots_X = 0`, both per-resolved-slot ratios are **undefined/NA**, not zero or infinity; report the numerator and zero denominator explicitly. If the experiment has any invalid/incomplete analysis flag, retain/report accrued raw cost/latency but do not report cross-configuration per-resolution aggregates. A complete-looking subset cannot override an experiment-wide stop.
 
 ### Journal-derived graph/governance metrics
 
@@ -687,6 +805,40 @@ A **semantic model response** is the first provider response for that run that H
 
 The frozen `benchmark-adapter-v1` emits machine-readable infrastructure reason codes. Only the reason codes explicitly listed below can authorize retries.
 
+<a id="p6-incomplete-reporting"></a>
+### Operational reporting of incomplete experiments
+
+Exhausting all 3 eligible pre-semantic whole-run attempts or all 3 attempts for a
+required evaluator repetition is a **hard experiment-wide stop**:
+`INCOMPLETE_INFRASTRUCTURE`. Stop launching measured schedule slots and required
+evaluations; do not resume this experiment, reset counters, or add a fourth attempt.
+Retain the missing slot/repetition as `MISSING_INFRASTRUCTURE`, separately from
+observed agent failures. If preflight exhausted its budget, eligibility is unknown;
+do not exclude that task to finalize a smaller common set. No task, configuration,
+replicate, or accepted semantic trajectory may be selectively replaced.
+
+The operationally useful result of a stopped pilot is an auditable partial report,
+not continued measurement under a relaxed contract. Preserve raw/descriptive
+evidence but withhold the complete primary estimate and confidence interval (CI).
+Offline inspection of retained artifacts for debugging is allowed. Any later
+diagnostic executions are separately labeled and cannot fill missing primary slots,
+clear the stop, or change an observed outcome. A future measured pilot requires a
+new predeclared experiment version; never pool it with this incomplete comparison.
+
+An incomplete report retains every planned slot (or selected task if preflight
+never completed), its observed outcomes, missing/not-started status and reason,
+all attempts, and accrued costs/latency. Show coverage by task, configuration, and
+replicate with planned and observed counts. Individual observed successes/failures
+and their traces may inform debugging; they are not a complete paired comparison.
+Do not run the primary estimator, confidence intervals, continuation labels, or
+complete-data sensitivity analyses on a favorable complete-case subset; do not
+impute missing infrastructure outcomes as zero or replace the three-run denominator
+with the number observed. No primary point estimate or confidence interval is
+reported for the incomplete experiment. Keep post-semantic `RUN_INTERRUPTED`,
+`EVALUATION_INCOMPLETE`, and other defined agent/system failures as unresolved
+binary outcomes when their contract supplies that classification; missing
+pre-test infrastructure evidence is a different state.
+
 ### Provider-call transport retries
 
 For each individual model call, including calls after semantic execution has begun:
@@ -744,7 +896,7 @@ For each required control/candidate evaluation repetition:
 - if a **control/preflight** evaluation has started repository tests and terminates without a complete required-test vector, classify that task `EVALUATOR_INVALID`; this is a patch-independent task-level preflight exclusion and is never retried or replaced;
 - if a **measured candidate-patch** evaluation has started repository tests and terminates without a complete required-test vector, record that evaluation repetition as `EVALUATION_INCOMPLETE`; the measured run is unresolved regardless of its other evaluator repetition, and the missing-vector repetition is never retried;
 - if the canonical candidate patch is absent, malformed, or cannot be applied before repository tests start, record `CANDIDATE_PATCH_INVALID` for that evaluator repetition with the exact patch digest and application error; this is a nonretryable agent/system outcome, is not eligible for whole-run replacement, and scores the measured run unresolved rather than being reclassified as evaluator infrastructure failure;
-- after such a measured missing-vector outcome, continue with the other mandatory evaluator repetition in a separate fresh environment. It must not be skipped merely because the first repetition is already unresolved; the only exception is an experiment-wide stop already required by this policy (for example, `INCOMPLETE_INFRASTRUCTURE`);
+- after such a measured missing-vector outcome, continue with the other mandatory evaluator repetition in a separate fresh environment. It must not be skipped merely because the first repetition is already unresolved; the only exception is an experiment-wide stop already required by this policy (for example, `INCOMPLETE_INFRASTRUCTURE`, `BUDGET_EXHAUSTED`, or `INVALID_EXPERIMENT_STATE`);
 - if the 3-attempt pre-test evaluator infrastructure budget is exhausted for any required evaluation, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop measured execution, retain all raw attempts, and report no primary point estimate or confidence interval.
 
 Infrastructure-invalid attempts are reported separately from valid agent outcomes in cost/latency accounting; they are never silently deleted.
@@ -773,7 +925,7 @@ The following decision table is normative. The required-evaluation retry policy 
 
 | Required control evaluations | Task/experiment result | Additional required controls |
 | --- | --- | --- |
-| Pre-test infrastructure budget exhausted | `INCOMPLETE_INFRASTRUCTURE` (experiment) | None |
+| Pre-test infrastructure budget exhausted | `INCOMPLETE_INFRASTRUCTURE`; eligibility unknown, no measured runs | None for this task |
 | Tests started but a complete vector is missing | `EVALUATOR_INVALID` (task) | None |
 | Two complete vectors disagree | `EVALUATOR_UNSTABLE` (task) | None |
 | Two complete vectors agree but violate the baseline | `BASELINE_INVALID` (task) | None |
@@ -794,6 +946,9 @@ that prevents digest verification follows `EVAL_IMAGE_SETUP` during preflight, w
 the existing evaluator retry budget and experiment-wide stop on exhaustion. These
 failures cannot change `N`, even if only one task is affected; inability to retrieve
 verified content is not evidence of an intrinsic defect.
+This rule applies **after materialization** established the recorded immutable
+identity: later retrieval/setup failure is `EVAL_IMAGE_SETUP` and does not change `N`.
+It does not reclassify materialization-time image resolution as evaluator work.
 Network/image-pull failures, runtime or harness startup failures,
 provider failures, and resource exhaustion are transient/shared infrastructure and
 must not be relabeled as task invalidity.
@@ -811,7 +966,8 @@ launching another measured slot, preserve all artifacts, and report no primary
 estimate or confidence interval. A post-semantic failure that is not task-artifact
 invalidity remains an unresolved schedule slot; it does not exclude the task or
 authorize regeneration. Repeated generic pre-semantic failures in one schedule slot
-therefore retain the experiment-level stop rule below.
+therefore retain the experiment-level stop rule; they do not establish immutable
+task invalidity.
 
 <a id="spec-evaluation-measured-evaluation"></a>
 <!-- spec-id: EVALUATION.MEASURED-EVALUATION -->
@@ -824,6 +980,12 @@ For **every measured candidate patch**, regardless of its first outcome:
 3. only when both repetitions produced complete vectors, compare the full required-test outcome vectors;
 4. the run is scored **resolved** only if both complete vectors are identical and satisfy the end-to-end resolution criterion;
 5. if both vectors are complete but differ, classify that candidate/run as `PATCH_UNSTABLE` and score the run as unresolved/failure; do **not** exclude the task or any paired runs.
+
+Pre-test infrastructure exhaustion is not the missing-vector-after-tests outcome
+in step 2: it leaves `MISSING_INFRASTRUCTURE` under the retry policy even if the
+other repetition completed. Preserve that observed vector, but it cannot fill the
+missing repetition. A resource stop similarly leaves unfinished required evidence
+explicitly missing. Neither case permits a primary result for an incomplete schedule.
 
 A third candidate-patch evaluation may be retained as diagnostic data only when both mandatory evaluations produced complete vectors; it cannot change the frozen primary classification above.
 
@@ -887,7 +1049,10 @@ Track explicitly:
 
 ## Raw data and reproducibility
 
-Record enough structured data to independently reconstruct and re-evaluate every reported run.
+Record enough structured data to reconstruct each reported result and audit every
+attempt from retained evidence. Re-evaluating a retained patch in the recorded
+environment is distinct from regenerating the original model trajectory; exact
+hosted-inference replay is not promised.
 
 For every schedule slot and every whole-run attempt, retain:
 
@@ -897,7 +1062,7 @@ For every schedule slot and every whole-run attempt, retain:
 - harness version/commit;
 - provider/model identifier and relevant settings;
 - requested/effective generation controls with `EXPLICIT`, `OMITTED_NATIVE`, `UNSUPPORTED`, or `UNKNOWN` status, capability/effective-value evidence, and configuration/environment precedence;
-- `model-chain-v1` hash, selected chain index, exact selected model identity, and every exhausted chain entry;
+- `model-chain-v1` hash, selected chain index, exact selected provider/model API identifier and exposed revision metadata, and every exhausted chain entry;
 - `harnessx-runtime-v1` hash, runtime image/archive digest, dependency-lockfile hash, interpreter/runtime version, and execution platform/architecture;
 - provider/API/model revision, deployment/build identifier, response-version header, or equivalent version metadata when exposed by the provider; record explicit `null/unavailable` when the provider exposes none;
 - absolute UTC timestamps in RFC 3339 form for `attempt_started_at`, `semantic_started_at` (null if no first request was issued), and `attempt_ended_at`;
@@ -921,6 +1086,12 @@ For every schedule slot and every whole-run attempt, retain:
 - if the attempt terminates before producing/submitting a patch, record an explicit no-candidate status and the SHA-256 of the canonical empty byte string rather than omitting the field;
 - where workspace creation succeeded, retain a frozen final-workspace-diff artifact (or equivalent content-addressed workspace snapshot) and its SHA-256 so patch extraction can be audited independently;
 - every evaluator attempt/output linked to the exact candidate-patch SHA-256 it evaluated.
+
+At experiment level, also retain the approved resource envelope and usage ledger,
+stop reasons and timestamps, persistent retry counters,
+analysis-eligibility flags, planned-versus-observed coverage, and the computed pilot
+labels separately from any human progression decision. A slot never launched has
+an explicit `NOT_STARTED` record and reason, not a fabricated attempt or empty patch.
 
 The benchmark adapter must define one canonical candidate-patch byte representation. The exact retained bytes—not a regenerated diff—are the bytes passed to every repeated evaluator invocation for that measured run. A repeated evaluator result is invalid if its recorded patch digest does not exactly match the run's canonical candidate-patch digest.
 

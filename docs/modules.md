@@ -46,53 +46,56 @@ Conceptual port contract:
 ```text
 create_run(run_id, run_metadata)
     -> CREATED {graph_version=0, last_journal_position=0}
-    | EXISTING {run_metadata, graph_version, last_journal_position}
+    | EXISTING {run_metadata, metadata_hash, graph_version, last_journal_position}
+    | RUN_METADATA_CONFLICT {metadata_hash, existing_metadata_hash}
 
 get_run(run_id)
-    -> RUN {run_metadata, graph_version, last_journal_position}
+    -> RUN {run_metadata, metadata_hash, graph_version, last_journal_position}
     | NOT_FOUND
 
-record_proposal(stream_id, proposal_id, request_hash, normalized_request, receipt_record)
+record_proposal(run_id, proposal_id, request_hash, normalized_request, receipt_record)
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
     | NOT_FOUND
 
-claim_proposal(stream_id, proposal_id, owner_id, claim_ttl_ms)
+claim_proposal(run_id, proposal_id, owner_id, claim_ttl_ms)
     -> CLAIMED {claim_epoch}
     | PENDING {claim_epoch, lease_expires_at_ms}
     | FINAL
     | ABANDONED
     | NOT_FOUND
 
-renew_claim(stream_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
+renew_claim(run_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
     -> RENEWED
     | STALE_CLAIM
     | NOT_FOUND
 
-append_audit(stream_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
+append_audit(run_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
     -> last_journal_position
     | STALE_CLAIM
     | NOT_FOUND
 
-append_graph(stream_id, proposal_id, expected_owner_id, expected_claim_epoch,
+append_graph(run_id, proposal_id, expected_owner_id, expected_claim_epoch,
              expected_graph_version, audit_records[], graph_events[])
     -> {last_journal_position, new_graph_version}
     | VersionConflict
     | STALE_CLAIM
     | NOT_FOUND
 
-read_journal(stream_id, after_journal_position?)
-    -> ordered durable records
+read_journal(run_id, after_journal_position?, limit)
+    -> {records, next_after_journal_position, has_more}
+    | INVALID_LIMIT
     | NOT_FOUND
 
-current_graph_version(stream_id)
+current_graph_version(run_id)
     -> graph_version
     | NOT_FOUND
 ```
 
 Requirements:
 
-- persist run registration before accepting proposals; `create_run` is idempotent, reopening preserves the registration and version-zero state, and every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
+- persist run registration before accepting proposals; `create_run` is idempotent only when the supplied run metadata has the same canonical serialization and metadata hash as the existing registration; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal, reopening preserves the registration and version-zero state, and every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
+- canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and fenced terminalization;
 - obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
@@ -100,6 +103,7 @@ Requirements:
 - generic audit append without both expected owner and claim epoch cannot create proposal terminal records;
 - terminal audit and graph appends must atomically match both the service-assigned claim owner and claim epoch; a claim epoch alone is not sufficient authority;
 - assign monotonic per-run `journal_position` to every durable record;
+- require an explicit positive `limit` for `read_journal`; `after_journal_position` is an exclusive cursor, records are returned in ascending position order, and `next_after_journal_position` plus `has_more` make continuation explicit. Providers must enforce a finite configured maximum and must not return an unbounded journal response;
 - atomically compare graph version and append the final decision plus graph events as one complete mutation batch under ADR 0006;
 - audit-only writes never advance graph version; all graph events in a committed batch share one new version;
 - persist each returned governance outcome before completing its response;
@@ -227,6 +231,7 @@ Every provider of the same port runs the same behavioral contract suite.
 For `EventStore`, all providers run a common semantic contract suite covering at least:
 
 - empty journal/`graph_version` semantics;
+- idempotent `create_run` with identical canonical metadata returning `EXISTING`, and mismatched metadata returning `RUN_METADATA_CONFLICT` without journal mutation;
 - atomic proposal-ID claim;
 - duplicate same-ID/same-hash recovery without duplicate receipt/commit;
 - duplicate same-ID/different-hash idempotency conflict;
@@ -239,7 +244,7 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - terminal `ABANDONED` recovery status without graph mutation;
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;
-- ordered journal read;
+- bounded ordered journal read with an exclusive cursor, finite limit, and explicit continuation metadata;
 - atomic decision + multi-graph-event commit with exactly one new graph version for the whole batch;
 - stale `expected_graph_version` conflict leaves graph events uncommitted;
 - a conflict/reject/retry/escalate decision remains queryable for the lifetime represented by the provider;

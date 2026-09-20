@@ -85,6 +85,21 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, comparison)
 
+    def test_p6_is_a_practical_pilot_with_bounded_operational_reporting(self):
+        evaluation = read("docs/evaluation.md")
+        normalized = " ".join(evaluation.split())
+        for phrase in (
+            "practical feasibility/mechanism pilot",
+            "Academic uncertainty is acceptable",
+            "finite total elapsed-time limit",
+            "finite provider-spend guard",
+            "runtime digest identifies the retained runtime/harness bytes, **not hosted model identity**",
+            "does not automatically launch P7",
+            "no primary point estimate or confidence interval",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
     def test_continuation_and_sensitivity_rules_are_frozen(self):
         evaluation = read("docs/evaluation.md")
         interpretation = evaluation.split("### Frozen continuation and interpretation rule\n", 1)[1].split("### Secondary end-to-end metrics\n", 1)[0]
@@ -191,6 +206,26 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, normalized)
 
+    def test_image_materialization_and_setup_failures_have_distinct_phases(self):
+        evaluation = read("docs/evaluation.md")
+        materialization = evaluation.split("### Deterministic task selection\n", 1)[1].split("### Repetitions, run isolation, and execution ordering\n", 1)[0]
+        preflight = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("### Measured candidate patches", 1)[0]
+
+        for phrase in (
+            "materialization-time image resolution",
+            "does not enter preflight",
+            "recorded immutable identity",
+        ):
+            with self.subTest(phase="materialization", phrase=phrase):
+                self.assertIn(phrase, materialization)
+        for phrase in (
+            "after materialization",
+            "EVAL_IMAGE_SETUP",
+            "does not change `N`",
+        ):
+            with self.subTest(phase="preflight", phrase=phrase):
+                self.assertIn(phrase, preflight)
+
     def test_harness_runtime_is_fully_content_addressed(self):
         evaluation = read("docs/evaluation.md")
         runtime = evaluation.split("7. **`harnessx-runtime-v1`**\n", 1)[1].split("All five contract artifacts", 1)[0]
@@ -269,9 +304,15 @@ class SpecificationChecks(unittest.TestCase):
         module = read("docs/modules.md")
         contract = module.split("Conceptual port contract:\n", 1)[1].split("```\n\nRequirements:", 1)[0]
         self.assertIn("create_run(run_id, run_metadata)", contract)
+        self.assertIn("RUN_METADATA_CONFLICT", contract)
+        self.assertIn("canonical serialization", module)
         self.assertIn("graph_version=0, last_journal_position=0", contract)
         self.assertIn("get_run(run_id)", contract)
         self.assertIn("| NOT_FOUND", contract)
+        self.assertNotIn("stream_id", contract)
+        self.assertIn("read_journal(run_id, after_journal_position?, limit)", contract)
+        self.assertIn("has_more", contract)
+        self.assertIn("`after_journal_position` is an exclusive cursor", module)
         self.assertIn("persist run registration before accepting proposals", module)
 
         for operation in (
@@ -381,6 +422,9 @@ class SpecificationChecks(unittest.TestCase):
                 self.assertIn(phrase, methodology)
         self.assertIn("Resolved 2026-09-20", methodology)
         self.assertIn("evaluation.md#frozen-sensitivity-analyses", methodology)
+
+    def test_methodology_register_is_discoverable_from_readme(self):
+        self.assertIn("[Methodology audit and decision register](docs/methodology.md)", read("README.md"))
 
     def test_relative_document_links_resolve(self):
         for path in ROOT.rglob("*.md"):
