@@ -717,6 +717,11 @@ A failed agent-run attempt is eligible for a clean whole-run replacement **only 
 - `INFRA_FIRST_PROVIDER_CALL` — the first model call exhausted the provider-call transport budget without producing a semantic response.
 
 Each schedule slot has **at most 3 whole-run attempts total**: one initial attempt plus at most 2 clean replacements. Every replacement must satisfy the same clean-state isolation contract and retains the same schedule-slot identity; prior invalid attempts remain in raw data.
+Every eligible pre-semantic failure requires the next clean replacement while one
+of the two replacement attempts remains; the runner must not voluntarily stop.
+The runner must continue this sequence until an attempt succeeds, terminates
+nonretryably, or all 3 attempts are exhausted. A failure made nonretryable by
+the semantic-deadline precedence rule above does not consume a replacement.
 
 If all 3 attempts fail with eligible pre-semantic infrastructure reasons, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop launching new measured schedule slots, and report no primary point estimate or confidence interval. Do not substitute another task/replicate/configuration.
 

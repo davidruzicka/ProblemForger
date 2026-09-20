@@ -164,6 +164,19 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("If all 3 attempts fail", whole_run)
         self.assertIn("stop launching new measured schedule slots", whole_run)
 
+    def test_eligible_whole_run_failures_consume_remaining_replacements(self):
+        evaluation = read("docs/evaluation.md")
+        whole_run = evaluation.split("### Whole-agent-run replacement\n", 1)[1].split("### Evaluator infrastructure retries\n", 1)[0]
+        normalized = " ".join(whole_run.split())
+        for phrase in (
+            "Every eligible pre-semantic failure requires the next clean replacement",
+            "while one of the two replacement attempts remains",
+            "must not voluntarily stop",
+            "until an attempt succeeds, terminates nonretryably, or all 3 attempts are exhausted",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
     def test_unavailable_images_cannot_be_task_artifact_exclusions(self):
         evaluation = read("docs/evaluation.md")
         artifact = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("### Measured candidate patches", 1)[0]
