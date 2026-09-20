@@ -313,6 +313,39 @@ class SpecificationChecks(unittest.TestCase):
         self.assertTrue("dtype=np.int64" in evaluation, "Missing integer dtype")
         self.assertTrue("shared" in evaluation and "instance_id" in evaluation)
 
+    def test_hash_inputs_have_explicit_cross_implementation_serialization(self):
+        evaluation = read("docs/evaluation.md")
+        selection = evaluation.split("### Deterministic task selection\n", 1)[1].split("### Pre-P6 frozen artifacts\n", 1)[0]
+        for phrase in (
+            "encoded as UTF-8 bytes with no Unicode normalization",
+            "one zero byte (`0x00`)",
+            "unpadded ASCII decimal",
+            "config` as one ASCII letter",
+            "sha256(candidate_patch_bytes)",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, selection)
+
+    def test_methodology_registers_audit_provenance_and_routes_open_decisions(self):
+        methodology = read("docs/methodology.md")
+        for phrase in (
+            "6f7a7ae320e07ea7be39dc9ad1fe1ee3c206510f",
+            "only added path",
+            "No contradiction with an accepted ADR",
+            "conditional",
+            "do not include the degenerate",
+            "generation-policy-v1` record",
+            "Secondary-metric multiplicity",
+            "Benefit/cost utility",
+            "Normative owner if accepted",
+            "README documentation index",
+            "Robert E. Blackwell, Jon Barry, and Anthony G. Cohn",
+            "Quantifying Uncertainty in LLM Benchmark Scores",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, methodology)
+        self.assertIn("neither sign-only nor 10-point proposal approved", methodology)
+
     def test_relative_document_links_resolve(self):
         for path in ROOT.rglob("*.md"):
             for target in re.findall(r"\]\(([^)]+)\)", path.read_text()):

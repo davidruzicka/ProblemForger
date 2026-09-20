@@ -4,9 +4,14 @@
 
 This is a **non-normative audit**, recorded on 2026-09-19 against local commit
 `313c167` (published equivalent: `3ae96d3ee5fd7645dac01cd885e23771bc26a840`).
-It records the parameter review and subsequent discussion, not an approved
-replacement experiment. Creating this document does not approve its proposals.
-No selected benchmark tasks were opened or executed for this audit.
+The register itself is checked in as `docs/methodology.md` on branch
+`p0-spec-audit` in commit `6f7a7ae320e07ea7be39dc9ad1fe1ee3c206510f`.
+The audited snapshot predates the register; `git diff --stat` between the
+audited snapshot and that commit shows this file as the only added path. The
+register therefore records the audit artifact separately from the audited
+content. It records the parameter review and subsequent discussion, not an
+approved replacement experiment. Creating this document does not approve its
+proposals. No selected benchmark tasks were opened or executed for this audit.
 
 The [evaluation contract](evaluation.md), accepted ADRs, and the
 [contract ownership map](specification-checks.md#contract-ownership) remain
@@ -34,6 +39,15 @@ Distinguish these evidence levels throughout this register:
 - **Proposal:** a change requiring a decision, not current policy.
 - **Deferred:** appropriately unresolved until its implementation/research phase.
 
+## Audit result
+
+No contradiction with an accepted ADR or normative specification owner was
+found. The material issues are parameter justification, decision provenance,
+conditional-estimand wording, and generation-control status precision. The
+checked-in bootstrap fixtures (`tests/fixtures/bootstrap-v1.json`, `N=8..12`)
+prove reference-stream reproducibility but do not include the degenerate
+counterexample in §1.
+
 ## 1. Estimand and interpretation
 
 The first decision is whether P6 is a feasibility pilot or evidence for a
@@ -48,6 +62,10 @@ Before revising the analysis, distinguish:
 4. transfer to new repository families, harnesses, or real project work.
 
 An interval appropriate for one target does not automatically support another.
+The practical P6 estimand is also conditional: it concerns only tasks that pass
+the frozen repository/problem filters and patch-independent preflight, not every
+row in the pinned SWE-smith split. Interval claims therefore must not be
+generalized to the unfiltered benchmark population.
 Also distinguish funding further research, claiming a mechanism helps, and
 deploying the complete system. These decisions need not share one gate.
 
@@ -76,6 +94,9 @@ Proposal: simulate coverage and decision errors before treating these intervals
 as evidence for equivalence or progression. Do not automatically substitute BCa,
 a hierarchical bootstrap, or a parametric model: each has assumptions that must
 match the estimand and sampling design.
+Before making stronger equivalence or progression claims, add this counterexample
+to the synthetic decision checks. The current golden fixtures cover N=8..12
+reference reproducibility but do not cover this failure mode.
 
 ## 2. Sample and task selection
 
@@ -174,7 +195,7 @@ research decision.
 | Named primary model, thinking disabled | Rationale relative to intended deployment is not established. | Choose on separate development tasks and intended operating conditions. |
 | Temperature zero | Legitimate operating policy, not a determinism guarantee. | Retain only with that interpretation. |
 | Verification of effective temperature | Accepted requests establish API acceptance, not hidden provider implementation. Effective-value acknowledgement may be unavailable. | Distinguish requested, accepted, provider-reported, and unobservable values. |
-| EXPLICIT / OMITTED_NATIVE / UNSUPPORTED / UNKNOWN statuses | Mixes support, setting mode, and knowledge of effective behavior. Explicit settings can have unknown effective values. | Consider separate capability, request-mode, and effective-value fields. |
+| EXPLICIT / OMITTED_NATIVE / UNSUPPORTED / UNKNOWN statuses | These statuses summarize the richer `generation-policy-v1` record; the status alone must not be read as proof of an effective value. | Preserve the normative record. Derive separate capability, request-mode, and effective-value fields only if analysis needs them, and never infer an effective value from acceptance or documentation. |
 | 16,384 output tokens per response | Not a run-level cost/token cap. | Justify on development data; measure truncation and total usage. |
 | 60 agent steps | A step need not correspond to one tool call; graph work consumes budget. | Define step semantics and interpret effects at that budget, including graph overhead. |
 | 30-minute semantic deadline | Mixes model speed, provider delays, tests, and service overhead. Appropriate for end-to-end utility, not isolated reasoning quality. | Report the binding limit and latency breakdown. |
@@ -225,6 +246,8 @@ predict actual reliability.
 | Later-contradicted committed mutations | A system that commits almost nothing can appear safe. | Report exposure/commit volume and task utility alongside contradictions. |
 | Downstream graph dependencies | Depends on agent-selected granularity; a graph edge alone does not establish causality. | Call it structural reach unless causal evidence is available. |
 | Cost per resolved slot | Unstable with few successes and undefined with none. | Preserve numerator, denominator, and uncertainty rather than only the ratio. |
+| Secondary-metric multiplicity | Multiple frozen secondary outcomes still create selection pressure even when the primary gate is frozen. | Predeclare reporting order and interpretation; treat secondary metrics as hypothesis-generating unless separately powered. |
+| Benefit/cost utility | A small measured benefit can be outweighed by direct or induced cost; the frozen contract has no cost-effectiveness decision rule. | Decide utility together with the benefit/harm margins before cost is used to justify progression. |
 | Provider cost | Excludes other system/evaluator infrastructure cost. | Do not label as total system cost. |
 | Attributed token/latency overhead | Direct graph calls are observable; induced changes to later trajectories are not uniquely attributable. | Separate direct overhead from total A/B/C differences. |
 | UNKNOWN/UNRESOLVED buckets | Honest treatment of ambiguity but missingness can differ by configuration. | Report frequency and denominators; do not silently convert unknowns to favorable values. |
@@ -285,16 +308,16 @@ This is a proposal for resolving the audit, not an authorization to alter P6.
 
 ### Open decisions
 
-| Priority | Decision | State |
-| --- | --- | --- |
-| High | Intended estimand and evidential role of P6 | Needs explicit clarification |
-| High | Bootstrap/gate operating characteristics | Needs simulation evidence |
-| High | Mechanical sensitivity-discordance rule and its consequence | Open; neither sign-only nor 10-point proposal approved |
-| High | Benefit/harm margins and complete-system utility | Needs rationale and approval |
-| Medium | Sample/repetition allocation and family dependence | Needs pilot/simulation evidence |
-| Medium | Observable generation-control record | Needs schema clarification |
-| Medium | Experiment pause/resume versus fatal infrastructure stop | Alternative requiring approval |
-| Later | Calibration/routing thresholds and technical runtime limits | Resolve in owning implementation/research phase |
+| Priority | Decision | State | Normative owner if accepted |
+| --- | --- | --- | --- |
+| High | Intended estimand and evidential role of P6 | Needs explicit clarification | `evaluation.md` |
+| High | Bootstrap/gate operating characteristics | Needs simulation evidence | `evaluation.md` |
+| High | Mechanical sensitivity-discordance rule and its consequence | Open; neither sign-only nor 10-point proposal approved | `evaluation.md` |
+| High | Benefit/harm margins and complete-system utility | Needs rationale and approval | `evaluation.md` |
+| Medium | Sample/repetition allocation and family dependence | Needs pilot/simulation evidence | `evaluation.md` |
+| Medium | Observable generation-control record | Needs schema clarification | `evaluation.md` (and `protocol.md` only if service-boundary semantics change) |
+| Medium | Experiment pause/resume versus fatal infrastructure stop | Alternative requiring approval | `evaluation.md` |
+| Later | Calibration/routing thresholds and technical runtime limits | Resolve in owning implementation/research phase | `verification.md` / `model-routing.md` / `protocol.md` / `modules.md` in their respective phases |
 
 ## Maintenance and references
 
@@ -303,16 +326,23 @@ here with a dated link to the decision and evidence. Do not maintain a second
 implementation of selectors, bootstrap, leases, retries, or gates in this audit.
 Preserve counterexamples as evidence; do not convert recommendations into policy
 merely because they are written under `docs/`.
+When this branch merges, add this register to the README documentation index;
+the register remains non-normative.
 
-Project sources: [Evaluation](evaluation.md), [Plan](../PLAN.md),
-[Verification](verification.md), [Routing](model-routing.md),
-[Protocol](protocol.md), [Modules](modules.md), and [Risks](risks.md).
+Project sources: [Evaluation](evaluation.md), [Architecture](architecture.md),
+[Problem graph](problem-graph.md), [Plan](../PLAN.md), [Review loop](review-loop.md),
+[Specification checks](specification-checks.md), [Verification](verification.md),
+[Routing](model-routing.md), [Protocol](protocol.md), [Modules](modules.md),
+and [Risks](risks.md). Accepted ADRs 0001–0009 are indexed in
+[Architecture decisions](adr/).
 
 External context:
 
-- [Blackwell et al., Towards Reproducible LLM Evaluation](https://arxiv.org/abs/2410.03492):
-  reports that temperature zero and fixed seeds do not universally guarantee
-  deterministic model answers. This does not establish behavior of our pinned stack.
+- [Robert E. Blackwell, Jon Barry, and Anthony G. Cohn, *Towards Reproducible
+  LLM Evaluation: Quantifying Uncertainty in LLM Benchmark Scores*](https://arxiv.org/abs/2410.03492),
+  revalidated 2026-09-20: reports that temperature zero and fixed seeds do not
+  universally guarantee deterministic model answers. This does not establish
+  behavior of our pinned stack.
 - [SciPy bootstrap documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.bootstrap.html):
   distinguishes resample count, confidence level, interval method, and paired
   resampling. It does not validate any particular method for this experiment.

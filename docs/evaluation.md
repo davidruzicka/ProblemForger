@@ -264,6 +264,14 @@ The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target
 
 At the pinned SWE-smith revision, `FAIL_TO_PASS` and `PASS_TO_PASS` are dataset list/sequence fields, not JSON-encoded strings. Selection code must validate that both fields decode/load as sequences of test identifiers before applying count filters; if the pinned schema does not match this expectation, materialization must fail rather than reinterpret string length as test count.
 
+For every formula below written as `SHA256(text)`, `text` means the exact
+concatenation shown, encoded as UTF-8 bytes with no Unicode normalization.
+The `\0` separator is one zero byte (`0x00`). `instance_id` is serialized as
+its exact validated string, `replicate` as unpadded ASCII decimal (`1`, `2`, or
+`3`), and `config` as one ASCII letter (`A`, `B`, or `C`). This rule applies to
+the task-rank and execution-order keys below. Hashes of binary artifacts, such
+as `sha256(candidate_patch_bytes)`, operate directly on the specified bytes.
+
 The selector also validates the repository field before candidate filtering. Every row in the pinned split must have `repo` as a string in the exact structural form `<owner>/<repository>`:
 
 - exactly one `/`;
