@@ -13,6 +13,21 @@ def read(path):
 
 
 class SpecificationChecks(unittest.TestCase):
+    def test_retry_evidence_and_restart_invariants(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "must take that retry",
+            "Retries do not reset deadlines or resource counters",
+            "exact candidate patch bytes and digest produced by either A or C",
+            "Before a slot is scored as either 0 or 1",
+            "Zero proposals is valid",
+            "persist the experiment start time and absolute stop deadline",
+            "never reset the deadline",
+            "missing outcome is undefined, never 0",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
     def test_p6_is_small_and_explicitly_practical(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (

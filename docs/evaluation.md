@@ -156,16 +156,27 @@ Freeze before exposure:
 - no replacement of a trajectory after a semantic response has been accepted;
 - an explicit count of human interventions, including setup/recovery help.
 
+For an eligible first-attempt failure, the runner must take that retry unless
+a recorded deadline, exhausted budget, shared integrity failure, or operator
+abort prevents it. This is one whole-slot restart, not an additional per-call
+retry allowance; disable hidden harness/provider retries. Retain both attempt
+records. Retries do not reset deadlines or resource counters. After any
+semantic response (including accepted streamed content or a tool call), no
+whole-slot restart is allowed. Candidate evaluation has no extra retry.
+
 When a slot exhausts a limit, record an unresolved slot and continue unrelated
 slots if the experiment-wide runtime is still valid. Do not treat a missing
 slot as success or failure and do not buy extra retries after seeing its
 outcome.
 
-Before a slot is counted as resolved, validate its mandatory evidence: the
+Before a slot is scored as either 0 or 1, validate its mandatory evidence: the
 manifest/version reference, the agent terminal record, the exact candidate
-patch where C produced one, and the evaluator output. For C, the durable
-ProblemForger journal must be readable and contain the recorded proposal and
-terminal outcome. If the manifest declares a native trajectory archive as
+patch bytes and digest where either A or C produced one, and the evaluator
+output where evaluation ran. Verify the retained bytes against the digest
+bound to the evaluator invocation. For C, the durable ProblemForger journal
+must be readable, identify the run, and retain every received proposal and
+every returned terminal outcome. Zero proposals is valid; an interrupted
+pending proposal is not fabricated into a terminal outcome. If the manifest declares a native trajectory archive as
 mandatory, that archive is checked here as well; otherwise native telemetry is
 optional diagnostic data. A missing or corrupt mandatory artifact produces
 `EVIDENCE_INCOMPLETE` for that slot and never gets regenerated after a semantic
@@ -179,19 +190,22 @@ available artifacts and do not assign a complete-pilot decision.
 <!-- spec-id: EVALUATION.MEASURED-EVALUATION -->
 
 Run tasks in the frozen order. For each task, run A and C once in fresh
-workspaces. Preserve the exact candidate patch bytes and digest produced by C.
+workspaces. Preserve the exact candidate patch bytes and digest produced by either A or C.
 Evaluate each produced candidate patch once in a fresh evaluator workspace.
 
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule
 is: all required `FAIL_TO_PASS` tests pass and all required `PASS_TO_PASS` tests
-remain passing. A patch that cannot be evaluated completely is `UNRESOLVED`,
-with the infrastructure, invalid-patch, or evaluator reason retained.
+remain passing. A completed failing test vector or an evidenced agent failure
+to produce a valid applicable patch is an observed 0. Infrastructure loss,
+an incomplete evaluator vector, or missing mandatory evidence is a missing
+outcome, not an observed failure. Preserve the specific reason in either case.
 
 For a complete task pair:
 
 ```text
-y_i(X) = 1 if configuration X resolves task i, otherwise 0
+y_i(X) = 1 if configuration X resolves task i, 0 for an observed failure
+missing outcome is undefined, never 0
 d_i(C-A) = 100 * (y_i(C) - y_i(A)) percentage points
 mean_delta_pp = mean(d_i(C-A)) over the six task pairs
 ```
@@ -308,6 +322,18 @@ limit, and experiment-wide stop limit into the manifest before task exposure.
 The values are practical operating limits, not validity thresholds. If a limit
 is unavailable from a provider, record `UNKNOWN` and use the observable local
 limit rather than treating unknown usage as zero.
+
+Before starting the first slot, persist the experiment start time and absolute
+stop deadline with the experiment ID in the retained execution record. On
+coordinator restart, reload that record and cumulative resource usage; never
+reset the deadline or spent budgets. Downtime counts toward the stop limit.
+If the record is missing, corrupt, or clock continuity cannot be trusted, stop
+the pilot as `INCOMPLETE_COVERAGE` with the restart reason; do not launch more
+slots. Interrupted semantic trajectories remain missing and are not rerun.
+Check the remaining budget before every slot/retry, and terminate active work
+when the experiment deadline is reached. Preserve completed results and mark
+unfinished or unstarted slots missing. An operator abort has the same no-new-work
+effect and must be recorded; it does not reset or extend the experiment.
 
 <a id="p6-runtime-image-identity"></a>
 ### Runtime identity record

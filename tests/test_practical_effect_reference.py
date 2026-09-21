@@ -15,10 +15,11 @@ class PracticalEffectChecks(unittest.TestCase):
         ]
 
         task_deltas = [100 * (task["c"] - task["a"]) for task in tasks]
-        point_delta_pp = 100 * sum(task_deltas) / len(task_deltas)
+        point_delta_pp = sum(task_deltas) / len(task_deltas)
 
         self.assertEqual(task_deltas, [100, -100, 0, 0, 100, 0])
-        self.assertEqual(point_delta_pp, 10000 / 6)
+        self.assertAlmostEqual(point_delta_pp, 100 / 6)
+        self.assertLessEqual(abs(point_delta_pp), 100)
         self.assertEqual(100 / len(tasks), 100 / 6)
 
 
