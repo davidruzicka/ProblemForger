@@ -13,6 +13,21 @@ def read(path):
 
 
 class SpecificationChecks(unittest.TestCase):
+    def test_service_runtime_is_frozen_and_recorded(self):
+        evaluation = read("docs/evaluation.md")
+        freeze = evaluation.split("### Pre-P6 frozen artifacts", 1)[1].split("### Task source", 1)[0]
+        self.assertIn("8. **`problemforger-runtime-v1`**", freeze)
+        self.assertIn("Every C attempt records", freeze)
+        self.assertIn("ProblemForger source", freeze)
+        self.assertIn("`problemforger-runtime-v1` hash and actual service image/archive digest", evaluation)
+
+    def test_transport_retry_acceptance_is_call_scoped(self):
+        evaluation = read("docs/evaluation.md")
+        retries = evaluation.split("### Provider-call transport retries", 1)[1].split("### Whole-agent-run replacement", 1)[0]
+        self.assertIn("no response for the current model call has been accepted", retries)
+        self.assertIn("Earlier calls' accepted responses do not disable", retries)
+        self.assertIn("partially accepted assistant content or tool calls", retries)
+
     def test_store_ownership_is_enforced_before_clock_initialization(self):
         protocol = read("docs/protocol.md")
         self.assertIn("#### STORE-OWNER", protocol)
@@ -496,7 +511,7 @@ class SpecificationChecks(unittest.TestCase):
 
     def test_task_materialization_requires_the_complete_pre_p6_freeze(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
-        self.assertIn("Only after all seven artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6) are frozen", evaluation)
+        self.assertIn("Only after all eight artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6) are frozen", evaluation)
         self.assertIn("Before the pre-P6 artifact freeze", evaluation)
         self.assertNotIn("paired mechanism comparison under executable ground truth", evaluation)
 

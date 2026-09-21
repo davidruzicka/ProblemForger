@@ -325,7 +325,7 @@ experiment, not completion of this comparison.
 <!-- spec-id: EVALUATION.PRE-P6 -->
 ### Pre-P6 frozen artifacts
 
-Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, the five version-controlled contract artifacts, the model chain, and the complete HarnessX runtime environment must be frozen:
+Before any task selected by the P6 selector is intentionally identified, inspected, opened, or executed for development/evaluation, the five version-controlled contract artifacts, the model chain, and both complete local runtime environments must be frozen:
 
 1. **`benchmark-adapter-v1`**
    - exact code/configuration that bridges the pinned SWE-smith task source into the pinned HarnessX runtime;
@@ -380,10 +380,20 @@ The following additional frozen artifacts are required before task exposure:
    - all runtime configuration that can affect HarnessX behavior, with secrets excluded and secret sources/versioned interfaces identified;
    - a deterministic build/restore procedure that fails rather than resolving mutable tags, floating dependency ranges, or an unverified cache.
 
-All five contract artifacts, `model-chain-v1`, and `harnessx-runtime-v1` must be
+8. **`problemforger-runtime-v1`**
+   - exact ProblemForger source revision/content, interpreter, transitive dependency lockfile, platform/architecture, and effective service configuration with secrets excluded;
+   - content-addressed service image or immutable runtime archive containing installed dependencies and system components, with a verified build/restore procedure that refuses mutable substitutions;
+   - the artifact may reference the same retained image/archive as HarnessX when it includes both runtimes; a separate container/build system is not required.
+
+All five contract artifacts, `model-chain-v1`, `harnessx-runtime-v1`, and `problemforger-runtime-v1` must be
 content-addressed (for example SHA-256) and their hashes recorded in every P6 run
 manifest. Every A/C attempt must execute the recorded runtime image/archive and
 resolved lockfile; the HarnessX commit alone is not a sufficient runtime identity.
+Every C attempt records and verifies the actual service runtime identity against
+the frozen artifact before semantic execution, including replacement attempts.
+A uses no ProblemForger service. An unavailable or mismatched service runtime
+cannot be silently replaced; treat startup failure under the existing
+`INFRA_PROBLEMFORGER_START` policy and retain diagnostics.
 
 <a id="p6-runtime-image-identity"></a>
 The runtime digest identifies the retained runtime/harness bytes, **not hosted model identity**.
@@ -487,7 +497,7 @@ Materialization must fail rather than silently relax these rules if fewer than 1
 primary/reserve or 8 holdout candidates can be selected. The holdout identifiers
 are recorded for later use, but their images are not materialized for P6.
 
-Only after all seven artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6)
+Only after all eight artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6)
 are frozen, materialize the twelve
 primary/reserve IDs into a version-controlled manifest and record its SHA-256. The
 selector above is frozen; materialization is not an opportunity to hand-pick tasks.
@@ -788,7 +798,7 @@ The benchmark adapter is experimental plumbing, not the treatment. Any adapter b
 
 ### Intervention freeze and parity
 
-The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but the five pre-P6 contract artifacts, `model-chain-v1`, and `harnessx-runtime-v1` must be frozen **before** the selected P6 tasks are exposed.
+The P0 document freezes the experiment envelope, not implementation details that do not yet exist. P2/P3/P4 may develop the graph surface and deterministic policy on synthetic/separate development tasks, but all artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6) must be frozen **before** the selected P6 tasks are exposed.
 
 Within P6-AC, the only intentional A→C difference is the complete ProblemForger
 package defined by `graph-intervention-v1` and `governance-policy-v1`. A later B/C
@@ -848,7 +858,7 @@ pre-test infrastructure evidence is a different state.
 For each individual model call, including calls after semantic execution has begun:
 
 - maximum 3 transport attempts total: the initial attempt plus at most 2 retries;
-- retry only when **no semantic response was produced** and the attempt ends in one of:
+- retry only when **no response for the current model call has been accepted** into agent state and the attempt ends in one of:
   - connection/DNS/TLS failure before an HTTP response;
   - transport/read timeout before a semantic response;
   - HTTP 408;
@@ -856,6 +866,12 @@ For each individual model call, including calls after semantic execution has beg
   - HTTP 500–599;
 - do not retry semantic/API validation failures, malformed provider responses that do not produce an accepted semantic response, content/tool behavior, or ordinary 4xx responses other than 408/429;
 - all transport attempts and reason codes are retained in raw telemetry.
+
+Earlier calls' accepted responses do not disable transport retries for the current
+call. For this section, a semantic response means accepted assistant content or
+tool calls for the current call, including partially accepted assistant content or tool calls
+from a stream; once accepted, do not retry that call. This call-scoped rule does
+not reset the run-wide semantic-start state used for whole-run replacement.
 
 Every eligible transport failure requires the next transport attempt while an
 attempt remains; the runner must not voluntarily stop. Continue until a semantic
@@ -1091,6 +1107,7 @@ For every schedule slot and every whole-run attempt, retain:
 - requested/effective generation controls with `EXPLICIT`, `OMITTED_NATIVE`, `UNSUPPORTED`, or `UNKNOWN` status, capability/effective-value evidence, and configuration/environment precedence;
 - `model-chain-v1` hash, selected chain index, exact selected provider/model API identifier and exposed revision metadata, and every exhausted chain entry;
 - `harnessx-runtime-v1` hash, runtime image/archive digest, dependency-lockfile hash, interpreter/runtime version, and execution platform/architecture;
+- `problemforger-runtime-v1` hash and actual service image/archive digest for each C attempt, or an explicit unavailable identity plus diagnostics if startup failed before verification;
 - provider/API/model revision, deployment/build identifier, response-version header, or equivalent version metadata when exposed by the provider; record explicit `null/unavailable` when the provider exposes none;
 - absolute UTC timestamps in RFC 3339 form for `attempt_started_at`, `semantic_started_at` (null if no first request was issued), and `attempt_ended_at`;
 - task-manifest hash and execution-schedule artifact/hash;
