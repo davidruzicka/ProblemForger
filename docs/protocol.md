@@ -185,8 +185,12 @@ Validate the whole graph batch before any write. Missing/null required fields,
 invalid structure, mismatched identities, absent/duplicate `COMMIT`, another
 terminal outcome, or empty graph events return `INVALID_GRAPH_BATCH`, leaving
 journal, proposal state, and graph unchanged. The EventStore validates structure
-and binding; it does not rerun governance policy. A valid batch still requires
-the active claim and expected graph version in the append transaction. Success
+and binding; it does not rerun governance policy. In the same transaction, the
+supplied `expected_graph_version` must equal the proposal receipt's recorded
+`expected_graph_version`; a mismatch is `INVALID_GRAPH_BATCH` with no writes.
+The bound value must then equal the current run `graph_version`; otherwise return
+`VersionConflict` with no writes. A valid batch still requires the active claim
+in the append transaction. Success
 atomically appends the complete batch, finalizes the proposal, and increments
 graph version exactly once. Any failed check leaves the whole batch unwritten.
 

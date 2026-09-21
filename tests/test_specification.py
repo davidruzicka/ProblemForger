@@ -223,6 +223,14 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, normalized)
 
+    def test_graph_append_is_bound_to_receipt_graph_version(self):
+        protocol = " ".join(read("docs/protocol.md").split())
+        modules = " ".join(read("docs/modules.md").split())
+        for text in (protocol, modules):
+            self.assertIn("proposal receipt's recorded `expected_graph_version`", text)
+            self.assertIn("`INVALID_GRAPH_BATCH`", text)
+            self.assertIn("current run `graph_version`", text)
+
     def test_task_artifact_exclusion_is_pre_measurement_only(self):
         evaluation = read("docs/evaluation.md")
         artifact = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("<a id=\"spec-evaluation-measured-evaluation\">", 1)[0]
