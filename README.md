@@ -1,6 +1,6 @@
 # ProblemForger
 
-> Helping AI agents break down problems, verify their work, and choose the right model for each step.
+> Externally governed problem graphs for AI-agent work.
 
 ProblemForger is a research prototype for making long-running AI-agent work more explicit, observable, and locally verifiable.
 
@@ -8,61 +8,19 @@ The core idea is to keep an **externally governed, versioned problem graph** out
 
 ProblemForger is intended to be a **harness-neutral reliability layer**, not another agent framework.
 
-## Research questions
-
-Primary:
-
-> Can an externally governed problem graph turn variable AI-agent execution into locally verifiable decisions with measurable failure probabilities?
-
-Secondary:
-
-> Can those estimates safely route individual subproblems to the cheapest model that is likely to solve them?
-
 ## Initial scope
 
 The first experiments focus on software-engineering agents because they provide strong external evidence: tests, compilers, type checkers, static analysis, repository state, and executable behavior.
 
 The architecture itself is intended to remain domain-neutral.
 
-The PoC is deliberately incremental:
+The initial PoC compares an existing harness with and without the complete graph/governance package. Learned verification and model routing are planned later work. Phase ordering lives in [PLAN.md](PLAN.md); experiment definitions live in [Evaluation](docs/evaluation.md).
 
-1. explicit problem graph;
-2. event-sourced authoritative state;
-3. governed graph mutations;
-4. deterministic/external evidence;
-5. learned verification;
-6. calibrated confidence and abstention;
-7. model suitability estimation and routing;
-8. observer/debug UI;
-9. controlled ablation studies.
+## Integration
 
-Each layer must be evaluated separately before later layers are allowed to hide its contribution.
+ProblemForger is not a standalone agent harness. An existing harness retains model, tool, and session execution. A thin adapter connects it to the local ProblemForger service, where the worker queries graph state and proposes changes. ProblemForger governs those changes using evidence and policy and records durable decisions.
 
-## Architecture at a glance
-
-```text
-              Agent harness
-           (HarnessX / Pi / ...)
-                    |
-               thin adapter
-                    |
-          versioned local service API
-                    |
-             ProblemForger
-       +------------+------------+
-       |                         |
- authoritative graph        observations
-       |                         |
- ProblemGraph -> Governor    TelemetrySink
-       |           |
-       |           +-- evidence/verifier ports
-       |
-    EventStore
-```
-
-Authoritative graph-domain events are deliberately separate from harness/model/tool telemetry. Replaceable infrastructure and policies are accessed through explicit ports. Concrete providers are loaded from typed configuration. The core must not know whether the EventStore is memory, SQLite, PostgreSQL, or another implementation; provider capabilities remain explicit, so the in-memory adapter is test-only/ephemeral while normal service execution requires a durable provider such as SQLite.
-
-See [PLAN.md](PLAN.md), the [P0 audit](docs/p0-audit.md), and [architecture](docs/architecture.md).
+The same core serves different harnesses; adapters translate the protocol without owning domain policy. See [Architecture](docs/architecture.md) for service boundaries and persistence.
 
 ## Repository status
 
@@ -70,12 +28,20 @@ This repository is in the **specification and PoC stage**. Claims about reliabil
 
 ## Documentation
 
-- [PLAN.md](PLAN.md) — roadmap, phases, and exit criteria.
-- [AGENTS.md](AGENTS.md) — rules for AI-assisted implementation.
-- [P0 specification audit](docs/p0-audit.md)
-- [Methodology audit and decision register](docs/methodology.md)
+### Start here
+
 - [Vision](docs/vision.md)
 - [Architecture](docs/architecture.md)
+- [PLAN.md](PLAN.md) — phases and exit criteria.
+
+### Contributor workflow
+
+- [AGENTS.md](AGENTS.md) — contributor and agent instructions.
+- [Pull-request review loop](docs/review-loop.md)
+- [Specification ownership and checks](docs/specification-checks.md)
+
+### Normative contracts and decisions
+
 - [Ports, adapters, and modules](docs/modules.md)
 - [Problem graph](docs/problem-graph.md)
 - [Harness-neutral protocol](docs/protocol.md)
@@ -83,9 +49,14 @@ This repository is in the **specification and PoC stage**. Claims about reliabil
 - [Model routing](docs/model-routing.md)
 - [Evaluation](docs/evaluation.md)
 - [UI](docs/ui.md)
+- [Architecture decisions](docs/adr/)
+
+### Supporting material and historical audits
+
 - [Risks](docs/risks.md)
 - [Related work](docs/related-work.md)
-- [Architecture decisions](docs/adr/)
+- [P0 specification audit](docs/p0-audit.md)
+- [Methodology audit and decision register](docs/methodology.md)
 
 ## Specification checks
 

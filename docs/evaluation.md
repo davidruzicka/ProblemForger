@@ -281,22 +281,32 @@ recovery decision accounts for the uncertainty. Redispatch after a restart is
 allowed only when the frozen retry policy permits it and the previous operation's
 reservation and outcome are retained.
 
-Experiment elapsed time uses a restart-stable clock domain. The durable
+Experiment elapsed time is measured in milliseconds, not UTC timestamps. Define
+`experiment_wall_clock_limit_ms = 1000 * experiment_wall_clock_limit_seconds`;
+stop when `elapsed_ms >= experiment_wall_clock_limit_ms`. The durable
 experiment record persists `experiment_started_at_utc` (RFC 3339 UTC) and a
 monotonically non-decreasing `experiment_elapsed_floor_ms`. Within one process,
 elapsed time advances only by process-monotonic elapsed time, and every ledger
 write advances the persisted floor. When dispatching any operation, the
 coordinator durably records the operation's elapsed-time deadline: the elapsed
-value at dispatch plus the operation's finite timeout. On coordinator open,
-elapsed time is anchored at `max(experiment_elapsed_floor_ms, now_utc_ms -
-experiment_started_at_utc, max outstanding recorded operation deadline)`; once
-an outstanding operation is reconciled, its recorded deadline no longer
-contributes to the anchor. The anchor is capped at the experiment deadline: if
-it reaches `experiment_started_at_utc + experiment_wall_clock_limit_seconds`,
-the existing `BUDGET_EXHAUSTED` stop applies. A backward UTC shift or a crash
-before the next ledger write can therefore never extend the frozen budget — an
-in-flight interval is conservatively charged up to its recorded timeout — and a
-forward shift may only expire it earlier. An operation in flight across a
+value at dispatch plus the operation's finite timeout, converted to milliseconds.
+The absolute UTC deadline is derived metadata only; never compare it with an
+elapsed duration. Process-monotonic measurement includes idle time while the
+coordinator remains alive. UTC subtraction alone cannot establish remaining time
+across a crash and backward wall-clock adjustment; persisted operation deadlines
+also cannot account for all downtime or idle time before the crash.
+
+The default after coordinator restart is to stop. Resume only if a timing source
+and recovery method frozen before exposure can establish a conservative upper
+bound on total elapsed milliseconds, including downtime, independently of
+adjustable UTC. If that bound is unavailable, stop as `BUDGET_EXHAUSTED` with reason
+`CLOCK_UNCERTAIN`; required unfinished work makes the report `INCOMPLETE_BUDGET`.
+No additional timing infrastructure is required for this PoC: stopping is valid.
+For an allowed recovery, persist the maximum of that elapsed bound, the existing
+floor, and all outstanding elapsed-time operation deadlines before dispatch.
+Reconciliation never lowers the persisted floor. Apply the same elapsed-limit
+comparison before resuming. Preserve attempt counters and operation outcomes even
+when stopping; recovery does not grant extra attempts. An operation in flight across a
 restart keeps its full spend reservation, and restart recovery never makes
 redispatched work free.
 
@@ -402,7 +412,7 @@ Use a deterministic subset of the public SWE-smith dataset:
 - split: `train`;
 - selection seed namespace: `problemforger-p6-ac-v1`.
 
-SWE-smith provides executable software-engineering tasks with failing/passing tests. It is public training data, so this experiment must **not** be presented as an uncontaminated measurement of frontier coding capability. Its purpose here is paired mechanism comparison under executable ground truth.
+SWE-smith provides executable software-engineering tasks with failing/passing tests. It is public training data, so this experiment must **not** be presented as an uncontaminated measurement of frontier coding capability. Its purpose here is a paired whole-system feasibility comparison using executable task tests, not isolated mechanism attribution or proof of general correctness.
 
 The pinned HarnessX commit's built-in SWE-bench runner/evaluator defaults target `princeton-nlp/SWE-bench_Verified` / `test`; they are therefore **not** the P6 benchmark runner. P6 uses the frozen `benchmark-adapter-v1` to feed SWE-smith/`train` tasks into the content-addressed `harnessx-runtime-v1` and to invoke evaluation consistently. The adapter may reuse pinned HarnessX runtime/harness entry points such as `make_swebench_harness`, but it owns dataset loading/evaluation plumbing. The same benchmark adapter hash and runtime hash are mandatory for A, B, and C.
 
@@ -477,8 +487,8 @@ Materialization must fail rather than silently relax these rules if fewer than 1
 primary/reserve or 8 holdout candidates can be selected. The holdout identifiers
 are recorded for later use, but their images are not materialized for P6.
 
-Only after `benchmark-adapter-v1`, `graph-intervention-v1`, `governance-policy-v1`,
-`graph-metrics-v1`, and `telemetry-metrics-v1` are frozen, materialize the twelve
+Only after all seven artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6)
+are frozen, materialize the twelve
 primary/reserve IDs into a version-controlled manifest and record its SHA-256. The
 selector above is frozen; materialization is not an opportunity to hand-pick tasks.
 
@@ -504,7 +514,7 @@ recorded immutable identity.
 
 All preflight evaluations, A/C measured runs, repeated candidate evaluations, and later reserved-holdout use must execute the recorded immutable identity, never re-resolve the original mutable tag. If the immutable content later becomes unavailable, treat that as infrastructure unavailability; do not fall back to a mutable tag or newly resolved image.
 
-Before that freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
+Before the pre-P6 artifact freeze, do not intentionally derive/open/run the selected primary or holdout task IDs for development. After materialization, do not inspect gold patches when deciding inclusion beyond fields listed above.
 
 ### Repetitions, run isolation, and execution ordering
 
@@ -627,15 +637,36 @@ not silently scored as success or failure.
 
 ### Practical continuation decision
 
-Before task exposure, record the operational tolerances for cost, latency, and
-human intervention. The human decision is one of:
+Before task exposure, freeze the operational tolerances for cost, latency, and
+human intervention, their measurement units and sources, aggregation scope, and
+accounting boundaries. Define what counts as one intervention, including setup
+and recovery assistance, and use the same counting rules for A and C. Specify
+handling of missing measurements and a zero or unavailable baseline: do not
+divide by zero or count unknown overhead as zero; freeze an absolute comparison
+or mark the comparison unavailable. Also record workflow-specific useful benefits
+and critical-regression categories. Missing decision evidence must be identified
+in the rationale; do not claim that an unassessable tolerance passed.
+
+Incomplete experiments receive no continuation label, even when partial evidence
+suggests a next action; record that action separately from the experiment result.
+For a complete pilot, the human decision is one of:
 
 - `CONTINUE`: C shows useful local improvement or reduced failure without a
   critical regression, and its operational overhead is acceptable;
-- `ADAPT`: there is no critical regression, but the observed benefit, overhead, or
-  failure pattern requires a design change before broader use;
+- `ADAPT`: an identifiable, plausibly correctable weakness in benefit, overhead,
+  or failure pattern warrants a stated change and reassessment before broader use;
 - `STOP`: a critical correctness, isolation, security, or operational regression
-  makes the package unsuitable for the tested workflow.
+  makes the package unsuitable for the tested workflow, or insufficient practical value
+  fails to justify further work.
+
+An unresolved critical regression precludes `CONTINUE`. Choosing `ADAPT` instead
+of `STOP` requires a concrete remediation and reassessment plan; it does not
+authorize broader use while the regression remains. Record the decision maker,
+evidence, and rationale, including tolerance failures, missing evidence, observed
+benefits and regressions, and the proposed next action. Human judgment resolves
+tradeoffs; no automatic score or percentage threshold selects a label.
+The ±10 percentage-point bands remain descriptive only. `SENSITIVITY_DISCORDANT`
+is a warning that informs the rationale and does not force any continuation label.
 
 These labels summarize the observed workflow decision. They are not a statistical
 gate and do not automatically start P7. No universal cost, latency, or benefit

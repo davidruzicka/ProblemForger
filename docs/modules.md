@@ -53,6 +53,11 @@ get_run(run_id)
     -> RUN {run_metadata, metadata_hash, graph_version, last_journal_position}
     | NOT_FOUND
 
+get_proposal(run_id, proposal_id)
+    -> PROPOSAL {request_hash, normalized_request, status, claim_metadata,
+                 terminal_outcome, resulting_graph_version, last_journal_position}
+    | NOT_FOUND
+
 record_proposal(run_id, proposal_id, request_hash, normalized_request, receipt_record)
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
@@ -81,6 +86,7 @@ append_audit(run_id, records[], proposal_id?, expected_owner_id?, expected_claim
 append_graph(run_id, proposal_id, expected_owner_id, expected_claim_epoch,
              expected_graph_version, audit_records[], graph_events[])
     -> {last_journal_position, new_graph_version}
+    | INVALID_GRAPH_BATCH
     | VersionConflict
     | STALE_CLAIM
     | NOT_FOUND
@@ -104,7 +110,9 @@ Requirements:
 - `claim_ttl_ms` must be a positive finite integer whose lease-deadline computation cannot overflow; `claim_proposal` and `renew_claim` reject any other value atomically with `INVALID_CLAIM_TTL`, leaving the claim state and persisted lease-clock floor unchanged;
 - treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
 - claims owned by a previous provider `lease_clock_generation` are inactive on reopen and require a new recovery claim epoch; restart must not revive them by moving lease time backward;
-- `append_audit` claim arguments are optional only for non-terminal-only batches; for a batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`, `run_id`, `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are required and non-null. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
+- `run_id` is always required for `append_audit`; only `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are optional for non-terminal-only batches. For a batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`, all four arguments are required and non-null. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
+- `get_proposal` returns one consistent read snapshot of the durable normalized request, lifecycle status, current claim metadata, and terminal outcome (nullable until terminal). Resulting graph version and last journal position belong to the recorded terminal response when final, not the run's subsequently advanced head. Before finalization, return the proposal's latest recorded position and no terminal resulting version. Claim metadata is informational and grants no authority; every mutation rechecks the active claim atomically. Bound stored request/response sizes under the service payload limits and use immutable references for larger evidence. This internal recovery read does not expose normalized recovery inputs or owner identity to worker-facing queries; apply the public protocol's disclosure rules;
+- reject malformed `append_graph` batches with `INVALID_GRAPH_BATCH` under [graph append binding](protocol.md#graph-append-binding), without partial writes;
 - terminal audit and graph appends must atomically match both the service-assigned claim owner and claim epoch; a claim epoch alone is not sufficient authority;
 - assign monotonic per-run `journal_position` to every durable record;
 - require an explicit positive `limit` for `read_journal`; `after_journal_position` is an exclusive cursor, records are returned in ascending position order, and `next_after_journal_position` plus `has_more` make continuation explicit. Providers must enforce a finite configured maximum and must not return an unbounded journal response;
@@ -238,6 +246,8 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - idempotent `create_run` with identical canonical metadata returning `EXISTING`, and mismatched metadata returning `RUN_METADATA_CONFLICT` without journal mutation;
 - atomic proposal-ID claim;
 - duplicate same-ID/same-hash recovery without duplicate receipt/commit;
+- consistent proposal snapshots and exact terminal replay metadata after later proposals advance the run;
+- missing/duplicate COMMIT, other terminal outcomes, empty graph events, or mismatched record identities rejected as `INVALID_GRAPH_BATCH` without journal, proposal, or graph changes;
 - duplicate same-ID/different-hash idempotency conflict;
 - crash-after-receipt recovery using a new claim epoch;
 - concurrent recovery claim where only one worker owns the current epoch;

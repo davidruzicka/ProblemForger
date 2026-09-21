@@ -8,8 +8,9 @@ proposed algorithm conflicts with its decision. Plans, issues, and audit reports
 define work or record evidence; they link to these IDs instead of maintaining a
 second copy of the contract.
 
-Stable requirement IDs are metadata on normative headings. The table is the
-single navigation map; the linked document is the only normative definition.
+Stable requirement IDs are metadata on normative headings. This table maps those
+IDs to their owners; it is not an exhaustive index of every contract. The linked
+document is the only normative definition for each requirement.
 
 | Requirement ID | Contract | Normative owner |
 | --- | --- | --- |
@@ -60,9 +61,10 @@ The Node suite extracts and executes the actual inline script in the review-requ
 
 The specification-checks workflow runs these commands with read-only repository permission and no repository secrets. The separate review-request workflow uses write permissions to post its review request. Its trusted `pull_request_target` context must never check out or execute PR-head code.
 
-## Regression evidence for the P0 audit fixes
+## Regression evidence and implementation fixtures
 
-Before the specification edits, the Python suite reported failures for missing store ownership, missing trusted evidence ingress, missing immutable/recoverable evidence, the mandatory third preflight, and duplicated clock formulas. The existing relative links passed. The mocked workflow cases passed before and after the edits; no workflow behavior change was necessary.
+Document checks protect contract wording. Historical audit context belongs in the
+[P0 audit](p0-audit.md); current pass/fail status comes from the test runner.
 
 Two reasoning fixtures motivate implementation tests:
 
@@ -71,29 +73,8 @@ Two reasoning fixtures motivate implementation tests:
 
 P1/P3/P6 issues retain responsibility for real persistence, isolation, evidence, and evaluator behavior tests. A passing document check cannot replace those suites. Do not materialize or execute selected P6 tasks while adding these checks.
 
-## Follow-up review regression evidence
-
-The added document checks failed on the previous head (including caller-provided claim/renewal deadlines, optional or omitted graph-append fencing, and unspecified bootstrap stream allocation). They pass after the contract corrections. Exact suite counts are intentionally not duplicated here because the test runner is the source of current pass/fail status.
-
-The three new Python contract checks (ordered model-chain exhaustion, complete
-HarnessX runtime identity, and mandatory completion of the other evaluator
-repetition) and the two workflow checks (full action pin/least privilege and
-event-aware diff range) were red on the preceding PR head; they pass on the current
-head. This red-to-green record covers the newly fixed review findings and is still
-documentation/test evidence, not proof of live provider behavior.
-
-The expiry-before-reclaim lease check was also red before the latest protocol fix:
-the previous contract checked only `claim_epoch`, not an active unexpired lease.
-It now requires an atomic `lease_expires_at_ms > lease_now_ms` check for renewal,
-finalization, and graph append. The regression check passes after that fix.
-
-The methodology regression checks now pin the practical-effect decision boundaries
-and secondary sensitivity calculations, reject silent temperature fallback, keep
-harness comparison separate from P6, and constrain task-artifact exclusions to the
-pre-measurement common-task freeze. These checks protect the contract wording; they
-do not substitute for adapter capability probes or live harness/evaluator tests.
-
-The superseded bootstrap fixtures remain only as historical audit evidence and are
-not part of P6-AC. P1 provider tests must still prove transactional TTL
-calculation, expiry-before-reclaim rejection, and rejection of missing/stale
-fencing; document checks are not a substitute for those runtime tests.
+The superseded bootstrap fixtures remain historical audit evidence, not part of
+P6-AC. Runtime suites must verify adapter capabilities, live evaluator behavior,
+transactional TTL calculation, expiry-before-reclaim rejection, and rejection of
+missing or stale fencing against their normative contracts. Passing document
+checks cannot establish those runtime properties.

@@ -121,6 +121,12 @@ class SpecificationChecks(unittest.TestCase):
             "operational overhead is acceptable",
             "not a statistical gate",
             "can be deduced from the current plan",
+            "Incomplete experiments receive no continuation label",
+            "zero or unavailable baseline",
+            "measurement units and sources",
+            "insufficient practical value",
+            "Record the decision maker, evidence, and rationale",
+            "does not force any continuation label",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, interpretation)
@@ -406,8 +412,9 @@ class SpecificationChecks(unittest.TestCase):
         returns = module.split("append_audit(", 1)[1].split("append_graph(", 1)[0]
         self.assertIn("INVALID_AUDIT_BATCH", returns)
         for phrase in (
-            "optional only for non-terminal-only batches",
-            "`run_id`, `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are required and non-null",
+            "`run_id` is always required for `append_audit`",
+            "only `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are optional for non-terminal-only batches",
+            "all four arguments are required and non-null",
             "[terminal append binding](protocol.md#terminal-append-binding)",
         ):
             with self.subTest(phrase=phrase):
@@ -462,27 +469,36 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("not eligible for whole-run replacement", retries)
         self.assertIn("other mandatory evaluator repetition", retries)
 
-    def test_experiment_elapsed_time_is_restart_stable(self):
+    def test_experiment_elapsed_time_has_conservative_recovery(self):
         evaluation = read("docs/evaluation.md")
         budget = evaluation.split("### Experiment resource envelope\n", 1)[1].split("### Pre-P6 frozen artifacts", 1)[0]
         normalized = " ".join(budget.split())
         for phrase in (
             "experiment_started_at_utc",
             "monotonically non-decreasing `experiment_elapsed_floor_ms`",
-            "max(experiment_elapsed_floor_ms, now_utc_ms - experiment_started_at_utc, max outstanding recorded operation deadline)",
+            "experiment_wall_clock_limit_ms = 1000 * experiment_wall_clock_limit_seconds",
+            "elapsed_ms >= experiment_wall_clock_limit_ms",
             "process-monotonic elapsed time",
             "every ledger write advances the persisted floor",
             "the operation's elapsed-time deadline",
             "elapsed value at dispatch plus the operation's finite timeout",
-            "no longer contributes to the anchor",
-            "capped at the experiment deadline",
-            "conservatively charged up to its recorded timeout",
-            "never extend the frozen budget",
+            "never lowers the persisted floor",
+            "stop as `BUDGET_EXHAUSTED` with reason `CLOCK_UNCERTAIN`",
+            "UTC subtraction alone cannot establish remaining time",
+            "default after coordinator restart is to stop",
             "keeps its full spend reservation",
             "restart recovery never makes redispatched work free",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, normalized)
+        self.assertNotIn("experiment_started_at_utc + experiment_wall_clock_limit_seconds", normalized)
+        self.assertNotIn("can therefore never extend", normalized)
+
+    def test_task_materialization_requires_the_complete_pre_p6_freeze(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        self.assertIn("Only after all seven artifacts in [EVALUATION.PRE-P6](#spec-evaluation-pre-p6) are frozen", evaluation)
+        self.assertIn("Before the pre-P6 artifact freeze", evaluation)
+        self.assertNotIn("paired mechanism comparison under executable ground truth", evaluation)
 
     def test_c_startup_failure_has_explicit_no_journal_marker(self):
         evaluation = read("docs/evaluation.md")
@@ -570,7 +586,7 @@ class SpecificationChecks(unittest.TestCase):
             "Secondary-metric multiplicity",
             "Benefit/cost utility",
             "Normative owner if accepted",
-            "README documentation index",
+            "Recommended synthetic checks before stronger decision claims",
             "Robert E. Blackwell, Jon Barry, and Anthony G. Cohn",
             "Quantifying Uncertainty in LLM Benchmark Scores",
         ):
@@ -578,6 +594,8 @@ class SpecificationChecks(unittest.TestCase):
                 self.assertIn(phrase, methodology)
         self.assertIn("Resolved 2026-09-20", methodology)
         self.assertIn("evaluation.md#practical-sensitivity-report", methodology)
+        self.assertNotIn("0.99**108", methodology)
+        self.assertNotIn("When this branch merges", methodology)
 
     def test_methodology_register_is_discoverable_from_readme(self):
         self.assertIn("[Methodology audit and decision register](docs/methodology.md)", read("README.md"))

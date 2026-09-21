@@ -15,6 +15,6 @@ Root anchors, audit history, governor policy, and verification thresholds are no
 
 ## Consequences
 
-- Graph mutations become explicit audit events.
+- Proposals and outcomes are auditable; committed mutations emit graph-changing domain events, distinct from governance audit records as defined in [ADR 0006](0006-authoritative-domain-events-and-stream-concurrency.md).
 - Self-modification requires a separate governed/meta-level mechanism if introduced later.
 - Integration adapters must be capable of enforcing at least the subset of decisions used by an experiment.

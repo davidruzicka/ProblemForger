@@ -22,7 +22,7 @@ Harness adapters register thin agent tools that map to operations such as:
 
 The worker remains responsible for decomposition in the initial PoC.
 
-Configuration B and C expose the same graph API and minimal graph-use instructions.
+In the initial P6-AC experiment, configuration C exposes the graph API and minimal graph-use instructions; A remains the harness baseline. As defined in [ADR 0005](0005-ablation-first-evaluation.md), B is optional and separately frozen. If a B/C diagnostic is run, B and C expose the same graph API and graph-use instructions.
 
 - B applies schema/version/core graph invariants but otherwise accepts valid proposals.
 - C adds deterministic governance/evidence policy.
@@ -32,6 +32,6 @@ Automatic graph-to-context selection is deferred to a later separately evaluated
 ## Consequences
 
 - The graph intervention is concrete and testable.
-- B→C isolates governance more cleanly.
-- A→B still includes a tool/prompt intervention and must be interpreted accordingly.
+- Initial A→C evaluates the complete package, not an isolated graph or governance effect.
+- An optional B→C diagnostic isolates governance more cleanly; A→B still includes a tool/prompt intervention and must be interpreted accordingly.
 - A future planner/context selector can be added as its own ablation rather than hidden inside the initial graph implementation.

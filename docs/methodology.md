@@ -197,8 +197,11 @@ block a local operational decision.
 The superseded P7 gate depended on B-A and C-B intervals and therefore does not
 apply to P6-AC. The current decision uses the complete-system C-A delta, per-task
 outcomes, costs, latency, intervention burden, and observed failure mechanisms.
-The human decision is recorded as `CONTINUE`, `ADAPT`, or `STOP`; it does not claim
-that a learned verifier is justified automatically.
+For a complete pilot, the human decision is recorded with evidence and rationale
+as `CONTINUE`, `ADAPT`, or `STOP`, following
+[Evaluation](evaluation.md#practical-continuation-decision). Incomplete experiments
+receive no continuation label. Neither the descriptive bands nor sensitivity
+warning dictate the decision, and no label automatically justifies a learned verifier.
 
 A learned verifier also need not be justified by the same condition as graph
 adoption. Failure of deterministic governance could motivate investigating a
@@ -248,9 +251,10 @@ Illustrative calculations, not measured project failure rates:
 
 - If a valid candidate passes an evaluation with probability 0.95 and evaluations
   are independent, its probability of passing both is 0.95 squared = 0.9025.
-- If each of 108 slots independently has a 0.01 probability of exhausting its
+- If each of `N` required slots independently has a 0.01 probability of exhausting its
   infrastructure budget, the chance of at least one exhaustion is
-  `1 - 0.99**108`, approximately 66.2%.
+  `1 - 0.99**N`. Here `N` counts the operations being assessed; retries and controls
+  must not be confused with the 32 measured P6-AC schedule slots.
 
 Actual failures may be correlated. These examples show why local attempt counts
 must be assessed together with experiment-level stopping rules; they do not
@@ -321,7 +325,8 @@ algorithms or authorize additional changes.
 4. Report complete paired results only when eligible; otherwise report coverage,
    missing reasons, observed outcomes, and accrued costs without a primary delta.
    Preserve negative/null outcomes and all failed attempts.
-5. Record a human next-step decision separately from the observed pilot delta.
+5. For a complete pilot, record a human continuation decision separately from the
+   observed pilot delta. For incomplete work, record only an unlabeled next action.
    Debugging and exploratory development do not require confirmatory evidence;
    positive claims retain the sensitivity/replication restrictions in Evaluation.
 
@@ -332,12 +337,14 @@ change sample allocation or utility thresholds only with approval and a new free
 Neither such simulations nor a power study are prerequisites for this feasibility
 pilot; simulation would not itself establish intervention effectiveness.
 
-### Required synthetic checks before stronger decision claims
+### Recommended synthetic checks before stronger decision claims
+
+These are non-normative research recommendations, not P6 completion gates.
 
 - The equal-task-means/variable-repetitions counterexample above.
 - All-success, all-failure, sparse-success, and identical-paired-effect cases.
-- Boundary cases at the descriptive practical margin and the precedence between
-  operational decision labels.
+- Boundary cases at the descriptive practical margin, without treating that
+  margin as an operational decision threshold.
 - Small sign change versus large same-sign change; zero as a distinct sign.
 - Improved and degraded C-A task outcomes, including near-zero total benefit.
 - Correlated tasks within families and unequal retained family composition.
@@ -360,13 +367,10 @@ pilot; simulation would not itself establish intervention effectiveness.
 
 ## Maintenance and references
 
-When a decision is accepted, update its normative owner and replace the open state
-here with a dated link to the decision and evidence. Do not maintain a second
-implementation of selectors, bootstrap, leases, retries, or gates in this audit.
-Preserve counterexamples as evidence; do not convert recommendations into policy
-merely because they are written under `docs/`.
-When this branch merges, add this register to the README documentation index;
-the register remains non-normative.
+Recommended maintenance: link accepted decisions to their normative owners and
+dated evidence, preserving counterexamples without maintaining a second copy of
+selectors, bootstrap, leases, retries, or gates. This register remains
+non-normative; its recommendations do not create implementation or research gates.
 
 Project sources: [Evaluation](evaluation.md), [Architecture](architecture.md),
 [Problem graph](problem-graph.md), [Plan](../PLAN.md), [Review loop](review-loop.md),

@@ -2,26 +2,20 @@
 
 ## Boundaries
 
-```text
-Agent harness (HarnessX / Pi / ...)
-            |
-       thin adapter
-            |
-   versioned service protocol
-            |
-    ProblemForger process
-            |
-  +---------+------------------------------+
-  |                                        |
-  | application API                       | observation API
-  |                                        |
-  v                                        v
-ProblemGraph -> Governor -> durable journal   TelemetrySink
-     ^             |              |
-     |             |              +-- graph-changing domain events
-     |             +-- proposal/decision audit records
-     |
-     +-- EventStore port
+```mermaid
+flowchart TD
+    H["Existing harness: model, tools, sessions"] --> A[Thin adapter]
+    subgraph PF[ProblemForger local service]
+        API[Versioned application API] --> G[Governor]
+        G --> S[EventStore port]
+        S --> J["Durable journal: proposal/decision audit records and graph-changing events"]
+        J -->|Graph-changing events| P[ProblemGraph projection]
+        P -->|State| G
+        P -->|Queries| API
+        T[Optional TelemetrySink]
+    end
+    A --> API
+    A -->|Observations| T
 ```
 
 The worker/harness may propose changes. It does not own authoritative graph state. Local enforcement follows [STORE-OWNER](protocol.md#spec-protocol-store-owner) and [EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust); a separate process alone is not a security boundary.
@@ -43,7 +37,7 @@ The journal contains two classes of durable records:
 
 Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
 
-A governance outcome is not returned to the harness as completed until its durable decision record has been appended. Proposal receipts persist the normalized/versioned request needed for recovery. If a process fails after recording a proposal but before recording a final outcome, the journal exposes an incomplete proposal rather than silently losing it. Incomplete work is resumed under a finite processing lease with monotonic claim-epoch fencing; finalization also requires the matching claim to remain unexpired, so stale or expired workers cannot finalize even before a newer claim exists.
+A completed governance response requires a durable decision. Proposal receipts retain recoverable input; stale or expired workers cannot finalize. Detailed recovery and fencing rules belong to [PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery), store ownership to [STORE-OWNER](protocol.md#spec-protocol-store-owner), and restart-stable lease time to [LEASE-CLOCK](protocol.md#spec-protocol-lease-clock).
 
 ### Observation/telemetry events
 
@@ -53,7 +47,7 @@ They flow through `TelemetrySink` and may reference durable journal records thro
 
 Telemetry may be disabled without losing authoritative graph state or governance outcomes.
 
-See ADR 0006.
+See [ADR 0006](adr/0006-authoritative-domain-events-and-stream-concurrency.md).
 
 ## Layers
 
@@ -82,7 +76,7 @@ contract](protocol.md#spec-protocol-proposal-recovery).
 
 The initial agent interaction uses this explicit API/tool surface rather than automatic full-graph prompt injection. This avoids introducing a context-selection subsystem before the graph/governance hypotheses have been tested.
 
-See ADR 0008.
+See [ADR 0008](adr/0008-explicit-agent-graph-api-for-initial-poc.md).
 
 ### Ports
 
@@ -114,30 +108,15 @@ Provider lookup is explicit. The PoC does not dynamically import arbitrary class
 
 ## Event sourcing and audit persistence
 
-The run journal is ordered by `journal_position`. `graph_version` identifies complete committed graph states, not individual events. Current graph state is the projection of complete mutation batches through version `v`:
+Graph state is projected from complete committed mutation batches in the journal; a partial batch is never an addressable graph state. A commit decision and its graph events persist atomically, with optimistic graph-version checks preventing stale writes. Audit-only records do not advance `graph_version`. Persistence failure is not a completed governance outcome.
 
-```text
-G_v = fold(complete mutation batches with graph_version <= v)
-```
-
-If a mutation based on `G_v` emits multiple graph events, every event in that atomic batch is tagged `graph_version = v + 1`; there is no addressable state containing only a prefix of that batch.
-
-Graph-changing commits use the canonical `append_graph` operation from the
-[EventStore port](modules.md#spec-modules-eventstore-port), with optimistic
-comparison against `graph_version` and the active-claim preconditions in the
-[protocol contract](protocol.md#spec-protocol-proposal-recovery).
-
-Audit-only records can be appended without advancing `graph_version`.
-
-For a successful commit, the final `MutationDecision(COMMIT)` audit record and all graph-changing events from that proposal must be durable as one atomic batch. The batch advances `graph_version` once, from `v` to `v + 1`.
-
-For non-commit outcomes, the final decision record is appended durably before the service returns that outcome. Proposal finalization atomically validates the current processing-claim epoch and an unexpired lease so restart/concurrent recovery cannot create two terminal decisions or allow a paused worker to finalize after expiry. If an optimistic graph append reports a version conflict, the application must append `MutationDecision(CONFLICT)` before returning `CONFLICT`; failure to persist that decision is a service/persistence failure, not a completed governance outcome.
+The [EventStore port](modules.md#spec-modules-eventstore-port) owns operation signatures and statuses. [PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) owns append atomicity, claim validation, terminal outcomes, and replay behavior.
 
 There is no required global order across independent runs.
 
 Snapshots may be added later as a derived optimization but may not become the source of truth.
 
-See ADR 0006.
+See [ADR 0006](adr/0006-authoritative-domain-events-and-stream-concurrency.md).
 
 ## Graph governor
 
@@ -156,12 +135,7 @@ Possible outcomes are:
 - escalate;
 - conflict when the proposal is based on a stale graph version.
 
-For the initial ablation:
-
-- configuration **B** exposes the explicit graph API with only schema/version/invariant checks required for a valid graph;
-- configuration **C** uses the same API and prompt surface but adds deterministic governance/evidence policy.
-
-This makes B→C the cleanest early estimate of governance contribution.
+The initial P6 experiment compares baseline **A** with the complete graph/governance package **C**. Configuration **B** (graph without governance) is an optional, separately frozen diagnostic, not a prerequisite. [ADR 0005](adr/0005-ablation-first-evaluation.md) owns this decision; [Evaluation](evaluation.md) owns experiment definitions and analysis.
 
 ## Harness adapters
 
@@ -182,7 +156,7 @@ Candidate capabilities include:
 
 Adapters must not contain graph/governance policy.
 
-HarnessX currently exposes composable processors/event middleware and model/harness separation. Pi exposes TypeScript extensions with lifecycle/tool interception and custom TUI support. Exact capabilities are re-audited at their pinned revisions when P4/P5 begin.
+Adapter capabilities are checked against pinned harness revisions during P4/P5 preparation; [Related work](related-work.md) provides background rather than a capability contract.
 
 ## Runtime language
 
@@ -192,7 +166,7 @@ HarnessX currently exposes composable processors/event middleware and model/harn
 
 The transport is intentionally left for a bounded P1 decision. Changing transport must not change the domain/application protocol.
 
-See ADR 0009.
+See [ADR 0009](adr/0009-separate-local-process-service-boundary.md).
 
 ## UI
 

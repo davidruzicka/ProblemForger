@@ -136,6 +136,8 @@ preconditions; provider summaries must not copy this algorithm.
 
 #### Terminal append binding
 
+`run_id` is required for every audit batch, including non-terminal-only batches.
+
 A batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or
 `ABANDONED` requires non-null `run_id`, `proposal_id`, `expected_owner_id`, and
 `expected_claim_epoch`. The terminal record must explicitly reference the
@@ -167,6 +169,27 @@ must recheck the claim. If it expires or is superseded between calls, the servic
 must not return completed `CONFLICT` without its durable record; return a
 persistence/service failure instead, as required by ADR 0006.
 
+#### Graph append binding
+
+`append_graph` requires non-null run/proposal identity, expected owner/epoch,
+and expected graph version. Its audit records contain exactly one `COMMIT`
+bound to the supplied `(run_id, proposal_id)` and no other terminal outcome,
+including `ABANDONED`. Its graph events contain at least one event, all bound
+to that same run/proposal. An empty mutation is not a graph-version advance.
+Accompanying non-terminal audit records must reference the supplied run;
+if proposal-scoped, they must reference the same proposal. Run-level audit
+records may omit proposal identity. The same accompanying-record binding
+applies to terminal `append_audit` batches.
+
+Validate the whole graph batch before any write. Missing/null required fields,
+invalid structure, mismatched identities, absent/duplicate `COMMIT`, another
+terminal outcome, or empty graph events return `INVALID_GRAPH_BATCH`, leaving
+journal, proposal state, and graph unchanged. The EventStore validates structure
+and binding; it does not rerun governance policy. A valid batch still requires
+the active claim and expected graph version in the append transaction. Success
+atomically appends the complete batch, finalizes the proposal, and increments
+graph version exactly once. Any failed check leaves the whole batch unwritten.
+
 #### Proposal recovery responses
 
 Subsequent submissions follow these rules:
@@ -179,7 +202,7 @@ Subsequent submissions follow these rules:
 
 If an incomplete proposal cannot be safely resumed because its required schema/policy/runtime version is unavailable or its durable input is invalid, the current valid claimant may append terminal operational status `ABANDONED` with a reason code. `ABANDONED` is **not** a governance decision and never changes graph state. Reusing that proposal ID replays the terminal abandoned status; a semantic retry requires a new proposal ID.
 
-The command/query plane exposes a proposal-status query keyed by `(run_id, proposal_id)` returning `NOT_FOUND`, `PENDING`/claim metadata, `ABANDONED`, or the durable final governance outcome plus relevant `journal_position` / graph-version metadata.
+The command/query plane exposes a proposal-status query keyed by `(run_id, proposal_id)` returning `NOT_FOUND`, `PENDING`/claim metadata, `ABANDONED`, or the durable final governance outcome plus relevant `journal_position` / graph-version metadata. The internal EventStore `get_proposal` provides a consistent durable snapshot for recovery; its claim metadata never substitutes for atomic claim acquisition or append validation. Public status responses omit owner identity and internal normalized recovery inputs. Final replay returns the original recorded result metadata even after the run advances.
 
 A client retry caused by timeout, cancellation, connection loss, or a lost response reuses the **same** `proposal_id`. This is distinct from the governance outcome `RETRY`: if the governor requests a semantic retry, the worker creates a **new** proposal with a new `proposal_id` and a causation/provenance link to the prior attempt.
 

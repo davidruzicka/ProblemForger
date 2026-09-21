@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository is a research prototype. Preserve experimental validity before implementation speed.
+This repository is a practical feasibility prototype. Prefer the smallest useful implementation and evaluation that inform the next decision. Report evidence and limitations honestly, preserve architectural invariants, and do not change frozen experiment choices after observing results.
 
 ## Language
 
@@ -82,7 +82,7 @@ For research-facing changes:
 - do not change frozen research choices after observing results or pool different experiment versions;
 - preserve raw evidence and distinguish measured results from interpretation, including null/negative results;
 - keep harness-native trajectories adapter-owned; only normalized observations cross core boundaries;
-- follow [STORE-OWNER and LEASE-CLOCK](docs/protocol.md#spec-protocol-store-owner) for persistence and [EVIDENCE-TRUST through EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-trust) for evidence;
+- follow [STORE-OWNER](docs/protocol.md#spec-protocol-store-owner) and [LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock) for persistence, and [EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), and [EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery) for evidence;
 - all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
 
 Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.
@@ -119,5 +119,5 @@ In particular:
 
 - automatically fix and verify mechanical/consistency defects that do not change accepted architecture or the frozen research contract;
 - stop for human input before accepting architecture, ADR, experiment-design, benchmark, primary-metric, or other research-method changes with multiple defensible choices;
-- reply in the original review thread and resolve it only after the fix is present;
+- push the verified fix before replying in the original review thread and resolving it;
 - continue until the latest review covers the current head and no valid unresolved thread remains.

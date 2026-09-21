@@ -30,12 +30,13 @@ The initial domain is software engineering because tests, compilers, type checke
 The P0 audit established constraints whose current normative details live in the
 linked ADRs and requirement IDs:
 
-- harness-neutral service boundary, graph vocabulary, and separated lifecycle/evidence axes — [GRAPH.MODEL](docs/problem-graph.md#spec-graph-model), ADRs 0001–0005, 0007–0009;
+- harness-neutral service boundary — [ADR 0001](docs/adr/0001-harness-neutral-core.md) and [ADR 0009](docs/adr/0009-separate-local-process-service-boundary.md);
+- graph vocabulary and separated lifecycle/evidence axes — [GRAPH.MODEL](docs/problem-graph.md#spec-graph-model) and [ADR 0007](docs/adr/0007-separate-lifecycle-verification-and-evidence-axes.md);
 - durable journal, graph-version atomicity, provider ownership, claims, and recovery — [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), [PROTOCOL.STORE-OWNER](docs/protocol.md#spec-protocol-store-owner), [PROTOCOL.LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock), ADR 0006;
 - evidence trust/binding/recovery and review-loop checkpoints — [VERIFICATION.EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [VERIFICATION.EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), [VERIFICATION.EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery), [REVIEW.LOOP](docs/review-loop.md#spec-review-loop);
 - the frozen P6-AC practical experiment — [EVALUATION.MODEL](docs/evaluation.md#spec-evaluation-model), [EVALUATION.PRE-P6](docs/evaluation.md#spec-evaluation-pre-p6), [EVALUATION.PREFLIGHT](docs/evaluation.md#spec-evaluation-preflight), [EVALUATION.MEASURED-EVALUATION](docs/evaluation.md#spec-evaluation-measured-evaluation).
 
-See ADRs 0001–0009.
+See the [accepted ADRs](docs/adr/).
 
 ## Phase order
 
@@ -46,6 +47,8 @@ See ADRs 0001–0009.
   - [x] resolve event, lifecycle, evidence, runtime-boundary, and graph-interaction ambiguities;
   - [x] decompose P1 into bounded implementation issues;
   - [ ] merge/review the P0 specification PR.
+
+P1 may begin only after the P0 specification PR is reviewed/merged.
 
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
@@ -77,11 +80,13 @@ See ADRs 0001–0009.
   - observation telemetry;
   - no ProblemForger domain logic in the adapter.
 
-- [ ] **P5 — Pi adapter**
-  - independent portability validation;
+- [ ] **P5 — Pi adapter preparation**
+  - adapter preparation and protocol smoke checks only; portability validation belongs to P11;
   - same ProblemForger service/protocol;
   - thin TypeScript extension/client;
   - minimal native TUI status only.
+
+P5 completion is not a dependency blocking P6; the initial evaluation uses HarnessX.
 
 - [ ] **P6 — Practical whole-system evaluation**
   - implement issue #8 against the normative evaluation IDs in `docs/evaluation.md`;
@@ -114,6 +119,7 @@ See ADRs 0001–0009.
   - graph visualization remains secondary to causal/provenance inspection.
 
 - [ ] **P11 — Full ablation and portability study**
+  - independently validate portability through the Pi adapter prepared in P5;
   - baseline;
   - + problem graph;
   - + deterministic governance;
@@ -140,17 +146,6 @@ The PoC is complete when:
 - all reported improvements include cost/latency and repeated-run statistics;
 - negative or null results are retained.
 
-## Execution model for Agents
+## Contributor workflow
 
-Do not implement an entire phase from this file directly.
-
-For each phase:
-
-1. audit the phase against specifications and accepted ADRs;
-2. create/decompose GitHub issues;
-3. implement the highest-priority unblocked issue only;
-4. provide tests/evidence;
-5. update documentation or propose ADR changes when necessary;
-6. continue with the next issue.
-
-P1 may begin only after the P0 specification PR is reviewed/merged.
+Follow [AGENTS.md](AGENTS.md#work-procedure) for implementation, issue decomposition, verification, and review procedures.
