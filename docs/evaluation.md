@@ -387,11 +387,13 @@ The following additional frozen artifacts are required before task exposure:
 
 All five contract artifacts, `model-chain-v1`, `harnessx-runtime-v1`, and `problemforger-runtime-v1` must be
 content-addressed (for example SHA-256) and their hashes recorded in every P6 run
-manifest. Every A/C attempt must execute the recorded runtime image/archive and
-resolved lockfile; the HarnessX commit alone is not a sufficient runtime identity.
-Every C attempt records and verifies the actual service runtime identity against
-the frozen artifact before semantic execution, including replacement attempts.
-A uses no ProblemForger service. An unavailable or mismatched service runtime
+manifest. Every A/C attempt executes and verifies `harnessx-runtime-v1`, including
+its recorded image/archive and resolved lockfile; the HarnessX commit alone is not
+a sufficient runtime identity. Every C attempt additionally executes and verifies
+`problemforger-runtime-v1` against the actual service runtime before semantic
+execution, including replacement attempts. A must not start the ProblemForger service.
+The two artifacts may identify one shared retained image, but configuration-specific
+process/service activation still applies. An unavailable or mismatched service runtime
 cannot be silently replaced; treat startup failure under the existing
 `INFRA_PROBLEMFORGER_START` policy and retain diagnostics.
 

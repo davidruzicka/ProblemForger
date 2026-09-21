@@ -160,7 +160,7 @@ The following are deliberately deferred and must not be silently decided inside 
 
 1. **Local service transport.** P1 includes a bounded spike comparing practical Python/TypeScript options. The selected transport requires an ADR.
 2. **Exact initial graph node/edge schema.** P1 defines the command/wire contracts; P2 finalizes the minimal graph schema under ADR/spec constraints.
-3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 12 primary/reserve IDs are materialized and hashed only after the benchmark adapter, graph intervention, governance policy, graph metric rules, and telemetry metric rules are frozen; the eight holdout identifiers remain separate and their images do not block P6. None are hand-picked or used for artifact development.
+3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 12 primary/reserve IDs are materialized and hashed only after all eight artifacts in [EVALUATION.PRE-P6](evaluation.md#spec-evaluation-pre-p6) are frozen, including `model-chain-v1`, `harnessx-runtime-v1`, and `problemforger-runtime-v1`; the eight holdout identifiers remain separate and their images do not block P6. None are hand-picked or used for artifact development.
 4. **P8 calibration dataset size.** The eight reserved P6 tasks are only an initial task-level holdout. P8 must expand it before making calibration claims.
 5. **P11 external-validity benchmark.** It is intentionally re-audited close to P11 because coding benchmarks are changing quickly.
 

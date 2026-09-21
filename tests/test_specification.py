@@ -17,9 +17,21 @@ class SpecificationChecks(unittest.TestCase):
         evaluation = read("docs/evaluation.md")
         freeze = evaluation.split("### Pre-P6 frozen artifacts", 1)[1].split("### Task source", 1)[0]
         self.assertIn("8. **`problemforger-runtime-v1`**", freeze)
-        self.assertIn("Every C attempt records", freeze)
+        self.assertIn("Every C attempt additionally executes and verifies", freeze)
         self.assertIn("ProblemForger source", freeze)
         self.assertIn("`problemforger-runtime-v1` hash and actual service image/archive digest", evaluation)
+
+    def test_runtime_execution_requirements_are_configuration_specific(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        self.assertIn("Every A/C attempt executes and verifies `harnessx-runtime-v1`", evaluation)
+        self.assertIn("Every C attempt additionally executes and verifies `problemforger-runtime-v1`", evaluation)
+        self.assertIn("A must not start the ProblemForger service", evaluation)
+
+    def test_p0_audit_defers_manifest_until_all_pre_p6_artifacts_are_frozen(self):
+        audit = " ".join(read("docs/p0-audit.md").split())
+        self.assertIn("all eight artifacts in [EVALUATION.PRE-P6]", audit)
+        for artifact in ("`model-chain-v1`", "`harnessx-runtime-v1`", "`problemforger-runtime-v1`"):
+            self.assertIn(artifact, audit)
 
     def test_transport_retry_acceptance_is_call_scoped(self):
         evaluation = read("docs/evaluation.md")
@@ -311,7 +323,7 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("complete transitive dependency lockfile", runtime)
         self.assertIn("repository@sha256:<digest>", runtime)
         self.assertIn("mutable tags", runtime)
-        self.assertIn("HarnessX commit alone is not a sufficient runtime identity", evaluation)
+        self.assertIn("HarnessX commit alone is not\na sufficient runtime identity", evaluation)
 
     def test_missing_candidate_vector_does_not_skip_other_repetition(self):
         evaluation = read("docs/evaluation.md")
