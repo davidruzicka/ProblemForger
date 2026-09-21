@@ -16,9 +16,9 @@ document is the only normative definition for each requirement.
 | --- | --- | --- |
 | `GRAPH.MODEL` | Problem-graph vocabulary and lifecycle | [Problem graph](problem-graph.md#spec-graph-model) |
 | `MODULES.EVENTSTORE-PORT` | EventStore port and provider contract | [Modules — EventStore](modules.md#spec-modules-eventstore-port) |
-| `PROTOCOL.PROPOSAL-RECOVERY` | Proposal identity, recovery, and fencing | [Protocol — proposal recovery](protocol.md#spec-protocol-proposal-recovery) |
+| `PROTOCOL.PROPOSAL-RECOVERY` | Proposal identity, recovery, and terminal binding | [Protocol — proposal recovery](protocol.md#spec-protocol-proposal-recovery) |
 | `PROTOCOL.STORE-OWNER` | Exclusive durable-store ownership | [Protocol — STORE-OWNER](protocol.md#spec-protocol-store-owner) |
-| `PROTOCOL.LEASE-CLOCK` | Restart-stable lease time | [Protocol — LEASE-CLOCK](protocol.md#spec-protocol-lease-clock) |
+| `PROTOCOL.PARALLEL-CLAIMS` | Deferred multi-worker claims | [Protocol — deferred parallel claims](protocol.md#spec-protocol-parallel-claims) |
 | `VERIFICATION.EVIDENCE-TRUST` | Trusted evidence producers and local isolation | [Verification — EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust) |
 | `VERIFICATION.EVIDENCE-BINDING` | Immutable evidence/subject binding | [Verification — EVIDENCE-BINDING](verification.md#spec-verification-evidence-binding) |
 | `VERIFICATION.EVIDENCE-RECOVERY` | Evidence retention and restart behavior | [Verification — EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery) |
@@ -39,21 +39,15 @@ node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The Python suite checks the P6-AC practical contract, including the direct A/C
-comparison, eight-task target with predeclared reserves, operational continuation
-decision, resource-envelope interpretation, predeclared model/fallback behavior,
-content-addressed runtime identity with explicit hosted-model limitations,
-conditional native-generation controls and the separate harness-comparison
-contract, sensitivity reporting, distinct image materialization/setup phases,
-pre-measurement task-artifact exclusions, candidate-patch failure
-classification, durable run registration with metadata-conflict protection and
-bounded journal reads, owner-plus-epoch fencing, non-rewindable lease recovery
-across provider generations, mandatory completion of both evaluator repetitions
-unless an experiment-wide stop applies, the absence of the obsolete mandatory
-third control, single normative homes for the lease-clock and EventStore port
-contracts, mapped requirement anchors, and relative document links. These are
-document regression checks, not proof that a future provider or governor
-implements the prose.
+The Python suite checks the practical P6-AC contract, including the direct A/C
+comparison, six-task target with one agent/evaluator run per task, the compact
+manifest, operational continuation decision, simple resource limits, explicit
+hosted-model identity limits, sensitivity reporting, pre-measurement task
+exclusions, candidate-patch failure classification, durable run registration
+with metadata-conflict protection, bounded journal reads, exclusive ownership,
+serialized restart recovery, mapped requirement anchors, and relative document
+links. These are document regression checks, not proof that a future provider
+or governor implements the prose.
 
 In CI, the whitespace check uses the actual event range: pull requests compare the base and head SHAs, while pushes compare the event's previous and current SHAs. The checkout fetches complete history so both endpoints are available; a new-branch push falls back to the new commit's parent.
 
@@ -68,13 +62,13 @@ Document checks protect contract wording. Historical audit context belongs in th
 
 Two reasoning fixtures motivate implementation tests:
 
-- **Clock ownership:** A anchors at 1,000 seconds; B opens at 1,100 seconds after a forward UTC jump and claims a 30-second lease. After 31 seconds, A reads 1,031 and incorrectly considers B's 1,130 deadline unexpired. The P1 solution rejects B's open, rather than treating an independently anchored provider as supported. Test real racing opens, aliases, crash release, and restart in issue #16; this document does not implement a lock.
+- **Serialized recovery:** a proposal receipt is durable before evaluation. A crash leaves it incomplete; after restart the exclusive owner replays or resumes the same normalized request by proposal ID, without creating a second final outcome. Test real open/close/crash recovery in issue #16; this document does not implement a lock.
 - **Preflight:** complete vectors `[fail, pass]` and `[pass, pass]` already establish instability. None of the four possible third binary vectors can make all vectors equal. A diagnostic infrastructure failure must not change the task result or abort the experiment. Test this in the benchmark adapter without opening any selected P6 task.
 
 P1/P3/P6 issues retain responsibility for real persistence, isolation, evidence, and evaluator behavior tests. A passing document check cannot replace those suites. Do not materialize or execute selected P6 tasks while adding these checks.
 
 The superseded bootstrap fixtures remain historical audit evidence, not part of
 P6-AC. Runtime suites must verify adapter capabilities, live evaluator behavior,
-transactional TTL calculation, expiry-before-reclaim rejection, and rejection of
-missing or stale fencing against their normative contracts. Passing document
-checks cannot establish those runtime properties.
+durable receipt recovery, and rejection of missing or stale graph-version
+bindings against their normative contracts. Passing document checks cannot
+establish those runtime properties.

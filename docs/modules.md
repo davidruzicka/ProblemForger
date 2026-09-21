@@ -54,7 +54,7 @@ get_run(run_id)
     | NOT_FOUND
 
 get_proposal(run_id, proposal_id)
-    -> PROPOSAL {request_hash, normalized_request, status, claim_metadata,
+    -> PROPOSAL {request_hash, normalized_request, status,
                  terminal_outcome, resulting_graph_version, last_journal_position}
     | NOT_FOUND
 
@@ -63,32 +63,16 @@ record_proposal(run_id, proposal_id, request_hash, normalized_request, receipt_r
     | EXISTING {request_hash, status, last_journal_position}
     | NOT_FOUND
 
-claim_proposal(run_id, proposal_id, owner_id, claim_ttl_ms)
-    -> CLAIMED {claim_epoch}
-    | PENDING {claim_epoch, lease_expires_at_ms}
-    | FINAL
-    | ABANDONED
-    | INVALID_CLAIM_TTL
-    | NOT_FOUND
-
-renew_claim(run_id, proposal_id, owner_id, expected_claim_epoch, claim_ttl_ms)
-    -> RENEWED
-    | STALE_CLAIM
-    | INVALID_CLAIM_TTL
-    | NOT_FOUND
-
-append_audit(run_id, records[], proposal_id?, expected_owner_id?, expected_claim_epoch?)
+append_audit(run_id, records[], proposal_id?)
     -> last_journal_position
     | INVALID_AUDIT_BATCH
-    | STALE_CLAIM
     | NOT_FOUND
 
-append_graph(run_id, proposal_id, expected_owner_id, expected_claim_epoch,
-             expected_graph_version, audit_records[], graph_events[])
+append_graph(run_id, proposal_id, expected_graph_version,
+             audit_records[], graph_events[])
     -> {last_journal_position, new_graph_version}
     | INVALID_GRAPH_BATCH
     | VersionConflict
-    | STALE_CLAIM
     | NOT_FOUND
 
 read_journal(run_id, after_journal_position?, limit)
@@ -105,25 +89,22 @@ Requirements:
 
 - persist run registration before accepting proposals; `create_run` is idempotent only when the supplied run metadata has the same canonical serialization and metadata hash as the existing registration; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal, reopening preserves the registration and version-zero state, and every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
 - canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
-- enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and fenced terminalization;
-- obey [STORE-OWNER and LEASE-CLOCK](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
-- `claim_ttl_ms` must be a positive finite integer whose lease-deadline computation cannot overflow; `claim_proposal` and `renew_claim` reject any other value atomically with `INVALID_CLAIM_TTL`, leaving the claim state and persisted lease-clock floor unchanged;
-- treat an expired claim as inactive even before another worker reclaims it; renewal, terminalization, and graph append must reject it atomically with `STALE_CLAIM`;
-- claims owned by a previous provider `lease_clock_generation` are inactive on reopen and require a new recovery claim epoch; restart must not revive them by moving lease time backward;
-- `run_id` is always required for `append_audit`; only `proposal_id`, `expected_owner_id`, and `expected_claim_epoch` are optional for non-terminal-only batches. For a batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`, all four arguments are required and non-null. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
-- `get_proposal` returns one consistent read snapshot of the durable normalized request, lifecycle status, current claim metadata, and terminal outcome (nullable until terminal). Resulting graph version and last journal position belong to the recorded terminal response when final, not the run's subsequently advanced head. Before finalization, return the proposal's latest recorded position and no terminal resulting version. Claim metadata is informational and grants no authority; every mutation rechecks the active claim atomically. Bound stored request/response sizes under the service payload limits and use immutable references for larger evidence. This internal recovery read does not expose normalized recovery inputs or owner identity to worker-facing queries; apply the public protocol's disclosure rules;
+- enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;
+- obey [STORE-OWNER](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
+- `append_audit` requires `run_id`; terminal records require the matching `proposal_id`, while non-terminal run records may omit it. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
+- `get_proposal` returns one consistent read snapshot of the durable normalized request, lifecycle status, and terminal outcome (nullable until terminal). Resulting graph version and last journal position belong to the recorded terminal response when final, not the run's subsequently advanced head. Before finalization, return the proposal's latest recorded position and no terminal resulting version. Recovery reads grant no mutation authority. Bound stored request/response sizes under the service payload limits and use immutable references for larger evidence. Internal recovery data is not automatically exposed by worker-facing queries;
 - reject malformed `append_graph` batches with `INVALID_GRAPH_BATCH` under [graph append binding](protocol.md#graph-append-binding), without partial writes;
 - atomically require `append_graph`'s supplied `expected_graph_version` to equal both the proposal receipt's recorded `expected_graph_version` and the current run `graph_version`; a receipt-binding mismatch returns `INVALID_GRAPH_BATCH`, while a bound value stale against the current run returns `VersionConflict`, with no writes in either case;
-- terminal audit and graph appends must atomically match both the service-assigned claim owner and claim epoch; a claim epoch alone is not sufficient authority;
 - assign monotonic per-run `journal_position` to every durable record;
 - require an explicit positive `limit` for `read_journal`; `after_journal_position` is an exclusive cursor, records are returned in ascending position order, and `next_after_journal_position` plus `has_more` make continuation explicit. Providers must enforce a finite configured maximum and must not return an unbounded journal response;
 - atomically compare graph version and append the final decision plus graph events as one complete mutation batch under ADR 0006;
 - audit-only writes never advance graph version; all graph events in a committed batch share one new version;
 - persist each returned governance outcome before completing its response;
 - preserve record ordering, append-only history, and versioned payload fidelity for replay/audit, with no required global order across runs;
-- retain normalized evidence according to [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery).
+- retain normalized evidence according to [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery);
+- serialize proposal evaluation within the owning service process. A restart changes incomplete receipts back to recoverable `PENDING` state; a client resubmission with the same proposal ID replays a final outcome or resumes the normalized request. Add claims, leases, or parallel workers only after a measured requirement and a new contract decision.
 
-Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service where ADR 0006 promises restart durability. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart.
+Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart. Proposal processing is serialized by the service owner; multi-worker claims are deferred.
 
 ### TelemetrySink
 
@@ -138,14 +119,14 @@ Telemetry:
 
 A recording/in-memory or JSONL sink may be used initially.
 
-### Clock / ID source
+### Service clock / ID source
 
-Inject only where deterministic tests or reproducibility require it. Lease handling needs two explicit clock capabilities:
+Inject only where deterministic tests or reproducibility require it. The initial service needs only two small capabilities:
 
-- UTC Unix time for the restart anchor;
-- monotonic elapsed time for progress within one provider/service instance.
+- a service clock for request deadlines and telemetry;
+- an ID source for run/proposal/journal identifiers.
 
-The owning provider combines these sources using [LEASE-CLOCK](protocol.md#spec-protocol-lease-clock). Domain code does not implement or persist a separate clock algorithm.
+The initial service does not persist a lease clock or expose claim TTLs. Domain code does not implement a provider-specific clock algorithm. Claims, leases, and fencing are deferred until a measured parallel-worker requirement exists.
 
 Do not introduce a general service-locator abstraction.
 
@@ -245,18 +226,14 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 
 - empty journal/`graph_version` semantics;
 - idempotent `create_run` with identical canonical metadata returning `EXISTING`, and mismatched metadata returning `RUN_METADATA_CONFLICT` without journal mutation;
-- atomic proposal-ID claim;
+- atomic proposal receipt and proposal-ID idempotency;
 - duplicate same-ID/same-hash recovery without duplicate receipt/commit;
 - consistent proposal snapshots and exact terminal replay metadata after later proposals advance the run;
 - missing/duplicate COMMIT, other terminal outcomes, empty graph events, or mismatched record identities rejected as `INVALID_GRAPH_BATCH` without journal, proposal, or graph changes;
 - duplicate same-ID/different-hash idempotency conflict;
-- crash-after-receipt recovery using a new claim epoch;
-- concurrent recovery claim where only one worker owns the current epoch;
-- stale-worker finalization/graph append rejected with no partial writes;
-- current-but-expired-worker finalization/graph append and expired-claim renewal rejected before reclaim, with no partial writes;
-- missing/null proposal identity or fencing epoch rejected before a graph append;
-- claim/renewal deadlines computed from provider time plus validated TTL, independent of caller time, with invalid TTL/overflow rejected as `INVALID_CLAIM_TTL` and leaving claim and floor unchanged;
-- terminal `ABANDONED` recovery status without graph mutation;
+- restart recovery of an incomplete receipt under exclusive service ownership, with no duplicate final outcome;
+- missing proposal identity rejected before a terminal or graph append;
+- terminal `ABANDONED` recovery status without graph mutation, if recovery cannot resume the stored request;
 - monotonic `journal_position` across audit and graph records;
 - audit-only append leaves `graph_version` unchanged;
 - bounded ordered journal read with an exclusive cursor, finite limit, and explicit continuation metadata;
@@ -268,7 +245,7 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - independent run journals;
 - byte/semantic fidelity sufficient for deterministic replay and governance audit.
 
-Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#spec-protocol-store-owner), active-lease recovery, and forward/backward UTC jumps on reopen under [LEASE-CLOCK](protocol.md#spec-protocol-lease-clock). A forward restart anchor may legitimately expire a lease sooner; a backward jump must not leave it busy indefinitely. Reopen durability tests do not apply to the ephemeral memory provider.
+Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#spec-protocol-store-owner) and restart recovery of incomplete receipts. Lease-clock, claim-fencing, and parallel-worker tests are deferred until that capability is introduced. Reopen durability tests do not apply to the ephemeral memory provider.
 
 `MemoryEventStore` does **not** claim that durability contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
 

@@ -32,7 +32,7 @@ Do not silently override a higher-authority source. If an implementation need co
 - Authoritative graph state is reconstructable from the graph-changing records in the durable journal.
 - Harness/model/tool observations are telemetry and must not be required for graph replay or auditability.
 - Every externally returned governance outcome (`COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`) must be durably recorded before the response is considered complete.
-- Durable proposal receipts must contain enough normalized/versioned input for restart recovery; processing claims use finite leases and monotonic fencing epochs so stale workers cannot finalize. Persisted lease deadlines use the restart-stable lease-time domain from `docs/protocol.md`, never raw process-monotonic timestamps.
+- Durable proposal receipts must contain enough normalized/versioned input for restart recovery. The initial P1 service has one exclusive owner and serializes proposal processing, so it does not add claims, leases, or fencing epochs before a measured need for parallel workers exists.
 - Each run uses optimistic graph-version checks for graph-changing writes; stale writes fail explicitly rather than silently overwriting.
 - Mutation outcome, entity lifecycle, and evidence-derived verification status are separate concepts.
 - Evidence origin and verification method are separate metadata; no single evidence-strength enum defines truth.
@@ -82,7 +82,7 @@ For research-facing changes:
 - do not change frozen research choices after observing results or pool different experiment versions;
 - preserve raw evidence and distinguish measured results from interpretation, including null/negative results;
 - keep harness-native trajectories adapter-owned; only normalized observations cross core boundaries;
-- follow [STORE-OWNER](docs/protocol.md#spec-protocol-store-owner) and [LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock) for persistence, and [EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), and [EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery) for evidence;
+- follow [STORE-OWNER](docs/protocol.md#spec-protocol-store-owner) and [PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery) for persistence/recovery, and [EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), and [EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery) for evidence;
 - all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
 
 Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.

@@ -40,14 +40,16 @@ Mitigation: controlled exploration/shadow evaluation and explicit policy logging
 
 Repeated development against one task set can turn evaluation into training. Public coding datasets may also appear in model training.
 
-Mitigation: freeze the P6 selector before implementation, keep task-level holdouts, use P6 only for the bounded whole-system workflow comparison, and choose an independent later external-validity benchmark.
+Mitigation: freeze the six-task P6 selector before exposure, use P6 only for
+the bounded whole-system workflow comparison, and choose an independent later
+external-validity/calibration benchmark.
 
 ### Small-sample overinterpretation
 
-The first P6-AC experiment deliberately uses eight tasks, two repetitions, and 32
-measured slots before retries.
+The first P6-AC experiment deliberately uses six tasks, one agent run per
+configuration/task, and one evaluator run per produced patch.
 
-Mitigation: report per-task results, both repetitions, operational cost/latency,
+Mitigation: report every per-task result, operational cost/latency, missingness,
 and the exact tested workflow. Do not convert the PoC into population-level,
 statistical-equivalence, or state-of-the-art claims.
 
@@ -55,7 +57,13 @@ statistical-equivalence, or state-of-the-art claims.
 
 Cloud models and provider behavior can change under a stable-looking name.
 
-Mitigation: freeze a content-addressed HarnessX runtime and an ordered model chain before task exposure; record the selected chain entry, runtime/image/lockfile digests, absolute UTC attempt start/semantic-start/end timestamps, every provider/API/model revision or deployment/build identifier exposed by responses, harness commit, effective settings, usage metadata, and frozen execution ordering. Record an explicit unavailable value when no provider revision metadata is exposed. A predeclared chain fallback may be selected only before the first measured run; an unlisted or post-start replacement requires a new experiment version.
+Mitigation: freeze a compact manifest before task exposure; record runtime/image/
+lockfile digests, provider/model metadata when exposed, harness/service source,
+effective settings, usage metadata, and frozen execution ordering. Record an
+explicit unavailable value when no provider revision metadata is exposed. Do
+not use a silent fallback; a model replacement requires a new experiment
+version. An image digest pins the execution environment, not hosted provider
+weights or future inference.
 
 ## Architecture
 

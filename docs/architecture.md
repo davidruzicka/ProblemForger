@@ -37,7 +37,7 @@ The journal contains two classes of durable records:
 
 Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
 
-A completed governance response requires a durable decision. Proposal receipts retain recoverable input; stale or expired workers cannot finalize. Detailed recovery and fencing rules belong to [PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery), store ownership to [STORE-OWNER](protocol.md#spec-protocol-store-owner), and restart-stable lease time to [LEASE-CLOCK](protocol.md#spec-protocol-lease-clock).
+A completed governance response requires a durable decision. Proposal receipts retain recoverable input; the single owning service serializes evaluation and finalization. Detailed recovery rules belong to [PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery), and store ownership to [STORE-OWNER](protocol.md#spec-protocol-store-owner). Parallel claims and leases are deferred until a measured PoC need justifies them.
 
 ### Observation/telemetry events
 
@@ -110,7 +110,7 @@ Provider lookup is explicit. The PoC does not dynamically import arbitrary class
 
 Graph state is projected from complete committed mutation batches in the journal; a partial batch is never an addressable graph state. A commit decision and its graph events persist atomically, with optimistic graph-version checks preventing stale writes. Audit-only records do not advance `graph_version`. Persistence failure is not a completed governance outcome.
 
-The [EventStore port](modules.md#spec-modules-eventstore-port) owns operation signatures and statuses. [PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) owns append atomicity, claim validation, terminal outcomes, and replay behavior.
+The [EventStore port](modules.md#spec-modules-eventstore-port) owns operation signatures and statuses. [PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) owns append atomicity, terminal outcomes, serialized recovery, and replay behavior.
 
 There is no required global order across independent runs.
 

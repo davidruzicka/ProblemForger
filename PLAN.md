@@ -32,7 +32,7 @@ linked ADRs and requirement IDs:
 
 - harness-neutral service boundary — [ADR 0001](docs/adr/0001-harness-neutral-core.md) and [ADR 0009](docs/adr/0009-separate-local-process-service-boundary.md);
 - graph vocabulary and separated lifecycle/evidence axes — [GRAPH.MODEL](docs/problem-graph.md#spec-graph-model) and [ADR 0007](docs/adr/0007-separate-lifecycle-verification-and-evidence-axes.md);
-- durable journal, graph-version atomicity, provider ownership, claims, and recovery — [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), [PROTOCOL.STORE-OWNER](docs/protocol.md#spec-protocol-store-owner), [PROTOCOL.LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock), ADR 0006;
+- durable journal, graph-version atomicity, exclusive provider ownership, serialized recovery — [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), [PROTOCOL.STORE-OWNER](docs/protocol.md#spec-protocol-store-owner), ADR 0006;
 - evidence trust/binding/recovery and review-loop checkpoints — [VERIFICATION.EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [VERIFICATION.EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), [VERIFICATION.EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery), [REVIEW.LOOP](docs/review-loop.md#spec-review-loop);
 - the frozen P6-AC practical experiment — [EVALUATION.MODEL](docs/evaluation.md#spec-evaluation-model), [EVALUATION.PRE-P6](docs/evaluation.md#spec-evaluation-pre-p6), [EVALUATION.PREFLIGHT](docs/evaluation.md#spec-evaluation-preflight), [EVALUATION.MEASURED-EVALUATION](docs/evaluation.md#spec-evaluation-measured-evaluation).
 
@@ -53,7 +53,7 @@ P1 may begin only after the P0 specification PR is reviewed/merged.
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
   - durable journal and graph-version implementation under [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), and ADR 0006;
-  - `EventStore` providers and contract tests, including fenced claims and restart-stable lease-clock behavior under [PROTOCOL.LEASE-CLOCK](docs/protocol.md#spec-protocol-lease-clock);
+  - `EventStore` providers and contract tests, including exclusive ownership, serialized proposal recovery, and restart-safe replay;
   - typed provider configuration and explicit module registry/composition root;
   - observation/telemetry contract;
   - local service transport decision and protocol skeleton;
@@ -90,8 +90,8 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
 
 - [ ] **P6 — Practical whole-system evaluation**
   - implement issue #8 against the normative evaluation IDs in `docs/evaluation.md`;
-  - freeze/hash the benchmark, complete ProblemForger package, metrics, ordered model chain, and complete HarnessX runtime before exposing selected tasks;
-  - materialize the pinned manifest/schedule, enforce preflight/isolation/deadline/retry rules, retain raw artifacts, and compute the frozen paired outcomes and efficiency metrics;
+  - freeze one compact manifest containing the benchmark adapter, selected model/provider metadata, ProblemForger service/runtime configuration, task IDs, and metrics before exposing selected tasks;
+  - run the small paired A/C pilot with one agent run and one evaluator run per task, enforce isolation/deadline/resource limits, retain raw artifacts, and compute simple paired outcomes and efficiency metrics;
   - preserve null/negative results and report the declared validity limitations;
   - run the optional B diagnostic only as a separately frozen experiment when mechanism attribution is needed.
 

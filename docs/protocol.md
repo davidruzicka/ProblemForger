@@ -92,87 +92,78 @@ Every mutation command carries a client-generated `proposal_id` that is unique w
 
 On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery), including inline worker assertions. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
 
-Proposal execution uses a durable processing claim.
+Proposal execution is owned by the service and serialized for the initial P1
+PoC. The durable receipt is the recovery point; it is not a worker lease.
 
 <a id="spec-protocol-store-owner"></a>
 <!-- spec-id: PROTOCOL.STORE-OWNER -->
 #### STORE-OWNER
 
-P1 permits exactly one live EventStore provider instance per durable store, shared by all workers using that store. The provider must acquire exclusive ownership **before initializing the lease clock**, loading journal state, or accepting operations. A competing open fails explicitly with `STORE_IN_USE`; this is a service startup error, not a governance decision or a proposal claim.
+P1 permits exactly one live EventStore provider instance per durable store. The provider must acquire exclusive ownership **before loading journal state or accepting operations**. A competing open fails explicitly with `STORE_IN_USE`; this is a service startup error, not a governance decision or a proposal claim.
 
-Ownership must cover same-process duplicate instances as well as separate processes and path aliases for the same store. Hold it for the provider lifetime and release it only after in-flight operations/connections are closed. A process crash releases ownership automatically; a persisted boolean, PID file, or lease-clock deadline alone is not an ownership lock. The SQLite implementation must document its canonical store/lock identity and supported local-filesystem assumptions, reject unsupported storage, and prevent replacing/unlinking its live store or lock identity. Internal connections are allowed only under the owning provider and its shared clock. A forked child cannot operate an inherited provider; it must open normally and obtain ownership after the old owner closes.
+Ownership must cover same-process duplicate instances as well as separate processes and path aliases for the same store. Hold it for the provider lifetime and release it only after in-flight operations/connections are closed. A process crash releases ownership automatically; a persisted boolean or PID file alone is not an ownership lock. The SQLite implementation must document its canonical store/lock identity and supported local-filesystem assumptions, reject unsupported storage, and prevent replacing/unlinking its live store or lock identity. Internal connections are allowed only under the owning provider. A forked child cannot operate an inherited provider; it must open normally and obtain ownership after the old owner closes.
 
-Concurrent workers still use atomic proposal claims, fencing epochs, and graph-version checks. Multiple live providers for one store are out of scope under ADR 0006; independent stores may be opened concurrently. Required P1 tests include racing process opens, same-process duplicate opens, path aliases, graceful close, crash release, and reopening with an active proposal lease.
+Proposal evaluation and finalization are serialized by the owning service. Multiple live providers for one store are out of scope under ADR 0006; independent stores may be opened concurrently. Required P1 tests include racing process opens, same-process duplicate opens, path aliases, graceful close, crash release, and reopening with an incomplete receipt.
 
-<a id="spec-protocol-lease-clock"></a>
-<!-- spec-id: PROTOCOL.LEASE-CLOCK -->
-#### LEASE-CLOCK
+<a id="spec-protocol-parallel-claims"></a>
+<!-- spec-id: PROTOCOL.PARALLEL-CLAIMS -->
+#### Deferred parallel proposal claims
 
-Lease expiry uses a **restart-stable lease-time domain**, never a process-local monotonic timestamp persisted directly:
+The initial P1 service has one exclusive durable-store owner and serializes
+proposal evaluation and finalization. It therefore does not expose
+`claim_ttl`, `owner_id`, `claim_epoch`, renewal, lease expiry, or a persisted
+lease clock. A second provider cannot open the same store, and a second worker
+does not race to finalize a proposal.
 
-- the durable EventStore persists a per-store `lease_clock_floor_ms` and `lease_clock_generation`;
-- after acquiring store ownership, provider/service open atomically increments `lease_clock_generation`, samples UTC Unix time in milliseconds, and sets `lease_clock_anchor_ms = max(persisted lease_clock_floor_ms, sampled_utc_ms)`; it also captures a process-local monotonic anchor;
-- during that provider instance, compute `lease_now_ms = lease_clock_anchor_ms + elapsed_monotonic_ms`; later wall-clock jumps do not move lease time backward or forward;
-- every claim/renew/expiry transaction atomically advances persisted `lease_clock_floor_ms` to at least the transaction's `lease_now_ms`;
-- persisted `lease_expires_at_ms` is expressed in this lease-time domain as `lease_now_ms + claim_ttl_ms`;
-- claim and renewal accept `claim_ttl_ms`, never a caller-supplied deadline; the owning EventStore samples its own lease clock and computes the deadline inside the same atomic transaction that validates/updates the claim and advances the persisted floor. Renewal is accepted only while the matching claim is still active and unexpired;
-- TTL is a positive integer number of milliseconds validated against typed service configuration; invalid TTLs or deadline overflow fail without changing claim or floor state. The provider must not use caller/process timestamps as its clock source;
-- after restart, the new anchor starts at least at the persisted floor and advances from a fresh monotonic anchor. Every claim records the provider `lease_clock_generation`; a claim from an earlier generation is treated as expired/inactive immediately, cannot be renewed or finalized, and must be reclaimed under a new epoch. This conservative recovery rule prevents a backward wall-clock jump plus repeated restarts from reviving a dead claim indefinitely;
-- a wall clock that is ahead of the persisted floor may move the restart anchor forward and make an old lease expire sooner; claim-epoch fencing still prevents the superseded owner from finalizing, while the expiry check independently prevents a current-but-expired owner from finalizing.
+On restart, the store owner reconstructs incomplete receipts as recoverable
+`PENDING` proposals. A resubmission with the same `(run_id, proposal_id)` and
+canonical request hash resumes that stored request; a completed proposal is
+replayed. A request with a different hash is an idempotency conflict. If the
+request cannot be resumed safely, the service records `ABANDONED` with an
+explicit operational reason.
 
-Every active claim also has an `owner_id` unique to the service/worker incarnation and a monotonically increasing `claim_epoch`. The service assigns or authenticates that owner identity at the application boundary; a worker cannot choose an arbitrary identity to impersonate another claimant, and a `PENDING` response does not disclose the active owner's identity.
-
-- claim TTL and renewal cadence are versioned typed service configuration and use the injected UTC + monotonic clock pair so behavior is testable/reproducible;
-- the claimant renews the lease while evaluating;
-- an expired claim is no longer active even if no reclaim has occurred; renewal of an expired claim fails `STALE_CLAIM` and cannot extend it;
-- an unclaimed proposal or a proposal whose claim lease has expired may be atomically claimed/reclaimed, incrementing `claim_epoch`;
-- every proposal terminalization/finalization operation, including non-commit decisions and `ABANDONED`, carries the claimant's expected owner identity and `claim_epoch`; every graph append requires `proposal_id`, `expected_owner_id`, and `expected_claim_epoch`, with no unfenced overload or default. Missing fields fail validation before any write. Run creation creates empty version-zero state; any initial graph content is committed through the same fenced proposal path;
-- the EventStore/application boundary atomically rejects a finalization or graph append unless both expected owner identity and claim epoch match the active claim and `lease_expires_at_ms > lease_now_ms`; this active-claim check occurs before any final decision or graph mutation, and failure returns `STALE_CLAIM`;
-- governance evaluation before final append must not perform non-idempotent external side effects; any future side-effecting integration requires its own idempotency contract.
-
-The operation signatures are owned by the [EventStore port](modules.md#spec-modules-eventstore-port).
-This section defines their atomic lease, fencing, recovery, and graph-version
-preconditions; provider summaries must not copy this algorithm.
+Parallel claims are a deferred extension, not an implicit provider
+requirement. Adding them requires a measured throughput/recovery need, a new
+protocol/ADR decision, and dedicated concurrency tests. The operation
+signatures remain owned by the [EventStore port](modules.md#spec-modules-eventstore-port);
+provider summaries must not invent a claim API before that extension exists.
 
 #### Terminal append binding
 
 `run_id` is required for every audit batch, including non-terminal-only batches.
 
 A batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or
-`ABANDONED` requires non-null `run_id`, `proposal_id`, `expected_owner_id`, and
-`expected_claim_epoch`. The terminal record must explicitly reference the
-supplied `(run_id, proposal_id)`. Reject missing/null arguments, mismatched
-terminal record identity, or more than one terminal record (including duplicates
-for the same proposal) with `INVALID_AUDIT_BATCH` before writing any record.
+`ABANDONED` requires non-null `run_id` and `proposal_id`. The terminal record
+must explicitly reference the supplied `(run_id, proposal_id)`. Reject
+missing/null arguments, mismatched terminal record identity, or more than one
+terminal record (including duplicates for the same proposal) with
+`INVALID_AUDIT_BATCH` before writing any record.
 Non-terminal records may accompany one terminal record, but validation applies
 to the complete batch: rejection of the entire batch leaves the journal and
 proposal state unchanged.
 
-Resolve authority from the stored claim for the supplied `(run_id, proposal_id)`,
-not from owner/epoch fields in submitted records; the same owner and epoch on a
-different proposal do not authorize this terminalization. In one transaction,
-validate the complete batch and require the current `lease_clock_generation`,
-matching expected owner/epoch, `lease_expires_at_ms > lease_now_ms`, and no existing
-terminal outcome. An unknown run/proposal returns `NOT_FOUND`; an inactive,
-expired, mismatched, or already-finalized claim returns `STALE_CLAIM` without
-writes. On success, atomically append the records and finalize the proposal state
-so the same still-unexpired claim cannot append a second terminal outcome.
+Resolve authority from the owning service and the stored receipt for the
+supplied `(run_id, proposal_id)`, not from caller-supplied worker metadata. In
+one transaction, validate the complete batch and require that the proposal has
+no existing terminal outcome. An unknown run/proposal returns `NOT_FOUND`; an
+already-finalized proposal is replayed or rejected without a second write. On
+success, atomically append the records and finalize the proposal state.
 
 `COMMIT` is forbidden in `append_audit` and returns `INVALID_AUDIT_BATCH`; its
 decision and graph events are persisted exclusively through `append_graph`, with
-the same proposal binding, active-claim and single-terminal checks plus the
-graph-version check. Non-terminal-only audit batches require no claim and never
-advance `graph_version`; non-commit terminal appends also leave it unchanged.
+the same proposal binding and single-terminal checks plus the graph-version
+check. Non-terminal-only audit batches require no proposal and never advance
+`graph_version`; non-commit terminal appends also leave it unchanged.
 
-`VersionConflict` does not reserve claim validity: a subsequent audit append
-must recheck the claim. If it expires or is superseded between calls, the service
-must not return completed `CONFLICT` without its durable record; return a
-persistence/service failure instead, as required by ADR 0006.
+`VersionConflict` does not complete the proposal by itself. The serialized
+service must durably append the corresponding `CONFLICT` record before returning
+that outcome; if persistence fails, return a persistence/service failure
+instead, as required by ADR 0006.
 
 #### Graph append binding
 
-`append_graph` requires non-null run/proposal identity, expected owner/epoch,
-and expected graph version. Its audit records contain exactly one `COMMIT`
+`append_graph` requires non-null run/proposal identity and expected graph
+version. Its audit records contain exactly one `COMMIT`
 bound to the supplied `(run_id, proposal_id)` and no other terminal outcome,
 including `ABANDONED`. Its graph events contain at least one event, all bound
 to that same run/proposal. An empty mutation is not a graph-version advance.
@@ -189,24 +180,22 @@ and binding; it does not rerun governance policy. In the same transaction, the
 supplied `expected_graph_version` must equal the proposal receipt's recorded
 `expected_graph_version`; a mismatch is `INVALID_GRAPH_BATCH` with no writes.
 The bound value must then equal the current run `graph_version`; otherwise return
-`VersionConflict` with no writes. A valid batch still requires the active claim
-in the append transaction. Success
-atomically appends the complete batch, finalizes the proposal, and increments
-graph version exactly once. Any failed check leaves the whole batch unwritten.
+`VersionConflict` with no writes. Success atomically appends the complete batch,
+finalizes the proposal, and increments graph version exactly once. Any failed
+check leaves the whole batch unwritten.
 
 #### Proposal recovery responses
 
 Subsequent submissions follow these rules:
 
-- same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata without acquiring a fresh claim; do not re-run governance or mutate the graph;
-- same `proposal_id` + same canonical request hash + proposal has an active, unexpired processing claim according to the restart-stable lease clock → return `PENDING` with current recovery metadata; do not create a second proposal attempt;
-- same `proposal_id` + same canonical request hash + proposal is incomplete and unclaimed/claim-expired → a mutation resubmission must attempt to atomically acquire a new recovery claim; the winner resumes governance from the durable normalized request under the new epoch, while a loser observes the new active claim and returns `PENDING`;
+- same `proposal_id` + same canonical request hash + final decision already durable → return/replay the recorded final outcome and recorded resulting graph/journal metadata; do not re-run governance or mutate the graph;
+- same `proposal_id` + same canonical request hash + proposal is incomplete → return `PENDING` while the owning service resumes the durable normalized request; do not create a second proposal attempt;
 - same `proposal_id` + different canonical request hash → return `IDEMPOTENCY_CONFLICT`; do not evaluate or mutate;
 - unknown `proposal_id` → treat as a new proposal submission.
 
-If an incomplete proposal cannot be safely resumed because its required schema/policy/runtime version is unavailable or its durable input is invalid, the current valid claimant may append terminal operational status `ABANDONED` with a reason code. `ABANDONED` is **not** a governance decision and never changes graph state. Reusing that proposal ID replays the terminal abandoned status; a semantic retry requires a new proposal ID.
+If an incomplete proposal cannot be safely resumed because its required schema/policy/runtime version is unavailable or its durable input is invalid, the owning service may append terminal operational status `ABANDONED` with a reason code. `ABANDONED` is **not** a governance decision and never changes graph state. Reusing that proposal ID replays the terminal abandoned status; a semantic retry requires a new proposal ID.
 
-The command/query plane exposes a proposal-status query keyed by `(run_id, proposal_id)` returning `NOT_FOUND`, `PENDING`/claim metadata, `ABANDONED`, or the durable final governance outcome plus relevant `journal_position` / graph-version metadata. The internal EventStore `get_proposal` provides a consistent durable snapshot for recovery; its claim metadata never substitutes for atomic claim acquisition or append validation. Public status responses omit owner identity and internal normalized recovery inputs. Final replay returns the original recorded result metadata even after the run advances.
+The command/query plane exposes a proposal-status query keyed by `(run_id, proposal_id)` returning `NOT_FOUND`, `PENDING`, `ABANDONED`, or the durable final governance outcome plus relevant `journal_position` / graph-version metadata. The internal EventStore `get_proposal` provides a consistent durable snapshot for recovery. Public status responses omit internal normalized recovery inputs. Final replay returns the original recorded result metadata even after the run advances.
 
 A client retry caused by timeout, cancellation, connection loss, or a lost response reuses the **same** `proposal_id`. This is distinct from the governance outcome `RETRY`: if the governor requests a semantic retry, the worker creates a **new** proposal with a new `proposal_id` and a causation/provenance link to the prior attempt.
 

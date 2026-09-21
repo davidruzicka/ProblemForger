@@ -31,7 +31,7 @@ Resolution: each run now has a durable journal containing governance audit recor
 
 "Append-only event log" did not define atomicity, stream scope, or stale writers.
 
-Resolution: ADR 0006 defines the durable journal and atomic graph-version boundary. The normative [proposal recovery, ownership, and clock contract](protocol.md#spec-protocol-proposal-recovery) separates transport identity, proposal claims, and store ownership. SQLite is the first durable provider; memory remains ephemeral/test-only.
+Resolution: ADR 0006 defines the durable journal and atomic graph-version boundary. The normative [proposal recovery and ownership contract](protocol.md#spec-protocol-proposal-recovery) keeps transport identity, durable receipts, and store ownership explicit while serializing the initial service. SQLite is the first durable provider; memory remains ephemeral/test-only.
 
 ### Graph lifecycle mixed unrelated state dimensions
 
@@ -79,8 +79,10 @@ Resolution: P1 introduces only currently required ports. Later ports appear in t
 
 The original document listed metrics but did not define a task set, model, run count, failure policy, or precise A/B/C parity.
 
-Resolution: `docs/evaluation.md` now contains a versioned P6-AC practical package
-experiment contract with deterministic task selection and paired comparison.
+Resolution: `docs/evaluation.md` now contains a small versioned P6-AC practical
+pilot contract with deterministic task selection and paired comparison. It keeps
+the operational checks needed for a useful result and defers academic
+population/holdout claims.
 
 ## Architectural decisions added
 
@@ -128,9 +130,9 @@ The normative contract owns task selection, preflight, failure classification, o
 
 The follow-up audit identified five issues and the user authorized their correction before commit/push:
 
-- **Lease ownership:** restrict P1 to one live provider per durable store rather than coordinate independent process clock anchors. ADR 0006 records the decision; `STORE-OWNER` defines enforcement and future tests.
+- **Persistence scope:** restrict P1 to one live provider per durable store with serialized proposal processing. ADR 0006 records the decision; `STORE-OWNER` defines enforcement and restart tests. Parallel claims and leases are deferred.
 - **Evidence trust:** distinguish worker claims from service-assigned provenance and bind support to immutable checked content. ADR 0007 records the decision; `EVIDENCE-TRUST`, `EVIDENCE-BINDING`, and `EVIDENCE-RECOVERY` define the operational contract.
-- **Preflight:** the first two disagreeing complete vectors now determine instability immediately. Optional diagnostics occur after primary execution and cannot invalidate it. This explicitly amends the pre-implementation P6 envelope; the current P6-AC contract also permits only predeclared reserve activation for patch-independent defects before measurement.
+- **Preflight:** preflight checks obvious setup failures before measurement, but does not turn the pilot into a reserve/holdout study. Optional diagnostics occur after primary execution and cannot invalidate it.
 - **Document ownership:** detailed algorithms now have one normative home, linked from instructions, planning, ADR rationale, and implementation issues.
 - **Verification:** checked-in specification regression checks and tests of the actual inline review-request script replace unreproducible claims of local checks. The PR also includes executable GitHub Actions automation, not only documentation.
 
@@ -143,12 +145,12 @@ operational rules remain in their normative documents:
 
 | Finding | Normative source | Regression/evidence source |
 | --- | --- | --- |
-| lease TTL, fencing, and expiry-before-reclaim | [PROTOCOL.LEASE-CLOCK](protocol.md#spec-protocol-lease-clock), [MODULES.EVENTSTORE-PORT](modules.md#spec-modules-eventstore-port) | `test_expired_claim_cannot_finalize_or_renew`, issue #16 |
-| one fenced EventStore graph-append port | [MODULES.EVENTSTORE-PORT](modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) | `test_every_graph_append_signature_requires_fencing` |
+| exclusive EventStore ownership and serialized recovery | [PROTOCOL.STORE-OWNER](protocol.md#spec-protocol-store-owner), [PROTOCOL.PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) | issue #16 and restart-recovery checks |
+| one proposal-bound EventStore graph-append port | [MODULES.EVENTSTORE-PORT](modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery) | EventStore contract checks |
 | superseded bootstrap stream | historical `docs/evaluation.md` draft | `tests/fixtures/bootstrap-v1.json` retained as audit evidence |
-| ordered model fallback and post-exposure exhaustion | [EVALUATION.MODEL](evaluation.md#spec-evaluation-model) | `test_model_chain_handles_post_exposure_exhaustion` |
-| content-addressed HarnessX runtime | [EVALUATION.PRE-P6](evaluation.md#spec-evaluation-pre-p6) | `test_harness_runtime_is_fully_content_addressed` |
-| mandatory candidate evaluator repetitions | [EVALUATION.MEASURED-EVALUATION](evaluation.md#spec-evaluation-measured-evaluation) | `test_missing_candidate_vector_does_not_skip_other_repetition` |
+| compact model/runtime manifest | [EVALUATION.PRE-P6](evaluation.md#spec-evaluation-pre-p6) | P6 manifest checks |
+| selected runtime/model metadata | [EVALUATION.PRE-P6](evaluation.md#spec-evaluation-pre-p6) | P6 manifest checks |
+| one evaluator outcome per produced patch | [EVALUATION.MEASURED-EVALUATION](evaluation.md#spec-evaluation-measured-evaluation) | measured-run checks |
 | review action pin, permissions, and event-aware diff range | [REVIEW.LOOP](review-loop.md#spec-review-loop) | `tests/review-workflow.test.mjs` |
 | red-to-green document regression evidence | [Specification checks](specification-checks.md) | Python/Node suites in CI |
 
@@ -160,8 +162,8 @@ The following are deliberately deferred and must not be silently decided inside 
 
 1. **Local service transport.** P1 includes a bounded spike comparing practical Python/TypeScript options. The selected transport requires an ADR.
 2. **Exact initial graph node/edge schema.** P1 defines the command/wire contracts; P2 finalizes the minimal graph schema under ADR/spec constraints.
-3. **P6 materialized task manifest.** The deterministic selector is frozen now. The exact 12 primary/reserve IDs are materialized and hashed only after all eight artifacts in [EVALUATION.PRE-P6](evaluation.md#spec-evaluation-pre-p6) are frozen, including `model-chain-v1`, `harnessx-runtime-v1`, and `problemforger-runtime-v1`; the eight holdout identifiers remain separate and their images do not block P6. None are hand-picked or used for artifact development.
-4. **P8 calibration dataset size.** The eight reserved P6 tasks are only an initial task-level holdout. P8 must expand it before making calibration claims.
+3. **P6 materialized task manifest.** The six task IDs, their order, the selected model/provider metadata, service/runtime configuration, and metric definitions are frozen in one compact manifest before task exposure. No reserve or holdout pool is required for the practical pilot; later claims need a separately designed dataset.
+4. **P8 calibration dataset size.** The practical P6 pilot is not a calibration dataset. P8 must define and freeze its own held-out data before making calibration claims.
 5. **P11 external-validity benchmark.** It is intentionally re-audited close to P11 because coding benchmarks are changing quickly.
 
 ## Files changed
