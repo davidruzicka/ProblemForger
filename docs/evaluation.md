@@ -919,8 +919,11 @@ For each required control/candidate evaluation repetition:
   - `EVAL_IMAGE_SETUP`;
   - `EVAL_CONTAINER_START`;
   - `EVAL_EVALUATOR_START`;
-- once candidate/control repository tests have started executing, evaluator/test failure is not retrospectively reclassified as retryable infrastructure merely because no valid vector was produced;
-- if a **control/preflight** evaluation has started repository tests and terminates without a complete required-test vector, classify that candidate `EVALUATOR_INVALID`; this is a patch-independent preflight exclusion, is not retried, and may activate the next predeclared reserve;
+- once candidate/control repository tests have started executing, the evaluation is not retried merely because no valid vector was produced;
+- if a **control/preflight** evaluation has started repository tests and terminates without a complete required-test vector:
+  - when retained machine-readable evidence positively identifies container, host, storage, or equivalent shared-infrastructure loss, classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop, and preserve the candidate; this must not activate a reserve;
+  - use `EVALUATOR_INVALID` only when the frozen classifier establishes a demonstrated patch-independent task/evaluator defect from retained task/evaluator diagnostics; this nonretryable preflight exclusion may activate the next predeclared reserve;
+  - an unknown or mixed cause is not proof of task invalidity: classify the experiment `INCOMPLETE_INFRASTRUCTURE`, stop, and do not activate a reserve;
 - if a **measured candidate-patch** evaluation has started repository tests and terminates without a complete required-test vector, record that evaluation repetition as `EVALUATION_INCOMPLETE`; the measured run is unresolved regardless of its other evaluator repetition, and the missing-vector repetition is never retried;
 - if the canonical candidate patch is absent, malformed, or cannot be applied before repository tests start, record `CANDIDATE_PATCH_INVALID` for that evaluator repetition with the exact patch digest and application error; this is a nonretryable agent/system outcome, is not eligible for whole-run replacement, and scores the measured run unresolved rather than being reclassified as evaluator infrastructure failure;
 - after such a measured missing-vector outcome, continue with the other mandatory evaluator repetition in a separate fresh environment. It must not be skipped merely because the first repetition is already unresolved; the only exception is an experiment-wide stop already required by this policy (for example, `INCOMPLETE_INFRASTRUCTURE`, `BUDGET_EXHAUSTED`, or `INVALID_EXPERIMENT_STATE`);
@@ -945,7 +948,7 @@ Evaluator/task stability and candidate-patch stability are handled separately be
 Before any measured A/C agent run for a selected primary task:
 
 1. evaluate the task's **unmodified pinned repository state** twice in separate fresh instances of the same pinned environment, subject to the frozen evaluator policy above;
-2. if either required control evaluation starts repository tests but terminates without a complete required-test vector, classify the candidate `EVALUATOR_INVALID` and stop that candidate's preflight; do not retry or hand-adjudicate it, and continue with the next predeclared candidate;
+2. if either required control evaluation starts repository tests but terminates without a complete required-test vector, apply the frozen post-start classifier above: stop the experiment for identified shared-infrastructure loss or an unknown/mixed cause; only a demonstrated patch-independent task/evaluator defect yields `EVALUATOR_INVALID`, stops that candidate's preflight, and continues with the next predeclared candidate;
 3. otherwise compare the two full required-test outcome vectors (the pass/fail result for every required `FAIL_TO_PASS` and `PASS_TO_PASS` test);
 4. both control vectors must be identical **and** match the benchmark's expected baseline contract:
    - every required `FAIL_TO_PASS` test is failing;
@@ -961,7 +964,8 @@ The following decision table is normative. The required-evaluation retry policy 
 | Required control evaluations | Task/experiment result | Additional required controls |
 | --- | --- | --- |
 | Pre-test infrastructure budget exhausted | `INCOMPLETE_INFRASTRUCTURE`; eligibility unknown, no measured runs | None for this task |
-| Tests started but a complete vector is missing | `EVALUATOR_INVALID` (candidate) | Continue with next predeclared candidate |
+| Tests started; demonstrated patch-independent task/evaluator defect; vector missing | `EVALUATOR_INVALID` (candidate) | Continue with next predeclared candidate |
+| Tests started; identified shared-infrastructure loss or unknown/mixed cause; vector missing | `INCOMPLETE_INFRASTRUCTURE` (experiment); eligibility unknown | None for this task |
 | Two complete vectors disagree | `EVALUATOR_UNSTABLE` (candidate) | Continue with next predeclared candidate |
 | Two complete vectors agree but violate the baseline | `BASELINE_INVALID` (candidate) | Continue with next predeclared candidate |
 | Two complete vectors agree and match the baseline | Eligible task | None |

@@ -209,6 +209,20 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, normalized)
 
+    def test_post_test_preflight_failure_cannot_activate_reserve_on_outage(self):
+        evaluation = read("docs/evaluation.md")
+        section = evaluation.split("### Evaluator infrastructure retries\n", 1)[1].split("### Task-artifact preflight exclusions\n", 1)[0]
+        normalized = " ".join(section.split())
+        for phrase in (
+            "positively identifies container, host, storage, or equivalent shared-infrastructure loss",
+            "`INCOMPLETE_INFRASTRUCTURE`",
+            "must not activate a reserve",
+            "demonstrated patch-independent task/evaluator defect",
+            "unknown or mixed cause",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, normalized)
+
     def test_task_artifact_exclusion_is_pre_measurement_only(self):
         evaluation = read("docs/evaluation.md")
         artifact = evaluation.split("### Task-artifact preflight exclusions\n", 1)[1].split("<a id=\"spec-evaluation-measured-evaluation\">", 1)[0]
