@@ -140,7 +140,7 @@ The PoC is complete when:
 - all reported improvements include cost/latency and repeated-run statistics;
 - negative or null results are retained.
 
-## Execution model for ChatGPT Work
+## Execution model for Agents
 
 Do not implement an entire phase from this file directly.
 
