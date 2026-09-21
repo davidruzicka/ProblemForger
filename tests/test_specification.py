@@ -27,6 +27,14 @@ class SpecificationChecks(unittest.TestCase):
         self.assertIn("Every C attempt additionally executes and verifies `problemforger-runtime-v1`", evaluation)
         self.assertIn("A must not start the ProblemForger service", evaluation)
 
+    def test_runtime_identity_mismatch_has_frozen_retry_classification(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        self.assertIn("`INFRA_RUNTIME_IDENTITY`", evaluation)
+        self.assertIn("before starting HarnessX or ProblemForger", evaluation)
+        self.assertIn("takes precedence over process/startup reason classes", evaluation)
+        self.assertIn("eligible for whole-run replacement", evaluation)
+        self.assertIn("same semantic-deadline and experiment-budget precedence", evaluation)
+
     def test_p0_audit_defers_manifest_until_all_pre_p6_artifacts_are_frozen(self):
         audit = " ".join(read("docs/p0-audit.md").split())
         self.assertIn("all eight artifacts in [EVALUATION.PRE-P6]", audit)

@@ -393,9 +393,11 @@ a sufficient runtime identity. Every C attempt additionally executes and verifie
 `problemforger-runtime-v1` against the actual service runtime before semantic
 execution, including replacement attempts. A must not start the ProblemForger service.
 The two artifacts may identify one shared retained image, but configuration-specific
-process/service activation still applies. An unavailable or mismatched service runtime
-cannot be silently replaced; treat startup failure under the existing
-`INFRA_PROBLEMFORGER_START` policy and retain diagnostics.
+process/service activation still applies. Verify required runtime identities before
+starting HarnessX or ProblemForger. An unavailable or mismatched required image/archive,
+source revision, lockfile, interpreter, dependency set, platform, or effective
+configuration is `INFRA_RUNTIME_IDENTITY`; retain expected/observed identities and
+diagnostics, and never substitute a different artifact silently.
 
 <a id="p6-runtime-image-identity"></a>
 The runtime digest identifies the retained runtime/harness bytes, **not hosted model identity**.
@@ -892,10 +894,19 @@ A failed agent-run attempt is eligible for a clean whole-run replacement **only 
 
 - `INFRA_WORKSPACE_SETUP` — failure creating/restoring the pristine workspace before task delivery;
 - `INFRA_CONTAINER_START` — benchmark/container runtime image pull/create/start failure before task delivery;
+- `INFRA_RUNTIME_IDENTITY` — required HarnessX runtime identity for A/C, or required ProblemForger runtime identity for C, is unavailable or does not match its frozen artifact before process startup;
 - `INFRA_HARNESS_START` — HarnessX process/session startup failure before task delivery;
 - `INFRA_PROBLEMFORGER_START` — C ProblemForger process or health-check startup failure before task delivery;
 - `INFRA_RESET_VALIDATION` — the mandatory pre-semantic clean-state/reset validation failed before the first model request;
 - `INFRA_FIRST_PROVIDER_CALL` — the first model call exhausted the provider-call transport budget without producing a semantic response.
+
+Runtime identity verification occurs before process startup, so
+`INFRA_RUNTIME_IDENTITY` takes precedence over process/startup reason classes when
+identity is unavailable or mismatched. It is eligible for whole-run replacement
+under the same three-attempt limit and the same semantic-deadline and
+experiment-budget precedence as the other frozen pre-semantic infrastructure
+classes. Exhaustion therefore produces `INCOMPLETE_INFRASTRUCTURE`; it never
+authorizes a mutable or unrecorded runtime substitution.
 
 Each schedule slot has **at most 3 whole-run attempts total**: one initial attempt plus at most 2 clean replacements. Every replacement must satisfy the same clean-state isolation contract and retains the same schedule-slot identity; prior invalid attempts remain in raw data.
 Every eligible pre-semantic failure requires the next clean replacement while one
