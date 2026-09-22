@@ -400,7 +400,7 @@ The channel uses canonical data-only UTF-8 JSON and the protocol is:
 ```text
 REQUEST            {version, invocation_id, input_b64}
 CANDIDATE_RESPONSE {version, invocation_id, output_b64, declared_output_sha256}
-TRUSTED_RESULT     {version, invocation_id, status, observed_output_sha256, candidate_frame_sha256}
+TRUSTED_RESULT     {version, invocation_id, status, observed_output_sha256, candidate_frame_sha256, terminal_payload}
 ```
 
 The evaluator sends only declared test invocation inputs; it never sends hidden
@@ -438,6 +438,17 @@ test vector and observed zero even when `observed_output_sha256` is null.
 `CANDIDATE_PATCH_INVALID` remains a trusted runner
 outcome, not a candidate-controlled status, and is an observed zero only when
 the patch-invalid evidence is complete.
+`terminal_payload` is a status-specific terminal payload. The terminal failure
+envelope is explicit: `TIMEOUT` records `EVALUATION_INCOMPLETE` in its terminal
+payload; `MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, and `SANDBOX_VIOLATION` record
+`EVIDENCE_INCOMPLETE` plus a `quarantine_ref` when a raw frame was received.
+The `PROTOCOL_ERROR` terminal payload includes `EVIDENCE_INCOMPLETE` and
+`quarantine_ref`.
+The `quarantine_ref` is bound to the terminal result and points to the retained
+bounded artifact and its digests. A `PROTOCOL_ERROR` terminal result is not
+reclassified as `COORDINATOR_RESTART` during restart recovery; it remains the
+original terminal status. These failure payloads have no completed test vector
+and are never scored as candidate behavior.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, slot `run_id` (or explicit `NULL` for A),
@@ -448,9 +459,9 @@ raw-output digest. The terminal result record repeats that full invocation
 binding, including the slot `run_id`,
 and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
-(or null), plus either a completed test vector or a trusted
-`CANDIDATE_PATCH_INVALID` rejection reason. An evidenced patch rejection is a
-complete terminal evaluation without a test vector. A completed bound
+(or null), plus the status-specific `terminal_payload` described above. The
+record is terminal even when it has no test vector. An evidenced patch
+rejection is a complete terminal evaluation without a test vector. A completed bound
 evaluation is reused after restart as retained evidence; never rerun the
 evaluator. A
 started evaluation without a durable complete bound result at restart is
