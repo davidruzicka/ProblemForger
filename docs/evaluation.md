@@ -360,11 +360,17 @@ only the patch digest linked by that record; a stale or separately discovered
 patch is `EVIDENCE_INCOMPLETE`.
 Evaluate each produced candidate patch once in a fresh evaluator workspace.
 Use an immutable evaluator bundle from the manifest as a read-only snapshot
-outside the candidate workspace. The candidate cannot write evaluator tests,
-the recorder, ledger, or credentials. The trusted runner verifies the
-evaluator bundle digest before execution and records that evaluator bundle
-digest in the bound result; a mismatch is `EVIDENCE_INCOMPLETE` and is not
-repaired by rerunning.
+outside the candidate workspace. The worker cannot read evaluator or gold
+artifacts. Deny the worker authority to read host paths outside its task
+workspace that contain evaluator, gold, recorder, ledger, credential, or other
+non-task artifacts; do not mount evaluator or gold artifacts in the worker
+namespace.
+Expose the evaluator bundle only to the trusted evaluator process. The worker
+cannot read or write evaluator tests, gold artifacts, evaluator outputs, the
+recorder, ledger, or credentials. The trusted runner verifies the evaluator
+bundle digest before execution and records that evaluator bundle digest in the
+bound result; a mismatch is `EVIDENCE_INCOMPLETE` and is not repaired by
+rerunning.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, candidate-patch digest, evaluator version/test
@@ -520,13 +526,25 @@ The values are practical operating limits, not validity thresholds. If a limit
 is unavailable from a provider, record `UNKNOWN` and use the observable local
 limit rather than treating unknown usage as zero.
 
-Before starting the first slot, persist the experiment start time and absolute
-stop deadline with the experiment ID in the retained execution record. On
-coordinator restart, reload that record and cumulative resource usage; never
-reset the deadline or spent budgets. Downtime counts toward the stop limit.
-If the record is missing, corrupt, or clock continuity cannot be trusted, stop
-the pilot as `INCOMPLETE_COVERAGE` with the restart reason; do not launch more
-slots. Interrupted semantic trajectories remain missing and are not rerun.
+Before starting the first slot, persist `experiment_started_at_utc`,
+`absolute_stop_deadline_utc`, and a nonnegative, monotonically non-decreasing
+`experiment_elapsed_floor_ms` with the experiment ID in the retained execution
+record. This is the restart-stable clock domain. Every durable ledger write
+advances the floor to the greatest of its previous value, the elapsed time
+observed from `experiment_started_at_utc`, and the process-monotonic elapsed
+time. Before dispatching any new slot or retry, persist the resulting floor.
+On coordinator restart, anchor effective elapsed time at
+`max(experiment_elapsed_floor_ms, max(0, now_utc_ms -
+experiment_started_at_utc))`; a backward UTC shift cannot reduce effective
+elapsed time or extend the frozen budget, while a forward shift may expire it
+earlier. Compare effective elapsed time with the frozen wall-clock limit; the
+absolute stop deadline is the corresponding deadline in this same clock
+domain. Reload that record and cumulative resource usage; never
+reset the deadline, elapsed floor, or spent budgets. Downtime counts toward
+the stop limit. If the record is missing, corrupt, or the clock source cannot
+be read, stop the pilot as `INCOMPLETE_COVERAGE` with the restart reason; do
+not launch more slots. Interrupted semantic trajectories remain missing and
+are not rerun.
 Replay the operation ledger on restart. An outstanding reservation is included
 in remaining-budget calculations and is treated as consumed at its reserved
 amount until settled; if its state cannot be reconciled, stop and must not

@@ -178,7 +178,11 @@ Mitigation: distinguish infrastructure failure from agent failure, retain failed
 
 Access to gold patches, hidden tests, or evaluator internals can invalidate the result.
 
-Mitigation: task selection may use only predeclared metadata fields; agent execution must not expose gold patches/hidden evaluator results.
+Mitigation: task selection may use only predeclared metadata fields; worker
+authority must not read evaluator bundles, gold patches, hidden tests, or
+non-task artifacts on host paths outside the task workspace. The trusted
+evaluator alone receives the read-only evaluator bundle; agent execution must
+not expose evaluator outputs.
 
 ## Presentation
 

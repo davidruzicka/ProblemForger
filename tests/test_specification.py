@@ -21,7 +21,14 @@ class SpecificationChecks(unittest.TestCase):
             "exact candidate patch bytes and digest produced by either A or C",
             "Before a slot is scored as either 0 or 1",
             "Zero proposals is valid",
-            "persist the experiment start time and absolute stop deadline",
+            "persist `experiment_started_at_utc`, `absolute_stop_deadline_utc`",
+            "experiment_elapsed_floor_ms",
+            "restart-stable clock domain",
+            "backward UTC shift",
+            "Every durable ledger write advances the floor",
+            "process-monotonic elapsed time",
+            "Before dispatching any new slot or retry, persist the resulting floor",
+            "Compare effective elapsed time with the frozen wall-clock limit",
             "never reset the deadline",
             "missing outcome is undefined, never 0",
         ):
@@ -94,7 +101,10 @@ class SpecificationChecks(unittest.TestCase):
             "rejects the reservation when that sum exceeds the limit",
             "immutable evaluator bundle",
             "read-only snapshot outside the candidate workspace",
-            "candidate cannot write evaluator tests",
+            "worker cannot read evaluator or gold artifacts",
+            "trusted evaluator process",
+            "worker authority to read host paths outside its task workspace",
+            "worker cannot read or write evaluator tests",
             "recorder, ledger, or credentials",
             "evaluator bundle digest",
             "trusted runner",
@@ -128,6 +138,17 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
+
+    def test_gold_information_leakage_mitigation_matches_evaluation(self):
+        risks = " ".join(read("docs/risks.md").split())
+        for phrase in (
+            "worker authority must not read evaluator bundles",
+            "host paths outside the task workspace",
+            "trusted evaluator alone receives the read-only evaluator bundle",
+            "must not expose evaluator outputs",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, risks)
 
     def test_terminal_fence_preserves_post_deadline_accounting(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
