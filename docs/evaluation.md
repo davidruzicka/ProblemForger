@@ -396,19 +396,27 @@ versioned `CANDIDATE_EVAL_IPC_V1` channel rather than importing candidate code.
 The channel uses canonical data-only UTF-8 JSON and the protocol is:
 
 ```text
-REQUEST  {version, invocation_id, input_b64}
-RESPONSE {version, invocation_id, status, output_b64, output_sha256}
+REQUEST            {version, invocation_id, input_b64}
+CANDIDATE_RESPONSE {version, invocation_id, output_b64, declared_output_sha256}
+TRUSTED_RESULT     {version, invocation_id, status, observed_output_sha256}
 ```
 
 The evaluator sends only declared test invocation inputs; it never sends hidden
 test source, evaluator-bundle bytes, expected outputs, or pass/fail assertions.
-The candidate returns serialized results; the trusted evaluator applies hidden
-assertions and constructs the required test vector. A non-executable decoder
-performs bounded schema validation before the evaluator consumes any field;
-never use native or object-capable deserialization. The candidate sandbox can
-use only this channel and cannot open arbitrary evaluator or host IPC. An IPC
-or sandbox violation is `EVIDENCE_INCOMPLETE` and is not repaired by rerunning.
-The trusted runner, not candidate-controlled output, assigns the status. The
+The candidate emits only the untrusted `CANDIDATE_RESPONSE`; it does not
+contain a `status` field. `declared_output_sha256` is untrusted metadata: the
+trusted runner decodes the bounded payload and recomputes the observed output
+digest. The separate `TRUSTED_RESULT` is a runner-owned terminal record, not a
+candidate response. A candidate frame with a `status` field is
+`MALFORMED_RESPONSE`; the candidate cannot request a timeout, incomplete
+evidence, or any other terminal classification. The trusted evaluator applies
+hidden assertions to an accepted candidate result and constructs the required
+test vector. A non-executable decoder performs bounded schema validation before
+the evaluator consumes any field; never use native or object-capable
+deserialization. The candidate sandbox can use only this channel and cannot
+open arbitrary evaluator or host IPC. An IPC or sandbox violation is
+`EVIDENCE_INCOMPLETE` and is not repaired by rerunning. The trusted runner,
+not candidate-controlled output, assigns the status in `TRUSTED_RESULT`. The
 status values are `OK`, `RUNTIME_ERROR`, `TIMEOUT`, `MALFORMED_RESPONSE`,
 `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION`. `OK` is evaluated by the hidden
 assertions. `RUNTIME_ERROR` produces a completed failing test vector and an
