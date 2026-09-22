@@ -72,6 +72,7 @@ class SpecificationChecks(unittest.TestCase):
             "any nonterminal active attempt or evaluator",
             "local agent work after the last settled operation",
             "do not classify it as missing or launch later slots",
+            "an outstanding reservation alone does not make a terminal",
             "If neither acceptance nor interruption record can be durably committed",
             "released only by a durable `NOT_DISPATCHED` settlement",
             "operation reservation/settlement ledger",
@@ -104,6 +105,7 @@ class SpecificationChecks(unittest.TestCase):
             "`EVALUATION_INCOMPLETE`",
             "never rerun the evaluator",
             "The invocation record binds the manifest hash, slot ID",
+            "slot `run_id` (or explicit `NULL` for A)",
             "Each C slot uses a unique persisted `run_id`",
             "version-zero empty graph",
             "no session, memory, cache, or service-state reuse",
@@ -160,6 +162,8 @@ class SpecificationChecks(unittest.TestCase):
             "atomic compare-and-set",
             "only the owner may dispatch",
             "no concurrent owner",
+            "no later slot dispatch is allowed",
+            "restart never resumes an active evaluator",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
@@ -213,8 +217,8 @@ class SpecificationChecks(unittest.TestCase):
             "already authorized operation may finish and settle",
             "Limit exhaustion alone does not mark the slot unresolved",
             "phase-specific unresolved reason",
-            "trusted runner confirms the same invocation is active",
-            "Otherwise `EVALUATION_INCOMPLETE`",
+            "restart never resumes an active evaluator",
+            "started evaluation without a durable complete bound result at restart is recorded as `EVALUATION_INCOMPLETE`",
             "does not by itself make the attempt nonretryable",
             "new reservation",
         ):
@@ -479,7 +483,9 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "service startup refuses a second owner",
             "serialized recovery",
-            "restart recovery of an incomplete receipt",
+            "restart recovery of incomplete receipts",
+            "Restart recovery of an incomplete receipt applies only to durable providers",
+            "`MemoryEventStore` cannot claim process-restart recovery",
             "`IDEMPOTENCY_CONFLICT`",
             "stored and supplied canonical request hashes",
             "Add claims, leases, or parallel workers only after a measured requirement",

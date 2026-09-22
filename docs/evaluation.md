@@ -220,8 +220,8 @@ content or streamed content, or any tool call, append a durable
 semantic-acceptance marker before the response is passed to the agent or tool
 executor. If that marker cannot be committed, do not expose the response;
 mark the attempt interrupted and missing. Treat an ambiguous interrupted
-attempt as post-semantic and missing. On restart, an outstanding reservation
-or attempt without a durable terminal state is never retried or redispatched.
+attempt as post-semantic and missing. On restart, an attempt or dispatched
+operation without a durable terminal state is never retried or redispatched.
 A retry is eligible only when durable state explicitly says
 `PRE_SEMANTIC_FAILURE`, records every dispatched operation as terminal, and
 proves that no semantic response was accepted, and the reason-code mapping
@@ -229,8 +229,10 @@ above classifies the terminal failure as `PRE_SEMANTIC_FAILURE`. An explicit
 dispatched pre-semantic transport failure is therefore retryable only when its
 reason code is in the allowlist above; dispatch alone neither grants nor
 removes eligibility. A reservation is released only by a durable `NOT_DISPATCHED`
-settlement; without that proof it remains consumed in budget accounting. That
-consumed reservation does not by itself make the attempt nonretryable: a
+settlement; without that proof it remains consumed in budget accounting. The
+rule is: an outstanding reservation alone does not make a terminal
+`PRE_SEMANTIC_FAILURE` ineligible. That consumed reservation does not by itself
+make the attempt nonretryable: a
 terminal `PRE_SEMANTIC_FAILURE` may take its mandatory whole-slot retry when
 all dispatched operations are terminal, no semantic response was accepted,
 and a new reservation fits the remaining budget. The retry allocates a new
@@ -258,27 +260,34 @@ scoring. Write
 `SLOT_STARTED` with durable `slot_started_at` and
 `absolute_slot_deadline` before agent dispatch. `absolute_slot_deadline` is the
 agent deadline and is separate from `absolute_evaluator_deadline`. Retries and
-restarts reload that same absolute slot deadline; downtime counts toward it and
-never creates a fresh slot deadline. After restart, a completed slot with valid
-evidence is skipped. Before applying the missing fallback, reconcile terminal
+restarts reload that same absolute slot deadline for read-only reconciliation;
+downtime counts toward it and never creates a fresh slot deadline. After
+restart, a completed slot with valid evidence is skipped only for read-only
+reconciliation; no later slot dispatch is allowed. Before applying the missing
+fallback, reconcile terminal
 agent results first. Finalize `NO_PATCH` only with its durable no-evaluation
 reason; absence of a patch artifact alone does not establish `NO_PATCH`.
 If a valid patch digest is present but no evaluator invocation exists, launch
 the first
-evaluator invocation if the experiment-wide stop deadline, evaluator-applicable
-budget, and setup permit; otherwise record incomplete evaluation. Before
+evaluator invocation if the coordinator remains live and the experiment-wide
+stop deadline, evaluator-applicable budget, and setup permit; otherwise record
+incomplete evaluation. Before
 launching it, persist `evaluator_started_at` and `absolute_evaluator_deadline`
 in its `STARTED` record. The evaluator deadline is the earlier of the frozen
 evaluator allowance after start and the experiment-wide stop deadline; restarts
-reload it and downtime counts. A terminal agent patch recorded before its agent
-deadline remains eligible for its first evaluator after that deadline. Keep the
-slot nonterminal while this bound evaluation is running. Then reconcile
+reload it for read-only reconciliation and downtime counts. A terminal agent
+patch recorded before its agent deadline remains eligible for its first
+evaluator after that deadline while the coordinator remains live. Keep the
+slot nonterminal while this bound evaluation is running; a restart instead
+records incomplete coverage and launches no evaluator. Then reconcile
 terminal evaluator evidence and finish the slot when all bound terminal
 evidence is valid. A started slot may resume only its one durably recorded
-eligible pre-semantic retry; otherwise it receives no new semantic trajectory.
+eligible pre-semantic retry while the coordinator remains live; after a
+coordinator restart, no active slot or retry resumes and no later slot dispatch
+is allowed.
 A nonterminal slot with a bound evaluator remains open until that evaluator
-reaches terminal state or its evaluator or experiment deadline expires; only
-then is missingness applied.
+reaches terminal state or its evaluator or experiment deadline expires while
+the coordinator remains live; only then is missingness applied.
 
 Each C slot uses a unique persisted `run_id` and a new run namespace. Before
 dispatch, verify a version-zero empty graph (apart from run registration) with
@@ -353,8 +362,10 @@ Run the complete ordered slot list from the manifest. Execute each manifest
 slot entry exactly once, in the recorded task order, with A immediately
 followed by C for each task. Slots do not overlap: finish or durably classify
 the current slot, including its permitted retry and bound evaluator phase,
-before advancing. Recovery preserves this order and skips completed slots;
-this is the frozen "run A and C once" rule. An A failure does not reorder or
+before advancing. Recovery preserves this order for live retries and read-only
+reconciliation; it skips completed slots only for audit and never dispatches a
+later slot after a coordinator restart. This is the frozen "run A and C once"
+rule. An A failure does not reorder or
 suppress its C slot unless a shared stop condition applies. Preserve the exact candidate patch bytes and digest produced by either A or C.
 The agent-result record binds terminal state to the patch digest in one durable
 transition, or records an explicit `NO_PATCH` outcome. An evaluator may use
@@ -399,19 +410,20 @@ use only this channel and cannot open arbitrary evaluator or host IPC. An IPC
 or sandbox violation is `EVIDENCE_INCOMPLETE` and is not repaired by rerunning.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
-task ID, configuration, candidate-patch digest, evaluator version/test
+task ID, configuration, slot `run_id` (or explicit `NULL` for A),
+candidate-patch digest, evaluator version/test
 definition, evaluator bundle digest, clean-baseline identity,
 `evaluator_started_at`, and `absolute_evaluator_deadline`. It has no
-raw-output digest. The terminal result record repeats that invocation binding
+raw-output digest. The terminal result record repeats that full invocation
+binding, including the slot `run_id`,
 and adds the raw-output digest plus either a completed test vector or a trusted
 `CANDIDATE_PATCH_INVALID` rejection reason. An evidenced patch rejection is a
 complete terminal evaluation without a test vector. A completed bound
-evaluation is reused after restart. On recovery, a started
-evaluation without a durable complete bound result remains open only when the
-trusted runner confirms the same invocation is active and within its recorded
-deadline; keep the slot nonterminal and accept only that bound terminal result.
-Otherwise `EVALUATION_INCOMPLETE` is recorded; never rerun the evaluator in
-this pilot.
+evaluation is reused after restart as retained evidence; never rerun the
+evaluator. A
+started evaluation without a durable complete bound result at restart is
+recorded as `EVALUATION_INCOMPLETE`; restart never resumes an active evaluator,
+and no later slot dispatch is allowed in this pilot.
 
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule

@@ -105,7 +105,7 @@ Requirements:
 - persist each returned governance outcome before completing its response;
 - preserve record ordering, append-only history, and versioned payload fidelity for replay/audit, with no required global order across runs;
 - retain normalized evidence according to [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery);
-- serialize proposal evaluation within the owning service process. A restart changes incomplete receipts back to recoverable `PENDING` state; a client resubmission with the same proposal ID replays a final outcome or resumes the normalized request. Add claims, leases, or parallel workers only after a measured requirement and a new contract decision.
+- serialize proposal evaluation within the owning service process. For a durable provider, a restart changes incomplete receipts back to recoverable `PENDING` state; a client resubmission with the same proposal ID replays a final outcome or resumes the normalized request. `MemoryEventStore` preserves only in-process semantics and cannot claim process-restart recovery. Add claims, leases, or parallel workers only after a measured requirement and a new contract decision.
 
 Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart. Proposal processing is serialized by the service owner; multi-worker claims are deferred.
 
@@ -234,7 +234,6 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - consistent proposal snapshots and exact terminal replay metadata after later proposals advance the run;
 - missing/duplicate COMMIT, other terminal outcomes, empty graph events, or mismatched record identities rejected as `INVALID_GRAPH_BATCH` without journal, proposal, or graph changes;
 - duplicate same-ID/different-hash idempotency conflict;
-- restart recovery of an incomplete receipt under exclusive service ownership, with no duplicate final outcome;
 - missing proposal identity rejected before a terminal or graph append;
 - terminal `ABANDONED` recovery status without graph mutation, if recovery cannot resume the stored request;
 - monotonic `journal_position` across audit and graph records;
@@ -248,8 +247,10 @@ For `EventStore`, all providers run a common semantic contract suite covering at
 - independent run journals;
 - byte/semantic fidelity sufficient for deterministic replay and governance audit.
 
-Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions and graph history. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#spec-protocol-store-owner) and restart recovery of incomplete receipts. Lease-clock, claim-fencing, and parallel-worker tests are deferred until that capability is introduced. Reopen durability tests do not apply to the ephemeral memory provider.
+Durable providers additionally run a durability contract suite covering close/reopen and process-restart survival of the full journal, including non-commit decisions, graph history, and restart recovery of incomplete receipts without duplicate final outcomes. Test the ownership/open/crash cases from [STORE-OWNER](protocol.md#spec-protocol-store-owner). Lease-clock, claim-fencing, and parallel-worker tests are deferred until that capability is introduced. Reopen durability tests do not apply to the ephemeral memory provider.
 
-`MemoryEventStore` does **not** claim that durability contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
+`MemoryEventStore` runs the common in-process semantic suite only; it does **not** claim the durability or process-restart recovery contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
+Restart recovery of an incomplete receipt applies only to durable providers;
+`MemoryEventStore` cannot claim process-restart recovery.
 
 Provider-specific tests may add performance/error cases but cannot replace the applicable common suites.
