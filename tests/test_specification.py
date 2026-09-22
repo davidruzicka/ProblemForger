@@ -101,7 +101,8 @@ class SpecificationChecks(unittest.TestCase):
             "slot ledger key includes `run_id`",
             "run registration binds manifest hash, task ID, and configuration",
             "invocation record binds",
-            "raw-output digest only on the terminal result",
+            "either a completed test vector or a trusted `CANDIDATE_PATCH_INVALID` rejection reason",
+            "complete terminal evaluation without a test vector",
             "Then reconcile terminal evaluator evidence and finish the slot",
             "non-streaming semantic content",
             "reconcile terminal agent results first",
@@ -299,6 +300,44 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
+
+    def test_missing_patch_bytes_remain_incomplete_evidence(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        reporting = evaluation.split("### Incomplete reporting", 1)[1].split(
+            "## Practical human decision", 1
+        )[0]
+        self.assertIn(
+            "`CANDIDATE_PATCH_INVALID` — retained, digest-verified candidate content is demonstrably malformed",
+            reporting,
+        )
+        self.assertIn(
+            "`EVIDENCE_INCOMPLETE` — mandatory evidence is missing, unreadable, corrupt, or fails its binding checks",
+            reporting,
+        )
+        self.assertIn("takes precedence over candidate-failure classification", reporting)
+        self.assertNotIn(
+            "`CANDIDATE_PATCH_INVALID` — the produced patch is absent",
+            reporting,
+        )
+
+    def test_patch_rejection_and_no_patch_have_distinct_outcomes(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "trusted, evidenced `CANDIDATE_PATCH_INVALID` rejection is an observed 0",
+            "A durable terminal agent `NO_PATCH` outcome with complete required evidence",
+            "absence of a patch artifact alone does not establish `NO_PATCH`",
+            "candidate evaluation produced neither a completed required test vector nor a complete, evidenced candidate-patch rejection",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+        methodology = " ".join(read("docs/methodology.md").split())
+        for phrase in (
+            "A completed, evidenced `CANDIDATE_PATCH_INVALID` rejection is also a terminal observed zero without a test vector",
+            "An incomplete or missing rejection remains undefined",
+        ):
+            with self.subTest(scope="methodology", phrase=phrase):
+                self.assertIn(phrase, methodology)
 
     def test_measured_contract_is_one_run_and_reports_raw_pairs(self):
         evaluation = read("docs/evaluation.md")

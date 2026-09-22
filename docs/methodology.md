@@ -55,9 +55,11 @@ mean_delta_pp = mean(d_i(C-A)) over the six pairs
 
 The report must show the six rows, not only the mean. Also report provider cost,
 wall-clock latency, agent/tool/service steps, human intervention, and every
-unresolved reason. A completed failing vector is an observed zero; an
-incomplete vector, infrastructure loss, or missing mandatory evidence is an
-undefined outcome. A missing pair makes the pilot incomplete; it is not
+unresolved reason. A completed failing vector is an observed zero. A completed,
+evidenced `CANDIDATE_PATCH_INVALID` rejection is also a terminal observed zero
+without a test vector. An incomplete or missing rejection remains undefined, as
+do an incomplete vector, infrastructure loss, or missing mandatory evidence.
+A missing pair makes the pilot incomplete; it is not
 silently converted to a zero or a favorable observation.
 
 The comparison is package-level. A positive C-A result does not isolate graph

@@ -259,7 +259,8 @@ agent deadline and is separate from `absolute_evaluator_deadline`. Retries and
 restarts reload that same absolute slot deadline; downtime counts toward it and
 never creates a fresh slot deadline. After restart, a completed slot with valid
 evidence is skipped. Before applying the missing fallback, reconcile terminal
-agent results first. Finalize `NO_PATCH` with its durable no-evaluation reason.
+agent results first. Finalize `NO_PATCH` only with its durable no-evaluation
+reason; absence of a patch artifact alone does not establish `NO_PATCH`.
 If a valid patch digest is present but no evaluator invocation exists, launch
 the first
 evaluator invocation if the experiment-wide stop deadline, evaluator-applicable
@@ -370,8 +371,10 @@ task ID, configuration, candidate-patch digest, evaluator version/test
 definition, evaluator bundle digest, clean-baseline identity,
 `evaluator_started_at`, and `absolute_evaluator_deadline`. It has no
 raw-output digest. The terminal result record repeats that invocation binding
-and adds the test vector and raw-output digest only on the terminal result. A
-completed bound evaluation is reused after restart. On recovery, a started
+and adds the raw-output digest plus either a completed test vector or a trusted
+`CANDIDATE_PATCH_INVALID` rejection reason. An evidenced patch rejection is a
+complete terminal evaluation without a test vector. A completed bound
+evaluation is reused after restart. On recovery, a started
 evaluation without a durable complete bound result remains open only when the
 trusted runner confirms the same invocation is active and within its recorded
 deadline; keep the slot nonterminal and accept only that bound terminal result.
@@ -381,10 +384,13 @@ this pilot.
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule
 is: all required `FAIL_TO_PASS` tests pass and all required `PASS_TO_PASS` tests
-remain passing. A completed failing test vector or an evidenced agent failure
-to produce a valid applicable patch is an observed 0. Infrastructure loss,
-an incomplete evaluator vector, or missing mandatory evidence is a missing
-outcome, not an observed failure. Preserve the specific reason in either case.
+remain passing. A completed failing test vector or a trusted, evidenced
+`CANDIDATE_PATCH_INVALID` rejection is an observed 0. A durable terminal agent
+`NO_PATCH` outcome with complete required evidence and a no-evaluation reason is
+also an observed 0; absence of a patch artifact alone does not establish
+`NO_PATCH`. Infrastructure loss, an incomplete evaluator vector, an incomplete
+or missing patch rejection, or missing mandatory evidence is a missing outcome,
+not an observed failure. Preserve the specific reason in either case.
 
 For a complete task pair:
 
@@ -418,12 +424,15 @@ infrastructure success. The report must distinguish:
   be prepared;
 - `PROVIDER_UNAVAILABLE` — the selected provider/model could not answer;
 - `RUN_INTERRUPTED` — execution began but did not finish;
-- `EVALUATION_INCOMPLETE` — candidate evaluation did not produce the required
-  test vector;
-- `CANDIDATE_PATCH_INVALID` — the produced patch is absent, malformed, or
-  cannot be applied;
-- `EVIDENCE_INCOMPLETE` — a slot's mandatory raw evidence is missing or
-  unreadable after execution;
+- `EVALUATION_INCOMPLETE` — candidate evaluation produced neither a completed
+  required test vector nor a complete, evidenced candidate-patch rejection;
+- `CANDIDATE_PATCH_INVALID` — retained, digest-verified candidate content is
+  demonstrably malformed or cannot be applied to the verified frozen baseline;
+  with all other mandatory evidence complete, this is an observed 0;
+- `EVIDENCE_INCOMPLETE` — mandatory evidence is missing, unreadable, corrupt, or
+  fails its binding checks, including absent retained patch bytes for a
+  recorded produced patch; this takes precedence over candidate-failure
+  classification and remains missing;
 - `INCOMPLETE_EVIDENCE` — shared mandatory evidence cannot be retained for the
   remaining experiment;
 - `INCOMPLETE_TASK_POOL` / `INCOMPLETE_COVERAGE` — the planned pilot could not
