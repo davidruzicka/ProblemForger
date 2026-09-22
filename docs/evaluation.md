@@ -408,6 +408,15 @@ performs bounded schema validation before the evaluator consumes any field;
 never use native or object-capable deserialization. The candidate sandbox can
 use only this channel and cannot open arbitrary evaluator or host IPC. An IPC
 or sandbox violation is `EVIDENCE_INCOMPLETE` and is not repaired by rerunning.
+The trusted runner, not candidate-controlled output, assigns the status. The
+status values are `OK`, `RUNTIME_ERROR`, `TIMEOUT`, `MALFORMED_RESPONSE`,
+`PROTOCOL_ERROR`, or `SANDBOX_VIOLATION`. `OK` is evaluated by the hidden
+assertions. `RUNTIME_ERROR` produces a completed failing test vector and an
+observed zero. `TIMEOUT` maps to `EVALUATION_INCOMPLETE`. A
+`MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION` maps to
+`EVIDENCE_INCOMPLETE`. `CANDIDATE_PATCH_INVALID` remains a trusted runner
+outcome, not a candidate-controlled status, and is an observed zero only when
+the patch-invalid evidence is complete.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, slot `run_id` (or explicit `NULL` for A),
@@ -572,7 +581,10 @@ Before starting the first slot, persist `experiment_started_at_utc`,
 execution record. Capture `experiment_process_monotonic_started_ms` at the
 same experiment-start transition. `current_process_monotonic_elapsed_ms` is
 the difference between the current reading and that experiment-start reading;
-never use unanchored process uptime. This is the restart-stable
+never use unanchored process uptime. It must come from a suspend-inclusive
+monotonic clock such as `CLOCK_BOOTTIME` or equivalent. If suspend continuity
+cannot be established, record `INCOMPLETE_COVERAGE`, fail closed, and do not
+launch later slots. This is the restart-stable
 clock domain. Every durable ledger write
 advances the floor to the greatest of its previous value, the elapsed time
 observed from `experiment_started_at_utc`, and the process-monotonic elapsed
