@@ -93,8 +93,11 @@ containing:
 - execution platform, dependency lockfiles, and image/archive digests when
   images or archives are used;
 - evaluator version and required-test definition;
-- workspace isolation mode, agent semantic deadline, evaluator wall-clock
-  allowance, resource limits, retry rule, and human-intervention definition;
+- workspace isolation mode, candidate sandbox policy identity/configuration,
+  worker/agent network policy identity, and the `NETWORK_DENIAL_VERIFIED` and
+  `WORKER_NETWORK_DENIAL_VERIFIED` preflight evidence record identities;
+- agent semantic deadline, evaluator wall-clock allowance, resource limits, retry
+  rule, and human-intervention definition;
 - primary result rule, secondary cost/latency measures, and continuation
   tolerances;
 - random seeds where a component actually uses randomness.
@@ -171,10 +174,17 @@ connection to an unreachable endpoint is not evidence of denial. Persist a
 `NETWORK_DENIAL_VERIFIED` result with bounded network-denial smoke diagnostics
 that are manifest/runtime/sandbox-policy-bound, including the policy
 verification result, canary identities/reachability, and candidate-side
-denial classifications, before the first measured slot. If policy inspection,
-canary reachability, a policy-specific denial, or the durable bound result is
-missing, record `EVIDENCE_INCOMPLETE`, do not dispatch measured work, and do
-not evaluate a patch. These checks run without executing a selected task. If a
+denial classifications, before the first measured slot. The
+`NETWORK_DENIAL_VERIFIED` record is the authority for every measured candidate
+sandbox. Before each evaluator launch, the trusted runner applies the
+manifest's candidate sandbox policy, computes its effective policy identity,
+and requires exact equality with the policy identity in that record. It binds
+`sandbox_policy_id` and `network_denial_evidence_ref` into the evaluator
+`STARTED` record and terminal `TRUSTED_RESULT`; a missing or mismatched
+identity or reference is `EVIDENCE_INCOMPLETE` and prevents launch and
+scoring. If policy inspection, canary reachability, a policy-specific denial,
+or the durable bound result is missing, record `EVIDENCE_INCOMPLETE`, do not
+dispatch measured work, and do not evaluate a patch. These checks run without executing a selected task. If a
 selected task's compatibility predicate is missing, mismatched, or cannot be
 verified, record task-specific `MISSING_SETUP`, do not expose or evaluate that
 task, and do not substitute a different task. A shared inability to apply the
@@ -377,7 +387,12 @@ attempt, operation, and evaluator records (or a durable no-evaluation reason
 when no patch was produced), then validate its mandatory evidence: the
 manifest/version reference, the agent terminal record, the exact candidate
 patch bytes and digest where either A or C produced one, and the evaluator
-output where evaluation ran. Verify the retained bytes against the digest
+output where evaluation ran. For every candidate evaluation, also
+require the bound `NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics.
+Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the
+manifest, the effective measured sandbox, and the evaluator invocation; loss,
+corruption, or mismatch produces `EVIDENCE_INCOMPLETE` rather than a complete
+slot. Verify the retained bytes against the digest
 bound to the evaluator invocation and all slot/configuration bindings. For C,
 the durable ProblemForger journal
 must be readable, identify the run, and retain every received proposal and
@@ -408,6 +423,18 @@ The agent-result record binds terminal state to the patch digest in one durable
 transition, or records an explicit `NO_PATCH` outcome. An evaluator may use
 only the patch digest linked by that record; a stale or separately discovered
 patch is `EVIDENCE_INCOMPLETE`.
+Before exposing any selected task, place the agent/worker namespace and
+every worker-controlled tool/process under a network-denied policy. The worker
+has no DNS, external socket, loopback, or arbitrary host-IPC egress; it may use
+only the declared harness/tool channel. Only a trusted harness/provider process
+outside that namespace may reach the model/provider, and it exposes bounded
+declared responses through the adapter channel. The trusted runner directly
+verifies the worker policy and tests controlled reachable canaries, including a
+remote-solution retrieval attempt; persist a
+`WORKER_NETWORK_DENIAL_VERIFIED` result bound to the manifest, runtime
+identity, and worker-policy identity. If policy enforcement, canary denial, or
+the bound result cannot be verified, record `EVIDENCE_INCOMPLETE` and do not
+expose a selected task.
 Evaluate each produced candidate patch once in a fresh evaluator workspace.
 Use an immutable evaluator bundle from the manifest as a read-only snapshot
 outside the candidate workspace. The worker cannot read evaluator or gold
@@ -501,10 +528,13 @@ before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, slot `run_id` (or explicit `NULL` for A),
 candidate-patch digest, evaluator version/test
 definition, evaluator bundle digest, clean-baseline identity,
-`evaluator_started_at`, and `absolute_evaluator_deadline`. It has no
+`sandbox_policy_id`, `network_denial_evidence_ref`,
+`evaluator_started_at`, and `absolute_evaluator_deadline`. The trusted
+runner verifies the effective measured sandbox policy against the bound
+`NETWORK_DENIAL_VERIFIED` record before launch. It has no
 raw-output digest. The terminal result record repeats that full invocation
-binding, including the slot `run_id`,
-and adds the recomputed `observed_output_sha256` when output was decoded (or
+binding, including the slot `run_id`, `sandbox_policy_id`, and
+`network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
 (or null), plus the status-specific `terminal_payload` described above. The
 record is terminal even when it has no test vector. An evidenced patch

@@ -216,6 +216,14 @@ policy-specific denial must be distinguishable from ordinary DNS resolution,
 timeout, or connection-refused errors. Persist bounded diagnostics and a
 manifest/runtime/sandbox-policy-bound `NETWORK_DENIAL_VERIFIED` result before
 measured work; otherwise record incomplete evidence and do not dispatch.
+Every measured invocation binds `sandbox_policy_id` and
+`network_denial_evidence_ref` to that result; the trusted runner verifies the
+effective policy before launch and final scoring rejects missing, corrupt, or
+mismatched denial evidence.
+The worker/agent namespace is separately network-denied before task exposure;
+worker-controlled tools cannot retrieve remote solutions, and its
+`WORKER_NETWORK_DENIAL_VERIFIED` result is bound to the manifest, runtime, and
+worker policy. A missing worker isolation proof prevents exposure.
 
 ## Presentation
 

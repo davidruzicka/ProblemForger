@@ -452,6 +452,34 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
 
+    def test_network_denial_binds_invocation_and_final_scoring(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "candidate sandbox policy identity/configuration",
+            "the `NETWORK_DENIAL_VERIFIED` record is the authority for every measured candidate sandbox",
+            "Before each evaluator launch",
+            "`sandbox_policy_id`",
+            "`network_denial_evidence_ref`",
+            "Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the manifest",
+            "loss, corruption, or mismatch produces `EVIDENCE_INCOMPLETE`",
+            "terminal `TRUSTED_RESULT`",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_worker_network_isolation_precedes_task_exposure(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "every worker-controlled tool/process under a network-denied policy",
+            "no DNS, external socket, loopback, or arbitrary host-IPC egress",
+            "remote-solution retrieval attempt",
+            "`WORKER_NETWORK_DENIAL_VERIFIED`",
+            "before task exposure",
+            "do not expose a selected task",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
     def test_reopen_preserves_nonempty_journals(self):
         for path in ("docs/modules.md", "docs/protocol.md"):
             document = " ".join(read(path).split())
