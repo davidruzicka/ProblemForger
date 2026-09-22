@@ -560,17 +560,20 @@ agent work after the last settled operation and evaluator execution can consume
 unrecorded elapsed time. Record `INCOMPLETE_COVERAGE`, retain the active phase,
 deadline, reservation, and operation records, and do not classify it as missing
 or launch later slots.
-On coordinator restart, first compare `now_utc_ms` with
-`experiment_last_observed_utc_ms`. If the current time is less than that
-timestamp, or the timestamp is missing/corrupt, fail closed on clock continuity
-loss: record `INCOMPLETE_COVERAGE`, retain all reservations and operations, and
-do not launch later slots. Otherwise anchor effective elapsed time at
+The pilot does not assume a restart-continuous trusted clock. The persisted
+watermark is a lower bound and never clears restart ambiguity. Therefore,
+every coordinator restart is a clock continuity loss, even when current UTC is
+later than the watermark: a backward UTC shift during downtime can still
+refund elapsed time, and the process-monotonic clock resets. Fail closed on
+every coordinator restart: record `INCOMPLETE_COVERAGE`, retain all
+reservations, operations, and active phase/deadline records, do not classify an
+active phase as missing, and do not launch later slots. While the coordinator
+remains live, anchor effective elapsed time at
 `max(experiment_elapsed_floor_ms, max(0, now_utc_ms -
-experiment_started_at_utc))`; a backward UTC shift is detected and cannot
-reduce effective elapsed time or extend the frozen budget, while a forward shift
-may expire it earlier. Compare effective elapsed time with the frozen wall-clock
-limit; the absolute stop deadline is the corresponding deadline in this same
-clock domain. Reload that record and cumulative resource usage; never
+experiment_started_at_utc))`; a forward UTC shift may expire the budget earlier.
+Compare effective elapsed time with the frozen wall-clock limit; the absolute
+stop deadline is the corresponding deadline in this same clock domain. Reload
+that record and cumulative resource usage; never
 reset the deadline, elapsed floor, or spent budgets. Downtime counts toward
 the stop limit. If the record is missing, corrupt, or the clock source cannot
 be read, stop the pilot as `INCOMPLETE_COVERAGE` with the restart reason; do
