@@ -438,6 +438,20 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
 
+    def test_network_denial_requires_bound_authoritative_evidence(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "direct namespace-policy verification",
+            "controlled reachable canaries",
+            "policy-specific denial",
+            "ordinary DNS resolution, timeout, or connection-refused errors",
+            "Persist a `NETWORK_DENIAL_VERIFIED` result",
+            "bounded network-denial smoke diagnostics",
+            "manifest/runtime/sandbox-policy-bound",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
     def test_reopen_preserves_nonempty_journals(self):
         for path in ("docs/modules.md", "docs/protocol.md"):
             document = " ".join(read(path).split())

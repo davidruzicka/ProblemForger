@@ -161,14 +161,25 @@ Before the first measured agent run:
    its pinned metadata and required-test definition, against the manifest;
 5. verify a clean isolated workspace and the declared resource accounting.
 
-The network-denial smoke fixture must attempt DNS, an external socket, and a
-loopback service connection and must observe denial. These checks run without
-executing a selected task. If a selected task's compatibility predicate is
-missing, mismatched, or cannot be verified, record task-specific
-`MISSING_SETUP`, do not expose or evaluate that task, and do not substitute a
-different task. A shared inability to apply the predicate before exposure
-invalidates the manifest and requires `INCOMPLETE_TASK_POOL` or a new
-manifest/version.
+The network-denial smoke fixture is an authoritative isolation check, not just
+a connectivity test. Before the candidate-side attempts, the trusted runner
+performs direct namespace-policy verification and exposes controlled reachable
+canaries for DNS, an external socket, and a loopback service. Candidate-side
+attempts must produce a policy-specific denial distinguishable from ordinary
+DNS resolution, timeout, or connection-refused errors; a failed lookup or a
+connection to an unreachable endpoint is not evidence of denial. Persist a
+`NETWORK_DENIAL_VERIFIED` result with bounded network-denial smoke diagnostics
+that are manifest/runtime/sandbox-policy-bound, including the policy
+verification result, canary identities/reachability, and candidate-side
+denial classifications, before the first measured slot. If policy inspection,
+canary reachability, a policy-specific denial, or the durable bound result is
+missing, record `EVIDENCE_INCOMPLETE`, do not dispatch measured work, and do
+not evaluate a patch. These checks run without executing a selected task. If a
+selected task's compatibility predicate is missing, mismatched, or cannot be
+verified, record task-specific `MISSING_SETUP`, do not expose or evaluate that
+task, and do not substitute a different task. A shared inability to apply the
+predicate before exposure invalidates the manifest and requires
+`INCOMPLETE_TASK_POOL` or a new manifest/version.
 
 A task-specific setup failure is recorded with a reason and does not authorize
 selecting another task. Continue independent preflight/measurement slots when
@@ -622,7 +633,8 @@ dependency identities, model/provider metadata, exact request settings,
 candidate-patch digest, durable ProblemForger journal, raw evaluator output,
 slot ledger, evaluator invocation/result records, operation
 reservation/settlement ledger, cost/latency measurements,
-human-intervention log, and all failure reasons.
+human-intervention log, the bounded manifest/runtime/sandbox-policy-bound
+`NETWORK_DENIAL_VERIFIED` diagnostics, and all failure reasons.
 Redact credentials without changing content that was visible to the agent or
 affected its behavior.
 

@@ -210,6 +210,13 @@ required-test definition before selection and again against the manifest before
 exposure. A missing or unverifiable predicate is recorded as setup evidence,
 never silently substituted or treated as a candidate failure.
 
+The denial check itself is evidence-bearing: the trusted runner performs direct
+namespace-policy verification and tests controlled reachable canaries. A
+policy-specific denial must be distinguishable from ordinary DNS resolution,
+timeout, or connection-refused errors. Persist bounded diagnostics and a
+manifest/runtime/sandbox-policy-bound `NETWORK_DENIAL_VERIFIED` result before
+measured work; otherwise record incomplete evidence and do not dispatch.
+
 ## Presentation
 
 ### "Another agent framework"
