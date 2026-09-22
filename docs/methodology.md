@@ -55,8 +55,10 @@ mean_delta_pp = mean(d_i(C-A)) over the six pairs
 
 The report must show the six rows, not only the mean. Also report provider cost,
 wall-clock latency, agent/tool/service steps, human intervention, and every
-unresolved reason. A missing pair makes the pilot incomplete; it is not silently
-converted to a zero or a favorable observation.
+unresolved reason. A completed failing vector is an observed zero; an
+incomplete vector, infrastructure loss, or missing mandatory evidence is an
+undefined outcome. A missing pair makes the pilot incomplete; it is not
+silently converted to a zero or a favorable observation.
 
 The comparison is package-level. A positive C-A result does not isolate graph
 storage from governance, instructions, or service overhead. If that distinction
@@ -86,10 +88,14 @@ the report. A shared failure before measured execution stops the pilot and
 requires a setup correction or new manifest. No task or model substitution is
 allowed after exposure.
 
-Only a clearly pre-semantic infrastructure failure gets one clean retry. Once a
-semantic model response has been accepted, the trajectory is retained as-is;
-there is no regeneration to obtain a nicer outcome. This protects practical
-comparability without requiring a distributed retry coordinator.
+The exact ordering is owned by the normative evaluation contract. An eligible
+retry is mandatory unless a recorded terminal condition prevents it. A durable
+operation ledger reserves counted work before dispatch and settles actual usage;
+a semantic-acceptance marker is durable before content or a tool call reaches
+the agent. An ambiguous interruption is missing and is never regenerated.
+Once a semantic model response has been accepted, the trajectory is retained
+as-is. This protects practical comparability without requiring a distributed
+retry coordinator.
 
 ## Sensitivity
 

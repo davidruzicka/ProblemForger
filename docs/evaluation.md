@@ -156,6 +156,49 @@ Freeze before exposure:
 - no replacement of a trajectory after a semantic response has been accepted;
 - an explicit count of human interventions, including setup/recovery help.
 
+### Durable attempt and operation ordering
+
+Create a durable attempt record with `semantic_state=NOT_ACCEPTED` before any
+dispatch. For every provider request, tool call, or service call counted
+against a frozen request, spend, tool, or service limit, append an operation
+reservation with a unique ID and reserved units before dispatch. The
+reservation counts against the limit until settled; completion appends actual
+usage and settles it. Do not dispatch if the reservation cannot be committed.
+
+When the first streamed content or tool call is accepted, append a durable
+semantic-acceptance marker before the response is passed to the agent or tool
+executor. If that marker cannot be committed, do not expose the response;
+mark the attempt interrupted and missing. Treat an ambiguous interrupted
+attempt as post-semantic and missing. On restart, an outstanding reservation
+or attempt without a durable terminal state is never retried or redispatched.
+A retry is eligible only when durable state explicitly says
+`PRE_SEMANTIC_FAILURE`, records every dispatched operation as terminal, and
+proves that no semantic response was accepted. An explicit pre-semantic
+transport failure therefore remains retryable even if its request was
+dispatched. A reservation is released only by a durable `NOT_DISPATCHED`
+settlement; without that proof it remains consumed and the attempt is not
+retryable. If neither acceptance nor interruption record can be durably
+committed, classify the attempt as shared evidence failure and stop new work.
+Retain all attempt, reservation, settlement, and interruption records.
+
+### Slot ledger, evaluator binding, and isolation
+
+Before the first measured dispatch, create a durable slot ledger keyed by
+`(manifest_hash, task_id, configuration)` with state `PLANNED`. Write
+`SLOT_STARTED` with durable `slot_started_at` and
+`absolute_slot_deadline` before agent dispatch. Retries and restarts reload
+that same absolute slot deadline; downtime counts toward it and never creates
+a fresh slot deadline. After restart, a completed slot with valid evidence is
+skipped. A started slot may resume only
+its one durably recorded eligible pre-semantic retry; otherwise a nonterminal
+started slot is marked missing and receives no new semantic trajectory.
+
+Each C slot uses a unique persisted `run_id` and a new run namespace. Before
+dispatch, verify a version-zero empty graph (apart from run registration) with
+no prior proposals, evidence, or graph events. Fresh workspaces also require
+no session, memory, cache, or service-state reuse across slots. A failed
+isolation check prevents dispatch and is recorded as missing evidence.
+
 For an eligible first-attempt failure, the runner must take that retry unless
 a recorded deadline, exhausted budget, shared integrity failure, or operator
 abort prevents it. This is one whole-slot restart, not an additional per-call
@@ -169,11 +212,14 @@ slots if the experiment-wide runtime is still valid. Do not treat a missing
 slot as success or failure and do not buy extra retries after seeing its
 outcome.
 
-Before a slot is scored as either 0 or 1, validate its mandatory evidence: the
+Before a slot is scored as either 0 or 1, require complete and reconciled slot,
+attempt, operation, and evaluator records (or a durable no-evaluation reason
+when no patch was produced), then validate its mandatory evidence: the
 manifest/version reference, the agent terminal record, the exact candidate
 patch bytes and digest where either A or C produced one, and the evaluator
 output where evaluation ran. Verify the retained bytes against the digest
-bound to the evaluator invocation. For C, the durable ProblemForger journal
+bound to the evaluator invocation and all slot/configuration bindings. For C,
+the durable ProblemForger journal
 must be readable, identify the run, and retain every received proposal and
 every returned terminal outcome. Zero proposals is valid; an interrupted
 pending proposal is not fabricated into a terminal outcome. If the manifest declares a native trajectory archive as
@@ -192,6 +238,12 @@ available artifacts and do not assign a complete-pilot decision.
 Run tasks in the frozen order. For each task, run A and C once in fresh
 workspaces. Preserve the exact candidate patch bytes and digest produced by either A or C.
 Evaluate each produced candidate patch once in a fresh evaluator workspace.
+Persist an evaluator `STARTED` record, bound to the slot and patch, before
+launching it. Each evaluation record binds the manifest hash, slot ID, task ID,
+configuration, candidate-patch digest, evaluator version/test definition, and
+raw-output digest. A completed bound evaluation is reused after restart. A
+started evaluation without a durable complete bound result is
+`EVALUATION_INCOMPLETE`; never rerun the evaluator in this pilot.
 
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule
@@ -301,7 +353,9 @@ for a later, separately designed study.
 Retain the manifest, its hash, task order, task/image identities, source and
 dependency identities, model/provider metadata, exact request settings,
 candidate-patch digest, durable ProblemForger journal, raw evaluator output,
-cost/latency measurements, human-intervention log, and all failure reasons.
+slot ledger, evaluator invocation/result records, operation
+reservation/settlement ledger, cost/latency measurements,
+human-intervention log, and all failure reasons.
 Redact credentials without changing content that was visible to the agent or
 affected its behavior.
 
@@ -330,6 +384,13 @@ reset the deadline or spent budgets. Downtime counts toward the stop limit.
 If the record is missing, corrupt, or clock continuity cannot be trusted, stop
 the pilot as `INCOMPLETE_COVERAGE` with the restart reason; do not launch more
 slots. Interrupted semantic trajectories remain missing and are not rerun.
+Replay the operation ledger on restart. An outstanding reservation is included
+in remaining-budget calculations and is treated as consumed at its reserved
+amount until settled; if its state cannot be reconciled, stop and must not
+launch more work. For a spend limit, reserve a bounded pre-dispatch charge
+when one is available. If no bounded charge can be known before dispatch,
+record that spend usage is `UNKNOWN` and do not claim that a local counter
+enforces the provider spend limit.
 Check the remaining budget before every slot/retry, and terminate active work
 when the experiment deadline is reached. Preserve completed results and mark
 unfinished or unstarted slots missing. An operator abort has the same no-new-work

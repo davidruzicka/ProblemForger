@@ -28,6 +28,65 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
 
+    def test_interrupted_attempts_and_inflight_usage_are_durable(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "durable semantic-acceptance marker",
+            "before the response is passed to the agent",
+            "Treat an ambiguous interrupted attempt as post-semantic and missing",
+            "operation reservation",
+            "before dispatch",
+            "counts against the limit until settled",
+            "outstanding reservation",
+            "must not launch more work",
+            "spend usage is `UNKNOWN`",
+            "records every dispatched operation as terminal",
+            "If neither acceptance nor interruption record can be durably committed",
+            "released only by a durable `NOT_DISPATCHED` settlement",
+            "operation reservation/settlement ledger",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_summary_documents_do_not_restate_superseded_p6_rules(self):
+        methodology = " ".join(read("docs/methodology.md").split())
+        checks = " ".join(read("docs/specification-checks.md").split())
+        for phrase in (
+            "durable operation ledger",
+            "semantic-acceptance marker",
+            "ambiguous interruption is missing",
+            "eligible retry is mandatory",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, methodology)
+        self.assertNotIn("complete vectors `[fail, pass]`", checks)
+        self.assertIn("separate smoke fixture", checks)
+
+    def test_slots_evaluator_binding_and_c_isolation_are_frozen(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "durable slot ledger keyed by",
+            "`SLOT_STARTED`",
+            "completed slot with valid evidence is skipped",
+            "started slot may resume only",
+            "nonterminal started slot",
+            "Persist an evaluator `STARTED` record",
+            "`EVALUATION_INCOMPLETE`",
+            "never rerun the evaluator",
+            "Each evaluation record binds",
+            "manifest hash, slot ID",
+            "Each C slot uses a unique persisted `run_id`",
+            "version-zero empty graph",
+            "no session, memory, cache, or service-state reuse",
+            "complete and reconciled slot, attempt, operation, and evaluator records",
+            "durable `slot_started_at`",
+            "absolute_slot_deadline",
+            "restarts reload that same absolute slot deadline",
+            "downtime counts toward it",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
     def test_p6_is_small_and_explicitly_practical(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (

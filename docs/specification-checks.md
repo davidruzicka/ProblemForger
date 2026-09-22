@@ -63,7 +63,7 @@ Document checks protect contract wording. Historical audit context belongs in th
 Two reasoning fixtures motivate implementation tests:
 
 - **Serialized recovery:** a proposal receipt is durable before evaluation. A crash leaves it incomplete; after restart the exclusive owner replays or resumes the same normalized request by proposal ID, without creating a second final outcome. Test real open/close/crash recovery in issue #16; this document does not implement a lock.
-- **Preflight:** complete vectors `[fail, pass]` and `[pass, pass]` already establish instability. None of the four possible third binary vectors can make all vectors equal. A diagnostic infrastructure failure must not change the task result or abort the experiment. Test this in the benchmark adapter without opening any selected P6 task.
+- **Preflight:** run the evaluator on a separate smoke fixture before measured execution. A task-specific setup failure records a reason without authorizing task substitution; a shared failure before measured execution stops the pilot. Test this in the benchmark adapter without opening any selected P6 task.
 
 P1/P3/P6 issues retain responsibility for real persistence, isolation, evidence, and evaluator behavior tests. A passing document check cannot replace those suites. Do not materialize or execute selected P6 tasks while adding these checks.
 
