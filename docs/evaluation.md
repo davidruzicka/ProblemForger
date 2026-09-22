@@ -387,7 +387,9 @@ failure and do not buy extra retries after seeing its outcome.
 
 Before a slot is scored as either 0 or 1, require complete and reconciled slot,
 attempt, operation, and evaluator records (or a durable no-evaluation reason
-when no patch was produced), then validate its mandatory evidence: the
+when no patch was produced, or a complete durable `CANDIDATE_PATCH_INVALID`
+outcome with `evaluator_invocation: NOT_DISPATCHED`), then validate its mandatory
+evidence: the
 manifest/version reference, the agent terminal record, the exact candidate
 patch bytes and digest where either A or C produced one, and the evaluator
 output where evaluation ran. For every candidate evaluation, also
@@ -402,8 +404,14 @@ diagnostics. Revalidate `agent_attempt_id`, `worker_policy_id`, and
 namespace, and that attempt's `STARTED` and terminal agent records; loss,
 corruption, or mismatch produces `EVIDENCE_INCOMPLETE` rather than a complete
 slot. A slot cannot be scored unless every dispatched attempt has this bound
-worker evidence. Verify the retained bytes against the digest
-bound to the evaluator invocation and all slot/configuration bindings. For C,
+worker evidence. For an evaluated candidate, verify the retained bytes against the digest
+bound to the evaluator invocation and all slot/configuration bindings. For a
+`CANDIDATE_PATCH_INVALID` outcome, verify the retained bytes and digest against
+the durable invalid-patch outcome binding, including the manifest, slot, task,
+configuration, `run_id`, `agent_attempt_id`, verified baseline, validator
+version, bounded validation evidence, and the explicit
+`evaluator_invocation: NOT_DISPATCHED` marker; no evaluator invocation digest
+is expected. For C,
 the durable ProblemForger journal
 must be readable, identify the run, and retain every received proposal and
 every returned terminal outcome. Zero proposals is valid; an interrupted
