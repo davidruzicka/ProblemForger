@@ -551,7 +551,7 @@ binding, including the slot `run_id`, `sandbox_policy_id`, and
 `network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
 (or null), plus the status-specific `terminal_payload` described above. The
-record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation-phase outcome without a test vector and is marked `evaluator_invocation: NOT_DISPATCHED`. A completed bound
+record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. A completed bound
 evaluation is reused after restart as retained evidence; never rerun the
 evaluator. A
 started evaluation without a durable complete bound result at restart is

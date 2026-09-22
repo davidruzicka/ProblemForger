@@ -528,10 +528,10 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "trusted, evidenced `CANDIDATE_PATCH_INVALID` rejection is an observed 0",
             "A durable terminal agent `NO_PATCH` outcome with complete required evidence",
-            "Patch validation is a trusted coordinator transition separate from the evaluator's \`TRUSTED_RESULT\` status",
-            "durable terminal agent/slot outcome with code \`CANDIDATE_PATCH_INVALID\`",
-            "\`agent_attempt_id\`, candidate-patch digest and retained-byte reference",
-            "\`evaluator_invocation: NOT_DISPATCHED\` marker",
+            "Patch validation is a trusted coordinator transition separate from the evaluator's `TRUSTED_RESULT` status",
+            "durable terminal agent/slot outcome with code `CANDIDATE_PATCH_INVALID`",
+            "`agent_attempt_id`, candidate-patch digest and retained-byte reference",
+            "`evaluator_invocation: NOT_DISPATCHED` marker",
             "absence of a patch artifact alone does not establish `NO_PATCH`",
             "candidate evaluation produced neither a completed required test vector nor a complete, evidenced candidate-patch rejection",
         ):
