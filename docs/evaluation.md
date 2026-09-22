@@ -400,7 +400,7 @@ The channel uses canonical data-only UTF-8 JSON and the protocol is:
 ```text
 REQUEST            {version, invocation_id, input_b64}
 CANDIDATE_RESPONSE {version, invocation_id, output_b64, declared_output_sha256}
-TRUSTED_RESULT     {version, invocation_id, status, observed_output_sha256}
+TRUSTED_RESULT     {version, invocation_id, status, observed_output_sha256, candidate_frame_sha256}
 ```
 
 The evaluator sends only declared test invocation inputs; it never sends hidden
@@ -410,8 +410,13 @@ contain a `status` field. `declared_output_sha256` is untrusted metadata: the
 trusted runner decodes the bounded payload and recomputes the observed output
 digest. If the declared digest does not equal the recomputed digest, the
 declared digest mismatch is `PROTOCOL_ERROR` and no candidate evidence is
-persisted. The separate `TRUSTED_RESULT` is a runner-owned terminal record, not a
-candidate response. A candidate frame with a `status` field is
+persisted; the digest mismatch is not passed to hidden assertions. The separate
+`TRUSTED_RESULT` is a runner-owned terminal record, not a candidate response.
+`observed_output_sha256` is nullable. `observed_output_sha256` is null when no
+output was decoded. `candidate_frame_sha256` is computed by the trusted runner
+over the exact received candidate frame. `candidate_frame_sha256` is null when
+no candidate frame was received. A
+candidate frame with a `status` field is
 `MALFORMED_RESPONSE`; the candidate cannot request a timeout, incomplete
 evidence, or any other terminal classification. The trusted evaluator applies
 hidden assertions to an accepted candidate result and constructs the required
@@ -426,7 +431,9 @@ status values are `OK`, `RUNTIME_ERROR`, `TIMEOUT`, `MALFORMED_RESPONSE`,
 assertions. `RUNTIME_ERROR` produces a completed failing test vector and an
 observed zero. `TIMEOUT` maps to `EVALUATION_INCOMPLETE`. A
 `MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION` maps to
-`EVIDENCE_INCOMPLETE`. `CANDIDATE_PATCH_INVALID` remains a trusted runner
+`EVIDENCE_INCOMPLETE`. A pre-output `RUNTIME_ERROR` remains a complete failing
+test vector and observed zero even when `observed_output_sha256` is null.
+`CANDIDATE_PATCH_INVALID` remains a trusted runner
 outcome, not a candidate-controlled status, and is an observed zero only when
 the patch-invalid evidence is complete.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
@@ -437,7 +444,9 @@ definition, evaluator bundle digest, clean-baseline identity,
 `evaluator_started_at`, and `absolute_evaluator_deadline`. It has no
 raw-output digest. The terminal result record repeats that full invocation
 binding, including the slot `run_id`,
-and adds the raw-output digest plus either a completed test vector or a trusted
+and adds the recomputed `observed_output_sha256` when output was decoded (or
+null), the trusted `candidate_frame_sha256` when a candidate frame was received
+(or null), plus either a completed test vector or a trusted
 `CANDIDATE_PATCH_INVALID` rejection reason. An evidenced patch rejection is a
 complete terminal evaluation without a test vector. A completed bound
 evaluation is reused after restart as retained evidence; never rerun the
