@@ -220,10 +220,11 @@ Every measured invocation binds `sandbox_policy_id` and
 `network_denial_evidence_ref` to that result; the trusted runner verifies the
 effective policy before launch and final scoring rejects missing, corrupt, or
 mismatched denial evidence.
-The worker/agent namespace is separately network-denied before task exposure;
-worker-controlled tools cannot retrieve remote solutions, and its
-`WORKER_NETWORK_DENIAL_VERIFIED` result is bound to the manifest, runtime, and
-worker policy. A missing worker isolation proof prevents exposure or final
+The worker/agent namespace is separately network-denied before task exposure
+and before every clean retry; worker-controlled tools cannot retrieve remote
+solutions, and each attempt-specific `WORKER_NETWORK_DENIAL_VERIFIED` result is
+bound to the manifest, runtime, worker policy, attempt start, and terminal
+agent record. A missing worker isolation proof prevents exposure or final
 scoring; missing, corrupt, or mismatched worker denial evidence produces
 `EVIDENCE_INCOMPLETE`.
 

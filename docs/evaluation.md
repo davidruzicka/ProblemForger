@@ -395,12 +395,14 @@ require the bound `NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics.
 Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the
 manifest, the effective measured sandbox, and the evaluator invocation; loss,
 corruption, or mismatch produces `EVIDENCE_INCOMPLETE` rather than a complete
-slot. For every measured slot, also require the bound
-`WORKER_NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics. Revalidate
-`worker_policy_id` and `worker_network_evidence_ref` against the manifest, the
-effective worker namespace, and the slot/agent terminal record; loss,
+slot. For every dispatched agent attempt, including clean retries, require its
+attempt-specific `WORKER_NETWORK_DENIAL_VERIFIED` record and bounded
+diagnostics. Revalidate `agent_attempt_id`, `worker_policy_id`, and
+`worker_network_evidence_ref` against the manifest, the effective worker
+namespace, and that attempt's `STARTED` and terminal agent records; loss,
 corruption, or mismatch produces `EVIDENCE_INCOMPLETE` rather than a complete
-slot. Verify the retained bytes against the digest
+slot. A slot cannot be scored unless every dispatched attempt has this bound
+worker evidence. Verify the retained bytes against the digest
 bound to the evaluator invocation and all slot/configuration bindings. For C,
 the durable ProblemForger journal
 must be readable, identify the run, and retain every received proposal and
@@ -431,19 +433,22 @@ The agent-result record binds terminal state to the patch digest in one durable
 transition, or records an explicit `NO_PATCH` outcome. An evaluator may use
 only the patch digest linked by that record; a stale or separately discovered
 patch is `EVIDENCE_INCOMPLETE`.
-Before exposing any selected task, place the agent/worker namespace and
-every worker-controlled tool/process under a network-denied policy. The worker
-has no DNS, external socket, loopback, or arbitrary host-IPC egress; it may use
-only the declared harness/tool channel. Only a trusted harness/provider process
+Before exposing any selected task and before every later agent-attempt launch,
+including a clean whole-slot retry, place the agent/worker namespace and every
+worker-controlled tool/process under a network-denied policy. The worker has no
+DNS, external socket, loopback, or arbitrary host-IPC egress; it may use only
+the declared harness/tool channel. Only a trusted harness/provider process
 outside that namespace may reach the model/provider, and it exposes bounded
 declared responses through the adapter channel. The trusted runner directly
 verifies the worker policy and tests controlled reachable canaries, including a
-remote-solution retrieval attempt; persist a
+remote-solution retrieval attempt; persist an attempt-specific
 `WORKER_NETWORK_DENIAL_VERIFIED` result bound to the manifest, runtime
-identity, and worker-policy identity. Bind `worker_policy_id` and
-`worker_network_evidence_ref` to `SLOT_STARTED` and the terminal agent record.
-If policy enforcement, canary denial, or the bound result cannot be verified,
-record `EVIDENCE_INCOMPLETE` and do not expose a selected task.
+identity, and worker-policy identity. For every attempt, bind `agent_attempt_id`,
+`worker_policy_id`, and `worker_network_evidence_ref` to the attempt `STARTED`
+and terminal agent records; the slot-level record cannot be reused for a new
+attempt. If policy enforcement, canary denial, or the attempt-specific bound
+result cannot be verified, record `EVIDENCE_INCOMPLETE` and do not launch the
+attempt or expose a selected task.
 Evaluate each produced candidate patch once in a fresh evaluator workspace.
 Use an immutable evaluator bundle from the manifest as a read-only snapshot
 outside the candidate workspace. The worker cannot read evaluator or gold
