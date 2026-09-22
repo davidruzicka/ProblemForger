@@ -554,6 +554,12 @@ ambiguous: record `INCOMPLETE_COVERAGE`, retain the reservation and operation,
 and do not reconcile it by releasing budget; do not launch later slots. The
 unresolved in-flight interval remains charged to the incomplete pilot rather
 than becoming available for new work.
+A coordinator restart with any nonterminal active attempt or evaluator is also
+clock-ambiguous even when every provider/tool operation is terminal: local
+agent work after the last settled operation and evaluator execution can consume
+unrecorded elapsed time. Record `INCOMPLETE_COVERAGE`, retain the active phase,
+deadline, reservation, and operation records, and do not classify it as missing
+or launch later slots.
 On coordinator restart, first compare `now_utc_ms` with
 `experiment_last_observed_utc_ms`. If the current time is less than that
 timestamp, or the timestamp is missing/corrupt, fail closed on clock continuity
