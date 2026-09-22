@@ -409,8 +409,10 @@ The candidate emits only the untrusted `CANDIDATE_RESPONSE`; it does not
 contain a `status` field. `declared_output_sha256` is untrusted metadata: the
 trusted runner decodes the bounded payload and recomputes the observed output
 digest. If the declared digest does not equal the recomputed digest, the
-declared digest mismatch is `PROTOCOL_ERROR` and no candidate evidence is
-persisted; the digest mismatch is not passed to hidden assertions. The separate
+declared digest mismatch is `PROTOCOL_ERROR`. Retain the bounded raw candidate
+frame as quarantined evidence with both declared and observed digests and its
+trusted `candidate_frame_sha256`; the quarantined frame is not passed to hidden
+assertions or scoring. The separate
 `TRUSTED_RESULT` is a runner-owned terminal record, not a candidate response.
 `observed_output_sha256` is nullable. `observed_output_sha256` is null when no
 output was decoded. `candidate_frame_sha256` is computed by the trusted runner
