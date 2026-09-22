@@ -315,7 +315,7 @@ reconciliation; no later slot dispatch is allowed. Before applying the missing
 fallback, reconcile terminal
 agent results first. Finalize `NO_PATCH` only with its durable no-evaluation
 reason; absence of a patch artifact alone does not establish `NO_PATCH`.
-If a valid patch digest is present but no evaluator invocation exists, launch
+If a retained patch passes frozen validation, its digest is valid, and no evaluator invocation exists, launch
 the first
 evaluator invocation if the coordinator remains live and the experiment-wide
 stop deadline, evaluator-applicable budget, and setup permit; otherwise record
@@ -551,8 +551,7 @@ binding, including the slot `run_id`, `sandbox_policy_id`, and
 `network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
 (or null), plus the status-specific `terminal_payload` described above. The
-record is terminal even when it has no test vector. An evidenced patch
-rejection is a complete terminal evaluation without a test vector. A completed bound
+record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation-phase outcome without a test vector and is marked `evaluator_invocation: NOT_DISPATCHED`. A completed bound
 evaluation is reused after restart as retained evidence; never rerun the
 evaluator. A
 started evaluation without a durable complete bound result at restart is
@@ -560,6 +559,20 @@ recorded as `EVALUATION_INCOMPLETE` with reason `COORDINATOR_RESTART`; this is
 the durable terminal transition for that evaluator and marks the slot missing.
 Restart never resumes an active evaluator, and no later slot dispatch is allowed
 in this pilot.
+
+Patch validation is a trusted coordinator transition separate from the evaluator's
+`TRUSTED_RESULT` status. When retained candidate patch bytes are
+digest-verified but fail the frozen baseline/applicability validator, append a
+durable terminal agent/slot outcome with code `CANDIDATE_PATCH_INVALID` and bind
+it to the manifest hash, slot ID, task ID, configuration, slot `run_id` (or
+explicit `NULL` for A), `agent_attempt_id`, candidate-patch digest and
+retained-byte reference, verified baseline identity, validator version, and a
+bounded validation reason/evidence reference. Record an explicit
+`evaluator_invocation: NOT_DISPATCHED` marker for this outcome. The transition
+is idempotent and remains terminal across restart; final scoring requires the
+complete binding and evidence. If any binding, retained bytes, digest, baseline,
+validator, or evidence is missing or mismatched, record
+`EVIDENCE_INCOMPLETE` instead and never count the rejection as an observed zero.
 
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule

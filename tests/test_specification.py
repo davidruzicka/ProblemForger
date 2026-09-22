@@ -528,6 +528,10 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "trusted, evidenced `CANDIDATE_PATCH_INVALID` rejection is an observed 0",
             "A durable terminal agent `NO_PATCH` outcome with complete required evidence",
+            "Patch validation is a trusted coordinator transition separate from the evaluator's \`TRUSTED_RESULT\` status",
+            "durable terminal agent/slot outcome with code \`CANDIDATE_PATCH_INVALID\`",
+            "\`agent_attempt_id\`, candidate-patch digest and retained-byte reference",
+            "\`evaluator_invocation: NOT_DISPATCHED\` marker",
             "absence of a patch artifact alone does not establish `NO_PATCH`",
             "candidate evaluation produced neither a completed required test vector nor a complete, evidenced candidate-patch rejection",
         ):
@@ -726,7 +730,7 @@ class SpecificationChecks(unittest.TestCase):
         }
         found = {}
         for path in (ROOT / "docs").rglob("*.md"):
-            for spec_id in re.findall(r"<!-- spec-id: ([A-Z0-9.-]+) -->", path.read_text()):
+            for spec_id in re.findall(r"<!-- spec-id: ([A-Z0-9.-]+) -->", path.read_text(encoding="utf-8")):
                 found.setdefault(spec_id, []).append(path.relative_to(ROOT).as_posix())
         self.assertEqual(set(found), set(expected))
         ownership = read("docs/specification-checks.md")
@@ -784,7 +788,7 @@ class SpecificationChecks(unittest.TestCase):
 
     def test_relative_document_links_resolve(self):
         for path in ROOT.rglob("*.md"):
-            for target in re.findall(r"\]\(([^)]+)\)", path.read_text()):
+            for target in re.findall(r"\]\(([^)]+)\)", path.read_text(encoding="utf-8")):
                 if "://" in target or target.startswith("#"):
                     continue
                 with self.subTest(file=str(path.relative_to(ROOT)), target=target):
