@@ -297,9 +297,12 @@ known stopped and the ownership record is safely transferred; overlapping
 recovery is forbidden.
 
 Before the first measured dispatch, generate and persist the C `run_id` for
-each slot. The slot ledger key includes `run_id` for C slots (and explicit
-`NULL` for A slots): `(manifest_hash, task_id, configuration, run_id)`, with
-state `PLANNED`. The C run registration binds manifest hash, task ID, and
+each slot. The slot ledger key uses a non-null `slot_identity`:
+`(manifest_hash, task_id, configuration, slot_identity)`. For C,
+`slot_identity` is the persisted `run_id`; for A, `slot_identity` is the literal
+`A_SLOT` sentinel while the protocol `run_id` remains explicit `NULL`. No
+uniqueness constraint uses nullable `run_id` alone. The slot record has state
+`PLANNED`. The C run registration binds manifest hash, task ID, and
 configuration plus `run_id` to the same slot record before dispatch and
 scoring. Write
 `SLOT_STARTED` with durable `slot_started_at` and

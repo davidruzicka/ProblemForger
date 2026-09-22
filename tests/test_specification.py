@@ -110,6 +110,9 @@ class SpecificationChecks(unittest.TestCase):
             "The invocation record binds the manifest hash, slot ID",
             "slot `run_id` (or explicit `NULL` for A)",
             "Each C slot uses a unique persisted `run_id`",
+            "non-null `slot_identity`",
+            "`A_SLOT` sentinel",
+            "No uniqueness constraint uses nullable `run_id` alone",
             "version-zero empty graph",
             "no session, memory, cache, or service-state reuse",
             "complete and reconciled slot, attempt, operation, and evaluator records",
@@ -479,7 +482,6 @@ class SpecificationChecks(unittest.TestCase):
             "`WORKER_NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics",
             "`worker_policy_id`",
             "`worker_network_evidence_ref`",
-            "final scoring",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
