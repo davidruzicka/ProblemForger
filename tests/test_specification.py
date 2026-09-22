@@ -184,7 +184,7 @@ class SpecificationChecks(unittest.TestCase):
             "IPC or sandbox violation is `EVIDENCE_INCOMPLETE`",
             "evaluator bundle digest",
             "trusted runner",
-            "slot ledger key includes `run_id`",
+            "slot ledger key uses a non-null `slot_identity`",
             "run registration binds manifest hash, task ID, and configuration",
             "invocation record binds",
             "plus the status-specific `terminal_payload` described above",
