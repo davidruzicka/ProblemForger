@@ -189,7 +189,7 @@ class SpecificationChecks(unittest.TestCase):
             "invocation record binds",
             "plus the status-specific `terminal_payload` described above",
             "complete terminal evaluation without a test vector",
-            "complete durable \`CANDIDATE_PATCH_INVALID\` outcome with \`evaluator_invocation: NOT_DISPATCHED\`",
+            "complete durable `CANDIDATE_PATCH_INVALID` outcome with `evaluator_invocation: NOT_DISPATCHED`",
             "For an evaluated candidate, verify the retained bytes against the digest",
             "no evaluator invocation digest is expected",
             "Then reconcile terminal evaluator evidence and finish the slot",
