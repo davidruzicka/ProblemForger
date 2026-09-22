@@ -391,7 +391,11 @@ Candidate code runs in a separate restricted process/namespace and inherits no
 evaluator authority; it may access only its declared task workspace and
 runtime dependencies. The candidate sandbox has no read access to evaluator or
 gold artifacts, hidden tests, evaluator outputs, recorder, ledger, credentials,
-or other non-task host paths.
+or other non-task host paths. The candidate sandbox has no network egress and
+uses a network-denied sandbox; the evaluator isolation test attempts network
+access and expects denial. DNS, external sockets, and loopback access to
+services are denied; required dependencies are preloaded. If network denial
+cannot be verified, record `EVIDENCE_INCOMPLETE` and do not evaluate the patch.
 The trusted evaluator retains hidden tests and the evaluator bundle in its own
 namespace. It launches the candidate through a narrow, length-bounded,
 versioned `CANDIDATE_EVAL_IPC_V1` channel rather than importing candidate code.
@@ -406,9 +410,14 @@ TRUSTED_RESULT     {version, invocation_id, status, observed_output_sha256, cand
 The evaluator sends only declared test invocation inputs; it never sends hidden
 test source, evaluator-bundle bytes, expected outputs, or pass/fail assertions.
 The candidate emits only the untrusted `CANDIDATE_RESPONSE`; it does not
-contain a `status` field. `declared_output_sha256` is untrusted metadata: the
-trusted runner decodes the bounded payload and recomputes the observed output
-digest. If the declared digest does not equal the recomputed digest, the
+contain a `status` field. Before decoding output or applying assertions, the
+trusted runner requires response `version` and `invocation_id` equal the
+outstanding `REQUEST`. Response binding is checked before digest and hidden
+assertions. A binding mismatch is `PROTOCOL_ERROR` and `EVIDENCE_INCOMPLETE`;
+quarantine the raw frame and bind that failure to the terminal result.
+`declared_output_sha256` is untrusted metadata. The trusted runner then
+decodes the bounded payload and recomputes the observed output digest. If the
+declared digest does not equal the recomputed digest, the
 declared digest mismatch is `PROTOCOL_ERROR`. Retain the bounded raw candidate
 frame as quarantined evidence with both declared and observed digests and its
 trusted `candidate_frame_sha256`; the quarantined frame is not passed to hidden

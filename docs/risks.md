@@ -189,12 +189,16 @@ not expose evaluator outputs. Candidate code runs in a separate restricted
 process/namespace and never inherits evaluator authority. The trusted evaluator
 retains hidden tests and uses the versioned `CANDIDATE_EVAL_IPC_V1` channel to
 exchange only declared invocation inputs and untrusted serialized candidate
-results. The candidate response has no status field; the trusted runner records
-status in a separate runner-owned terminal result, recomputes the output digest,
-and rejects a candidate frame whose declared digest does not match. A candidate
-frame that tries to supply a status is also rejected. The channel uses
-canonical data-only UTF-8 JSON and a non-executable decoder; native or
-object-capable deserialization is forbidden.
+results. Candidate execution uses a network-denied sandbox; network egress is
+denied and the evaluator isolation test attempts network access and expects
+denial. The candidate response has no status field; the trusted runner first
+checks that response `version` and `invocation_id` match the outstanding
+request. Response binding is checked before hidden assertions. It then records
+status in a separate runner-owned terminal result,
+recomputes the output digest, and rejects mismatches as protocol/incomplete
+evidence. A candidate frame that tries to supply a status is also rejected. The
+channel uses canonical data-only UTF-8 JSON and a non-executable decoder;
+native or object-capable deserialization is forbidden.
 
 ## Presentation
 
