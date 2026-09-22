@@ -456,7 +456,7 @@ class SpecificationChecks(unittest.TestCase):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (
             "candidate sandbox policy identity/configuration",
-            "the `NETWORK_DENIAL_VERIFIED` record is the authority for every measured candidate sandbox",
+            "The `NETWORK_DENIAL_VERIFIED` record is the authority for every measured candidate sandbox",
             "Before each evaluator launch",
             "`sandbox_policy_id`",
             "`network_denial_evidence_ref`",
