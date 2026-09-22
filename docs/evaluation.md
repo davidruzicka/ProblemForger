@@ -278,16 +278,18 @@ evaluator allowance after start and the experiment-wide stop deadline; restarts
 reload it for read-only reconciliation and downtime counts. A terminal agent
 patch recorded before its agent deadline remains eligible for its first
 evaluator after that deadline while the coordinator remains live. Keep the
-slot nonterminal while this bound evaluation is running; a restart instead
-records incomplete coverage and launches no evaluator. Then reconcile
-terminal evaluator evidence and finish the slot when all bound terminal
-evidence is valid. A started slot may resume only its one durably recorded
-eligible pre-semantic retry while the coordinator remains live; after a
-coordinator restart, no active slot or retry resumes and no later slot dispatch
-is allowed.
+slot nonterminal while this bound evaluation is running. If a coordinator
+restart occurs first, the coordinator restart finalizes it as
+`EVALUATION_INCOMPLETE` with reason `COORDINATOR_RESTART`, retains its
+reservation/operation/phase records, and marks the slot missing; it launches no
+evaluator. Then reconcile terminal evaluator evidence and finish the slot when
+all bound terminal evidence is valid. A started slot may resume only its one
+durably recorded eligible pre-semantic retry while the coordinator remains
+live; after a coordinator restart, no active slot or retry resumes and no later
+slot dispatch is allowed.
 A nonterminal slot with a bound evaluator remains open until that evaluator
 reaches terminal state or its evaluator or experiment deadline expires while
-the coordinator remains live; only then is missingness applied.
+the coordinator remains live; on restart, the finalization above applies.
 
 Each C slot uses a unique persisted `run_id` and a new run namespace. Before
 dispatch, verify a version-zero empty graph (apart from run registration) with
@@ -406,7 +408,9 @@ test source, evaluator-bundle bytes, expected outputs, or pass/fail assertions.
 The candidate emits only the untrusted `CANDIDATE_RESPONSE`; it does not
 contain a `status` field. `declared_output_sha256` is untrusted metadata: the
 trusted runner decodes the bounded payload and recomputes the observed output
-digest. The separate `TRUSTED_RESULT` is a runner-owned terminal record, not a
+digest. If the declared digest does not equal the recomputed digest, the
+declared digest mismatch is `PROTOCOL_ERROR` and no candidate evidence is
+persisted. The separate `TRUSTED_RESULT` is a runner-owned terminal record, not a
 candidate response. A candidate frame with a `status` field is
 `MALFORMED_RESPONSE`; the candidate cannot request a timeout, incomplete
 evidence, or any other terminal classification. The trusted evaluator applies
@@ -439,8 +443,10 @@ complete terminal evaluation without a test vector. A completed bound
 evaluation is reused after restart as retained evidence; never rerun the
 evaluator. A
 started evaluation without a durable complete bound result at restart is
-recorded as `EVALUATION_INCOMPLETE`; restart never resumes an active evaluator,
-and no later slot dispatch is allowed in this pilot.
+recorded as `EVALUATION_INCOMPLETE` with reason `COORDINATOR_RESTART`; this is
+the durable terminal transition for that evaluator and marks the slot missing.
+Restart never resumes an active evaluator, and no later slot dispatch is allowed
+in this pilot.
 
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule
@@ -616,17 +622,19 @@ than becoming available for new work.
 A coordinator restart with any nonterminal active attempt or evaluator is also
 clock-ambiguous even when every provider/tool operation is terminal: local
 agent work after the last settled operation and evaluator execution can consume
-unrecorded elapsed time. Record `INCOMPLETE_COVERAGE`, retain the active phase,
-deadline, reservation, and operation records, and do not classify it as missing
-or launch later slots.
+unrecorded elapsed time. Record `INCOMPLETE_COVERAGE`. The active agent attempt
+is terminalized as `RUN_INTERRUPTED`; the active evaluator is terminalized as
+`EVALUATION_INCOMPLETE`; in either case, mark the slot missing, retain
+reservations, operations, and active phase/deadline records, and do not launch
+later slots.
 The pilot does not assume a restart-continuous trusted clock. The persisted
 watermark is a lower bound and never clears restart ambiguity. Therefore,
 every coordinator restart is a clock continuity loss, even when current UTC is
 later than the watermark: a backward UTC shift during downtime can still
 refund elapsed time, and the process-monotonic clock resets. Fail closed on
 every coordinator restart: record `INCOMPLETE_COVERAGE`, retain all
-reservations, operations, and active phase/deadline records, do not classify an
-active phase as missing, and do not launch later slots. In this contract, phase
+reservations, operations, and active phase/deadline records, apply the active
+phase terminalization above, and do not launch later slots. In this contract, phase
 deadlines are elapsed-domain values: `absolute_slot_deadline` is the effective
 elapsed value at slot start plus the frozen agent allowance, and
 `absolute_evaluator_deadline` is the effective elapsed value at evaluator start

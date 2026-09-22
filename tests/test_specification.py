@@ -74,7 +74,7 @@ class SpecificationChecks(unittest.TestCase):
             "do not launch later slots",
             "any nonterminal active attempt or evaluator",
             "local agent work after the last settled operation",
-            "do not classify it as missing or launch later slots",
+            "active agent attempt is terminalized as `RUN_INTERRUPTED`",
             "an outstanding reservation alone does not make a terminal",
             "If neither acceptance nor interruption record can be durably committed",
             "released only by a durable `NOT_DISPATCHED` settlement",
@@ -150,6 +150,7 @@ class SpecificationChecks(unittest.TestCase):
             "runner-owned terminal record",
             "candidate frame with a `status` field is `MALFORMED_RESPONSE`",
             "recomputes the observed output digest",
+            "declared digest mismatch is `PROTOCOL_ERROR`",
             "non-executable decoder",
             "bounded schema validation",
             "never use native or object-capable deserialization",
@@ -177,7 +178,11 @@ class SpecificationChecks(unittest.TestCase):
             "only the owner may dispatch",
             "no concurrent owner",
             "no later slot dispatch is allowed",
-            "restart never resumes an active evaluator",
+            "Restart never resumes an active evaluator",
+            "coordinator restart finalizes it as `EVALUATION_INCOMPLETE`",
+            "active agent attempt is terminalized as `RUN_INTERRUPTED`",
+            "mark the slot missing",
+            "retain reservations, operations, and active phase/deadline records",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
@@ -231,7 +236,7 @@ class SpecificationChecks(unittest.TestCase):
             "already authorized operation may finish and settle",
             "Limit exhaustion alone does not mark the slot unresolved",
             "phase-specific unresolved reason",
-            "restart never resumes an active evaluator",
+            "Restart never resumes an active evaluator",
             "started evaluation without a durable complete bound result at restart is recorded as `EVALUATION_INCOMPLETE`",
             "does not by itself make the attempt nonretryable",
             "new reservation",
@@ -551,6 +556,11 @@ class SpecificationChecks(unittest.TestCase):
             "`has_more` indicates whether additional visible records existed after that cursor when the query was read",
             "Later appends may be retrieved by polling the returned cursor",
             "no unbounded journal response",
+            "filtered public projection",
+            "authorizes the caller for the explicit `run_id`",
+            "does not return normalized mutation operations",
+            "evidence content or references",
+            "raw `read_journal` records remain internal",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, protocol)
