@@ -21,8 +21,11 @@ The acceptable evidence standard is therefore:
 4. protect durable graph/audit integrity;
 5. let a human make the practical next-step decision.
 
-The six-task size, one agent run, and one evaluator run are scope controls.
-They are not a claim that six tasks provide academic precision.
+The six-task size, one planned agent attempt per configuration/task, and one
+evaluator run per produced patch are scope controls. An eligible pre-semantic
+failure may add one mandatory whole-slot retry, so actual agent attempts are
+reported separately. These choices are not a claim that six tasks provide
+academic precision.
 
 ## Decisions and rationale
 

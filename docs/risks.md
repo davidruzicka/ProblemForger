@@ -46,8 +46,11 @@ external-validity/calibration benchmark.
 
 ### Small-sample overinterpretation
 
-The first P6-AC experiment deliberately uses six tasks, one agent run per
-configuration/task, and one evaluator run per produced patch.
+The first P6-AC experiment deliberately uses six tasks, one planned agent
+attempt per configuration/task, and one evaluator run per produced patch. An
+eligible pre-semantic failure may add one mandatory whole-slot retry, so the
+actual agent-attempt count is reported separately from the twelve planned A/C
+slots.
 
 Mitigation: report every per-task result, operational cost/latency, missingness,
 and the exact tested workflow. Do not convert the PoC into population-level,

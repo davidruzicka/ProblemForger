@@ -61,6 +61,8 @@ get_proposal(run_id, proposal_id)
 record_proposal(run_id, proposal_id, request_hash, normalized_request, receipt_record)
     -> CREATED
     | EXISTING {request_hash, status, last_journal_position}
+    | IDEMPOTENCY_CONFLICT {stored_request_hash, supplied_request_hash, status,
+                            last_journal_position}
     | NOT_FOUND
 
 append_audit(run_id, records[], proposal_id?)
@@ -89,6 +91,7 @@ Requirements:
 
 - persist run registration before accepting proposals; `create_run` is idempotent only when the supplied run metadata has the same canonical serialization and metadata hash as the existing registration; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal, reopening preserves the registration and version-zero state, and every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
 - canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
+- `record_proposal` returns `IDEMPOTENCY_CONFLICT` with the stored and supplied canonical request hashes when an existing `(run_id, proposal_id)` has a different request hash; it does not evaluate or mutate the proposal;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;
 - obey [STORE-OWNER](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - `append_audit` requires `run_id`; terminal records require the matching `proposal_id`, while non-terminal run records may omit it. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;

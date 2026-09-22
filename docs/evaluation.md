@@ -27,9 +27,11 @@ are useful later diagnostics, not prerequisites for this pilot.
 
 The pilot uses six tasks selected by a deterministic benchmark-adapter rule.
 There is one fresh agent run per task/configuration and one evaluator run for
-each produced candidate patch. The planned size is therefore twelve agent runs
-and at most twelve candidate-patch evaluations. These counts describe an
-operational pilot, not statistical precision.
+each produced candidate patch. The planned size is therefore twelve A/C slots
+and at most twelve candidate-patch evaluations. An eligible first-attempt
+failure can require one clean whole-slot retry, so the actual agent attempt
+count can exceed twelve and must be reported separately from the planned slot
+count. These counts describe an operational pilot, not statistical precision.
 
 Out of scope for P6: holdout/calibration data, fallback-model chains,
 population-level uncertainty, automatic routing, Pi portability, and a full
@@ -533,12 +535,18 @@ is unavailable from a provider, record `UNKNOWN` and use the observable local
 limit rather than treating unknown usage as zero.
 
 Before starting the first slot, persist `experiment_started_at_utc`,
-`absolute_stop_deadline_utc`, and a nonnegative, monotonically non-decreasing
-`experiment_elapsed_floor_ms` with the experiment ID in the retained execution
-record. This is the restart-stable clock domain. Every durable ledger write
+`absolute_stop_deadline_utc`, a nonnegative, monotonically non-decreasing
+`experiment_elapsed_floor_ms`, and `experiment_last_observed_utc_ms` with the
+experiment ID in the retained execution record. This is the restart-stable
+clock domain. Every durable ledger write
 advances the floor to the greatest of its previous value, the elapsed time
 observed from `experiment_started_at_utc`, and the process-monotonic elapsed
-time. Before dispatching any new slot or retry, persist the resulting floor.
+time. Persist `experiment_last_observed_utc_ms` with the same record; it is the
+restart-surviving last observed UTC timestamp. Update it atomically with the
+floor on every durable ledger write. Before dispatching any new slot or retry,
+persist the resulting floor and last observed timestamp. A process-monotonic
+clock cannot establish continuity across restart;
+it is supplemental evidence only.
 If a dispatched operation lacks durable terminal settlement, or its
 dispatch/settlement status is ambiguous after restart, treat any interval
 after the last durable floor update as unmeasurable. Clock continuity is
@@ -546,13 +554,17 @@ ambiguous: record `INCOMPLETE_COVERAGE`, retain the reservation and operation,
 and do not reconcile it by releasing budget; do not launch later slots. The
 unresolved in-flight interval remains charged to the incomplete pilot rather
 than becoming available for new work.
-On coordinator restart, anchor effective elapsed time at
+On coordinator restart, first compare `now_utc_ms` with
+`experiment_last_observed_utc_ms`. If the current time is less than that
+timestamp, or the timestamp is missing/corrupt, fail closed on clock continuity
+loss: record `INCOMPLETE_COVERAGE`, retain all reservations and operations, and
+do not launch later slots. Otherwise anchor effective elapsed time at
 `max(experiment_elapsed_floor_ms, max(0, now_utc_ms -
-experiment_started_at_utc))`; a backward UTC shift cannot reduce effective
-elapsed time or extend the frozen budget, while a forward shift may expire it
-earlier. Compare effective elapsed time with the frozen wall-clock limit; the
-absolute stop deadline is the corresponding deadline in this same clock
-domain. Reload that record and cumulative resource usage; never
+experiment_started_at_utc))`; a backward UTC shift is detected and cannot
+reduce effective elapsed time or extend the frozen budget, while a forward shift
+may expire it earlier. Compare effective elapsed time with the frozen wall-clock
+limit; the absolute stop deadline is the corresponding deadline in this same
+clock domain. Reload that record and cumulative resource usage; never
 reset the deadline, elapsed floor, or spent budgets. Downtime counts toward
 the stop limit. If the record is missing, corrupt, or the clock source cannot
 be read, stop the pilot as `INCOMPLETE_COVERAGE` with the restart reason; do
