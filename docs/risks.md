@@ -200,6 +200,16 @@ evidence. A candidate frame that tries to supply a status is also rejected. The
 channel uses canonical data-only UTF-8 JSON and a non-executable decoder;
 native or object-capable deserialization is forbidden.
 
+The blanket network denial could otherwise make a task's required local service
+unrunnable. Mitigation: network-free evaluator compatibility is part of the
+frozen task eligibility predicate and preflight. Required tests and task setup
+that need DNS, external sockets, loopback, local HTTP/DB/browser-driver
+services, or arbitrary IPC are ineligible; only the versioned candidate/evaluator
+IPC channel is permitted. The predicate is checked from pinned metadata and the
+required-test definition before selection and again against the manifest before
+exposure. A missing or unverifiable predicate is recorded as setup evidence,
+never silently substituted or treated as a candidate failure.
+
 ## Presentation
 
 ### "Another agent framework"

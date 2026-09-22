@@ -413,6 +413,21 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
 
+    def test_network_free_task_eligibility_is_frozen(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "network-free evaluator compatibility",
+            "required tests and task setup must be network-free",
+            "DNS, external sockets, loopback, local HTTP/DB/browser-driver services, or arbitrary IPC",
+            "Only `CANDIDATE_EVAL_IPC_V1` is allowed",
+            "before selecting the six tasks",
+            "If the predicate cannot be proved, the task is ineligible",
+            "verify each selected task's recorded network-free compatibility",
+            "without executing a selected task",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
     def test_missing_patch_bytes_remain_incomplete_evidence(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         reporting = evaluation.split("### Incomplete reporting", 1)[1].split(

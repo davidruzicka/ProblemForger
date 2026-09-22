@@ -124,6 +124,16 @@ image merely to obtain a digest.
 
 ## Task selection and preflight
 
+The candidate execution contract requires network-free evaluator
+compatibility. The benchmark adapter's eligibility predicate therefore
+requires that required tests and task setup must be network-free: they may not
+require DNS, external sockets, loopback, local HTTP/DB/browser-driver
+services, or arbitrary IPC. Only `CANDIDATE_EVAL_IPC_V1` is allowed for
+candidate/evaluator communication. Evaluate this predicate from pinned task
+metadata and the frozen required-test definition before selecting the six
+tasks. If the predicate cannot be proved, the task is ineligible. Do not
+inspect a selected task's gold patch while evaluating this predicate.
+
 The benchmark adapter selects six eligible tasks deterministically from its
 declared candidate order. Development and smoke tasks must be separate from
 the selected IDs. No selected task is inspected for its gold patch while the
@@ -144,7 +154,18 @@ Before the first measured agent run:
 2. verify HarnessX, ProblemForger service startup, evaluator availability, and
    the selected model capability;
 3. run the evaluator on a separate smoke fixture, not on a selected task;
-4. verify a clean isolated workspace and the declared resource accounting.
+4. verify each selected task's recorded network-free compatibility, including
+   its pinned metadata and required-test definition, against the manifest;
+5. verify a clean isolated workspace and the declared resource accounting.
+
+The network-denial smoke fixture must attempt DNS, an external socket, and a
+loopback service connection and must observe denial. These checks run without
+executing a selected task. If a selected task's compatibility predicate is
+missing, mismatched, or cannot be verified, record task-specific
+`MISSING_SETUP`, do not expose or evaluate that task, and do not substitute a
+different task. A shared inability to apply the predicate before exposure
+invalidates the manifest and requires `INCOMPLETE_TASK_POOL` or a new
+manifest/version.
 
 A task-specific setup failure is recorded with a reason and does not authorize
 selecting another task. Continue independent preflight/measurement slots when
@@ -396,6 +417,9 @@ uses a network-denied sandbox; the evaluator isolation test attempts network
 access and expects denial. DNS, external sockets, and loopback access to
 services are denied; required dependencies are preloaded. If network denial
 cannot be verified, record `EVIDENCE_INCOMPLETE` and do not evaluate the patch.
+Tasks that require loopback or another denied service are excluded by the
+network-free eligibility and preflight rules, not classified as candidate
+failures.
 The trusted evaluator retains hidden tests and the evaluator bundle in its own
 namespace. It launches the candidate through a narrow, length-bounded,
 versioned `CANDIDATE_EVAL_IPC_V1` channel rather than importing candidate code.
