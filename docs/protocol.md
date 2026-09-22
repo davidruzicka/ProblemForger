@@ -90,7 +90,7 @@ The service must persist the final decision record before returning a completed 
 
 Every mutation command carries a client-generated `proposal_id` that is unique within the ProblemForger run and acts as the idempotency key for transport retries.
 
-On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery), including inline worker assertions. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
+On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery), including inline worker assertions. A C run registration must bind the verified, non-null identities from its manifest; the service rejects missing or `NONE` identities and verifies loaded policy/configuration against the bound identity before accepting a proposal. For a C run, the durable receipt also stores the manifest hash plus the effective graph-intervention identity and effective governance-policy identity from run metadata. Recovery verifies those identities before resuming a pending proposal; a mismatch is recorded as `ABANDONED` and requires a new manifest/version. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
 
 Proposal execution is owned by the service and serialized for the initial P1
 PoC. The durable receipt is the recovery point; it is not a worker lease.
@@ -228,11 +228,11 @@ Conceptually:
 ```text
 get_graph(run_id, ...)
 get_proposal(run_id, proposal_id)
-get_audit_timeline(run_id, after_journal_position?, limit?)
+get_audit_timeline(run_id, limit, after_journal_position?)
 propose_mutation(run_id, proposal_id, expected_graph_version, operations, evidence_refs)
 ```
 
-The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are not: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller.
+The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are not: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller. The public audit query requires a `limit`. That limit is an integer, required, positive, finite, and no greater than the service's finite configured maximum; missing or invalid values return `INVALID_LIMIT`. Results are ordered by ascending `journal_position` after the exclusive cursor and return `next_after_journal_position` plus `has_more` for continuation. An omitted cursor starts at the beginning (position 0); `next_after_journal_position` is the last returned position, or the supplied cursor for an empty page. `has_more` indicates whether additional visible records existed after that cursor when the query was read. Later appends may be retrieved by polling the returned cursor. There is no unbounded journal response.
 
 Configuration B commits proposals after schema/version/core-invariant checks only.
 

@@ -207,6 +207,80 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, manifest)
 
+    def test_intervention_retry_and_slot_order_are_frozen(self):
+        evaluation = read("docs/evaluation.md")
+        manifest = " ".join(evaluation.split("## Pre-P6 manifest\n", 1)[1].split(
+            "## Task selection and preflight\n", 1
+        )[0].split())
+        for phrase in (
+            "graph-intervention content identity",
+            "governance-policy content/configuration identity",
+            "complete ordered A/C slot list",
+            "each task's A slot before its C slot",
+        ):
+            with self.subTest(scope="manifest", phrase=phrase):
+                self.assertIn(phrase, manifest)
+
+        for phrase in (
+            "A records `NONE`",
+            "C requires non-null intervention and governance identities",
+            "trusted runner verifies the loaded graph intervention",
+            "service verifies its loaded governance policy/configuration",
+            "mismatch prevents dispatch or recovery",
+            "not be repaired by relabeling existing evidence",
+        ):
+            with self.subTest(scope="identity", phrase=phrase):
+                self.assertIn(phrase, " ".join(evaluation.split()))
+
+        controls = " ".join(evaluation.split("## Execution controls\n", 1)[1].split(
+            "### Durable attempt and operation ordering\n", 1
+        )[0].split())
+        for phrase in (
+            "Freeze this retry mapping and precedence",
+            "`CONNECTION_FAILURE`",
+            "`TRANSPORT_TIMEOUT`",
+            "`HTTP_429`",
+            "`HTTP_5XX`",
+            "`HARNESS_EXIT_BEFORE_RESPONSE`",
+            "`WORKSPACE_SETUP_FAILURE`",
+            "Apply this classifier only to failed or interrupted attempts",
+            "explicit provider HTTP status takes precedence over a consequent harness exit",
+            "`TRANSPORT_TIMEOUT` requires a recorded transport timeout without an HTTP response",
+            "`CONNECTION_FAILURE` requires a recorded connection failure without an HTTP response",
+            "`HARNESS_EXIT_BEFORE_RESPONSE` applies only when no more specific cause is recorded",
+            "Unknown or conflicting causes are nonretryable",
+            "Retry ineligibility does not change outcome scoring",
+        ):
+            with self.subTest(scope="retry", phrase=phrase):
+                self.assertIn(phrase, controls)
+
+        measured = " ".join(evaluation.split("## Measured evaluation\n", 1)[1].split(
+            "## Practical human decision\n", 1
+        )[0].split())
+        for phrase in (
+            "Execute each manifest slot entry exactly once",
+            "A immediately followed by C for each task",
+            "Slots do not overlap",
+            "before advancing",
+            "Recovery preserves this order",
+            "run A and C once",
+        ):
+            with self.subTest(scope="order", phrase=phrase):
+                self.assertIn(phrase, measured)
+
+        protocol = " ".join(read("docs/protocol.md").split())
+        for phrase in (
+            "effective graph-intervention identity",
+            "effective governance-policy identity",
+            "before resuming a pending proposal",
+            "requires a new manifest/version",
+            "C run registration must bind the verified, non-null identities",
+            "service rejects missing or `NONE` identities",
+            "verifies loaded policy/configuration against the bound identity",
+        ):
+            with self.subTest(scope="recovery", phrase=phrase):
+                self.assertIn(phrase, protocol)
+
     def test_preflight_and_missingness_do_not_substitute_tasks(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (
@@ -337,6 +411,21 @@ class SpecificationChecks(unittest.TestCase):
         self.assertNotIn("expected_owner_id", protocol)
         self.assertNotIn("expected_claim_epoch", protocol)
         self.assertNotIn("spec-protocol-lease-clock", protocol)
+
+    def test_public_graph_audit_surface_is_bounded(self):
+        protocol = " ".join(read("docs/protocol.md").split())
+        for phrase in (
+            "get_audit_timeline(run_id, limit, after_journal_position?)",
+            "That limit is an integer, required, positive, finite",
+            "next_after_journal_position",
+            "has_more",
+            "limit is an integer",
+            "`has_more` indicates whether additional visible records existed after that cursor when the query was read",
+            "Later appends may be retrieved by polling the returned cursor",
+            "no unbounded journal response",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
 
     def test_store_owner_and_recovery_are_the_initial_scope(self):
         protocol = read("docs/protocol.md")

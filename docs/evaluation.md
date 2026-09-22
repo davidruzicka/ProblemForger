@@ -80,6 +80,14 @@ containing:
 - selected provider/model metadata and generation settings;
 - HarnessX source/runtime identity and the ProblemForger service source/runtime
   identity;
+- effective graph-intervention content identity for each configuration (version
+  and digest, or `NONE`), covering agent-visible graph tools, schemas,
+  graph-use instructions, schema/version, query bounds/defaults, serialization,
+  resolved defaults, and adapter mapping;
+- effective governance-policy content/configuration identity for each
+  configuration (version and digest, or `NONE`), covering decision rules,
+  thresholds, required evidence, resolved defaults, and policy configuration;
+- complete ordered A/C slot list: each task's A slot before its C slot;
 - execution platform, dependency lockfiles, and image/archive digests when
   images or archives are used;
 - evaluator version and required-test definition;
@@ -92,6 +100,13 @@ containing:
 The manifest is hashed and retained with every run. A compact manifest is
 intentional: it pins the inputs needed to operate and interpret the pilot
 without pretending that every opaque provider behavior is content-addressable.
+
+For P6, A records `NONE`; C requires non-null intervention and governance
+identities. Retain the identified content, including resolved defaults. Before
+each slot's first dispatch and on recovery, the trusted runner verifies the
+loaded graph intervention against the manifest, and the service verifies its
+loaded governance policy/configuration. A mismatch prevents dispatch or
+recovery and must not be repaired by relabeling existing evidence.
 
 ### What the execution image is for
 
@@ -153,8 +168,34 @@ Freeze before exposure:
   for A and C;
 - a provider-spend or request budget, where the provider exposes one;
 - bounded tool/service-call and output limits;
-- one clean retry only for a failure before the first semantic model response,
-  when the failure is clearly setup/transport infrastructure;
+- Freeze this retry mapping and precedence before exposure. Apply this
+  classifier only to failed or interrupted attempts, after reconciling durable
+  terminal agent/evaluator results. Retry ineligibility does not change outcome
+  scoring:
+  1. shared evidence/integrity failure takes precedence and stops new work;
+  2. accepted or ambiguous semantic exposure, or an unresolved dispatched
+     operation, prohibits retry. Retain any terminal result for scoring; a
+     malformed candidate remains an observed 0, while no terminal result or
+     mandatory evidence remains missing;
+  3. select one failure cause from durable observations. An explicit provider
+     HTTP status takes precedence over a consequent harness exit: `HTTP_429`
+     maps to 429, `HTTP_5XX` maps to 500–599, and other statuses are
+     nonretryable. Conflicting explicit statuses are nonretryable;
+  4. without an HTTP response, `TRANSPORT_TIMEOUT` requires a recorded
+     transport timeout without an HTTP response, and `CONNECTION_FAILURE`
+     requires a recorded connection failure without an HTTP response;
+  5. `WORKSPACE_SETUP_FAILURE` requires failure during workspace preparation;
+  6. `HARNESS_EXIT_BEFORE_RESPONSE` applies only when no more specific cause is
+     recorded;
+  7. Unknown or conflicting causes are nonretryable;
+  8. with no accepted semantic response and every dispatched operation
+     terminal, only `CONNECTION_FAILURE`, `TRANSPORT_TIMEOUT`, `HTTP_429`,
+     `HTTP_5XX`, `HARNESS_EXIT_BEFORE_RESPONSE`, and
+     `WORKSPACE_SETUP_FAILURE` classify as `PRE_SEMANTIC_FAILURE` and permit
+     one clean whole-slot retry when the frozen deadline and budget permit it.
+  This mapping is exhaustive and uses durable process/transport observations,
+  not adapter-specific prose. It applies only to the first attempt; a failure
+  of the clean retry is terminal.
 - no replacement of a trajectory after a semantic response has been accepted;
 - an explicit count of human interventions, including setup/recovery help.
 
@@ -181,9 +222,11 @@ attempt as post-semantic and missing. On restart, an outstanding reservation
 or attempt without a durable terminal state is never retried or redispatched.
 A retry is eligible only when durable state explicitly says
 `PRE_SEMANTIC_FAILURE`, records every dispatched operation as terminal, and
-proves that no semantic response was accepted. An explicit pre-semantic
-transport failure therefore remains retryable even if its request was
-dispatched. A reservation is released only by a durable `NOT_DISPATCHED`
+proves that no semantic response was accepted, and the reason-code mapping
+above classifies the terminal failure as `PRE_SEMANTIC_FAILURE`. An explicit
+dispatched pre-semantic transport failure is therefore retryable only when its
+reason code is in the allowlist above; dispatch alone neither grants nor
+removes eligibility. A reservation is released only by a durable `NOT_DISPATCHED`
 settlement; without that proof it remains consumed in budget accounting. That
 consumed reservation does not by itself make the attempt nonretryable: a
 terminal `PRE_SEMANTIC_FAILURE` may take its mandatory whole-slot retry when
@@ -303,8 +346,13 @@ available artifacts and do not assign a complete-pilot decision.
 <a id="spec-evaluation-measured-evaluation"></a>
 <!-- spec-id: EVALUATION.MEASURED-EVALUATION -->
 
-Run tasks in the frozen order. For each task, run A and C once in fresh
-workspaces. Preserve the exact candidate patch bytes and digest produced by either A or C.
+Run the complete ordered slot list from the manifest. Execute each manifest
+slot entry exactly once, in the recorded task order, with A immediately
+followed by C for each task. Slots do not overlap: finish or durably classify
+the current slot, including its permitted retry and bound evaluator phase,
+before advancing. Recovery preserves this order and skips completed slots;
+this is the frozen "run A and C once" rule. An A failure does not reorder or
+suppress its C slot unless a shared stop condition applies. Preserve the exact candidate patch bytes and digest produced by either A or C.
 The agent-result record binds terminal state to the patch digest in one durable
 transition, or records an explicit `NO_PATCH` outcome. An evaluator may use
 only the patch digest linked by that record; a stale or separately discovered
