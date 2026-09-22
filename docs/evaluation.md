@@ -164,8 +164,14 @@ against a frozen request, spend, tool, or service limit, append an operation
 reservation with a unique ID and reserved units before dispatch. The
 reservation counts against the limit until settled; completion appends actual
 usage and settles it. Do not dispatch if the reservation cannot be committed.
+Reservation and limit check are one durable transaction under the budget
+ledger. The transaction computes `settled + outstanding reservations +
+requested units` for the relevant limit and rejects the reservation when that
+sum exceeds the limit. Concurrent reservations therefore cannot both consume
+the same remaining unit.
 
-When the first streamed content or tool call is accepted, append a durable
+Before exposing the first semantic content, including non-streaming semantic
+content or streamed content, or any tool call, append a durable
 semantic-acceptance marker before the response is passed to the agent or tool
 executor. If that marker cannot be committed, do not expose the response;
 mark the attempt interrupted and missing. Treat an ambiguous interrupted
@@ -183,21 +189,50 @@ Retain all attempt, reservation, settlement, and interruption records.
 
 ### Slot ledger, evaluator binding, and isolation
 
-Before the first measured dispatch, create a durable slot ledger keyed by
-`(manifest_hash, task_id, configuration)` with state `PLANNED`. Write
+The experiment has one exclusive experiment coordinator. It acquires a durable
+owner record for the experiment ID before creating or recovering slots; no
+concurrent owner is permitted. Slot and evaluator starts use an atomic
+compare-and-set under that owner record, and the rule is: only the owner may
+dispatch. A replacement coordinator may recover only after the prior owner is
+known stopped and the ownership record is safely transferred; overlapping
+recovery is forbidden.
+
+Before the first measured dispatch, generate and persist the C `run_id` for
+each slot. The slot ledger key includes `run_id` for C slots (and explicit
+`NULL` for A slots): `(manifest_hash, task_id, configuration, run_id)`, with
+state `PLANNED`. The C run registration binds manifest hash, task ID, and
+configuration plus `run_id` to the same slot record before dispatch and
+scoring. Write
 `SLOT_STARTED` with durable `slot_started_at` and
 `absolute_slot_deadline` before agent dispatch. Retries and restarts reload
 that same absolute slot deadline; downtime counts toward it and never creates
 a fresh slot deadline. After restart, a completed slot with valid evidence is
-skipped. A started slot may resume only
-its one durably recorded eligible pre-semantic retry; otherwise a nonterminal
-started slot is marked missing and receives no new semantic trajectory.
+skipped. Before applying the missing fallback, reconcile terminal agent results
+first. Finalize `NO_PATCH` with its durable no-evaluation reason. If a valid
+patch digest is present but no evaluator invocation exists, launch the first
+evaluator invocation if deadline and budget permit; otherwise record incomplete
+evaluation. Then reconcile terminal evaluator evidence and finish the slot
+when all bound terminal evidence is valid. A started slot may resume only its
+one durably recorded eligible pre-semantic
+retry; otherwise a nonterminal started slot is marked missing and receives no
+new semantic trajectory.
 
 Each C slot uses a unique persisted `run_id` and a new run namespace. Before
 dispatch, verify a version-zero empty graph (apart from run registration) with
 no prior proposals, evidence, or graph events. Fresh workspaces also require
 no session, memory, cache, or service-state reuse across slots. A failed
 isolation check prevents dispatch and is recorded as missing evidence.
+
+Before dispatch, record a clean-baseline identity for each slot, including the
+task image/archive, repository tree and dependency identity, and a successful
+clean-workspace check. This identity is bound to the slot and evaluator result;
+a mismatch prevents dispatch or scoring and does not authorize substitution.
+
+Slot state is monotonic from `PLANNED` through `SLOT_STARTED` to one terminal
+state. Use atomic terminalization at the deadline, recording timeout/missing
+before accepting late work. The terminal fence rejects subsequent attempt,
+operation, or evaluator writes for that slot. If terminalization cannot be
+committed, stop new work as shared evidence failure.
 
 For an eligible first-attempt failure, the runner must take that retry unless
 a recorded deadline, exhausted budget, shared integrity failure, or operator
@@ -237,11 +272,24 @@ available artifacts and do not assign a complete-pilot decision.
 
 Run tasks in the frozen order. For each task, run A and C once in fresh
 workspaces. Preserve the exact candidate patch bytes and digest produced by either A or C.
+The agent-result record binds terminal state to the patch digest in one durable
+transition, or records an explicit `NO_PATCH` outcome. An evaluator may use
+only the patch digest linked by that record; a stale or separately discovered
+patch is `EVIDENCE_INCOMPLETE`.
 Evaluate each produced candidate patch once in a fresh evaluator workspace.
-Persist an evaluator `STARTED` record, bound to the slot and patch, before
-launching it. Each evaluation record binds the manifest hash, slot ID, task ID,
-configuration, candidate-patch digest, evaluator version/test definition, and
-raw-output digest. A completed bound evaluation is reused after restart. A
+Use an immutable evaluator bundle from the manifest as a read-only snapshot
+outside the candidate workspace. The candidate cannot write evaluator tests,
+the recorder, ledger, or credentials. The trusted runner verifies the
+evaluator bundle digest before execution and records that evaluator bundle
+digest in the bound result; a mismatch is `EVIDENCE_INCOMPLETE` and is not
+repaired by rerunning.
+Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
+before launching it. The invocation record binds the manifest hash, slot ID,
+task ID, configuration, candidate-patch digest, evaluator version/test
+definition, evaluator bundle digest, and clean-baseline identity. It has no
+raw-output digest. The terminal result record repeats that invocation binding
+and adds the test vector and raw-output digest only on the terminal result. A
+completed bound evaluation is reused after restart. A
 started evaluation without a durable complete bound result is
 `EVALUATION_INCOMPLETE`; never rerun the evaluator in this pilot.
 
