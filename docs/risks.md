@@ -188,7 +188,9 @@ evaluator alone receives the read-only evaluator bundle; agent execution must
 not expose evaluator outputs. Candidate code runs in a separate restricted
 process/namespace and never inherits evaluator authority. The trusted evaluator
 retains hidden tests and uses the versioned `CANDIDATE_EVAL_IPC_V1` channel to
-exchange only declared invocation inputs and serialized candidate results.
+exchange only declared invocation inputs and serialized candidate results. The
+channel uses canonical data-only UTF-8 JSON and a non-executable decoder;
+native or object-capable deserialization is forbidden.
 
 ## Presentation
 

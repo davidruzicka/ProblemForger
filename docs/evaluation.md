@@ -382,20 +382,21 @@ or other non-task host paths.
 The trusted evaluator retains hidden tests and the evaluator bundle in its own
 namespace. It launches the candidate through a narrow, length-bounded,
 versioned `CANDIDATE_EVAL_IPC_V1` channel rather than importing candidate code.
-The protocol is:
+The channel uses canonical data-only UTF-8 JSON and the protocol is:
 
 ```text
-REQUEST  {version, invocation_id, input_bytes}
-RESPONSE {version, invocation_id, status, output_bytes, output_digest}
+REQUEST  {version, invocation_id, input_b64}
+RESPONSE {version, invocation_id, status, output_b64, output_sha256}
 ```
 
 The evaluator sends only declared test invocation inputs; it never sends hidden
 test source, evaluator-bundle bytes, expected outputs, or pass/fail assertions.
 The candidate returns serialized results; the trusted evaluator applies hidden
-assertions and constructs the required test vector. The candidate sandbox can
-use only this channel and cannot open arbitrary evaluator or host IPC. An
-IPC or sandbox violation is `EVIDENCE_INCOMPLETE` and is not repaired by
-rerunning.
+assertions and constructs the required test vector. A non-executable decoder
+performs bounded schema validation before the evaluator consumes any field;
+never use native or object-capable deserialization. The candidate sandbox can
+use only this channel and cannot open arbitrary evaluator or host IPC. An IPC
+or sandbox violation is `EVIDENCE_INCOMPLETE` and is not repaired by rerunning.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, candidate-patch digest, evaluator version/test
@@ -553,8 +554,13 @@ limit rather than treating unknown usage as zero.
 
 Before starting the first slot, persist `experiment_started_at_utc`,
 `absolute_stop_deadline_utc`, a nonnegative, monotonically non-decreasing
-`experiment_elapsed_floor_ms`, and `experiment_last_observed_utc_ms` with the
-experiment ID in the retained execution record. This is the restart-stable
+`experiment_elapsed_floor_ms`, `experiment_last_observed_utc_ms`,
+`experiment_process_monotonic_started_ms`, and
+`experiment_stop_elapsed_limit_ms` with the experiment ID in the retained
+execution record. Capture `experiment_process_monotonic_started_ms` at the
+same experiment-start transition. `current_process_monotonic_elapsed_ms` is
+the difference between the current reading and that experiment-start reading;
+never use unanchored process uptime. This is the restart-stable
 clock domain. Every durable ledger write
 advances the floor to the greatest of its previous value, the elapsed time
 observed from `experiment_started_at_utc`, and the process-monotonic elapsed
@@ -588,16 +594,22 @@ later than the watermark: a backward UTC shift during downtime can still
 refund elapsed time, and the process-monotonic clock resets. Fail closed on
 every coordinator restart: record `INCOMPLETE_COVERAGE`, retain all
 reservations, operations, and active phase/deadline records, do not classify an
-active phase as missing, and do not launch later slots. While the coordinator
+active phase as missing, and do not launch later slots. In this contract, phase
+deadlines are elapsed-domain values: `absolute_slot_deadline` is the effective
+elapsed value at slot start plus the frozen agent allowance, and
+`absolute_evaluator_deadline` is the effective elapsed value at evaluator start
+bounded by `experiment_stop_elapsed_limit_ms`. While the coordinator
 remains live, read the current process-monotonic elapsed time at every
 dispatch, retry, budget check, and active-phase deadline check. Anchor effective
 elapsed time at the live-process maximum:
 `max(experiment_elapsed_floor_ms, max(0, now_utc_ms -
 experiment_started_at_utc), current_process_monotonic_elapsed_ms)`. This live-
 process maximum does not wait for a ledger write; a forward UTC shift may expire
-the budget earlier. Compare effective elapsed time with the frozen wall-clock
-limit; the absolute stop deadline is the corresponding deadline in this same
-clock domain. Reload
+the budget earlier. Before accepting work or terminalizing a phase, compare
+phase deadlines with effective elapsed time; never compare phase deadlines to
+raw UTC. Compare effective elapsed time with the frozen wall-clock limit; the
+absolute stop deadline is the corresponding deadline in this same clock domain.
+Reload
 that record and cumulative resource usage; never
 reset the deadline, elapsed floor, or spent budgets. Downtime counts toward
 the stop limit. If the record is missing, corrupt, or the clock source cannot
