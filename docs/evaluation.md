@@ -379,6 +379,23 @@ evaluator authority; it may access only its declared task workspace and
 runtime dependencies. The candidate sandbox has no read access to evaluator or
 gold artifacts, hidden tests, evaluator outputs, recorder, ledger, credentials,
 or other non-task host paths.
+The trusted evaluator retains hidden tests and the evaluator bundle in its own
+namespace. It launches the candidate through a narrow, length-bounded,
+versioned `CANDIDATE_EVAL_IPC_V1` channel rather than importing candidate code.
+The protocol is:
+
+```text
+REQUEST  {version, invocation_id, input_bytes}
+RESPONSE {version, invocation_id, status, output_bytes, output_digest}
+```
+
+The evaluator sends only declared test invocation inputs; it never sends hidden
+test source, evaluator-bundle bytes, expected outputs, or pass/fail assertions.
+The candidate returns serialized results; the trusted evaluator applies hidden
+assertions and constructs the required test vector. The candidate sandbox can
+use only this channel and cannot open arbitrary evaluator or host IPC. An
+IPC or sandbox violation is `EVIDENCE_INCOMPLETE` and is not repaired by
+rerunning.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, candidate-patch digest, evaluator version/test
@@ -542,10 +559,14 @@ clock domain. Every durable ledger write
 advances the floor to the greatest of its previous value, the elapsed time
 observed from `experiment_started_at_utc`, and the process-monotonic elapsed
 time. Persist `experiment_last_observed_utc_ms` with the same record; it is the
-restart-surviving last observed UTC timestamp. Update it atomically with the
-floor on every durable ledger write. Before dispatching any new slot or retry,
-persist the resulting floor and last observed timestamp. A process-monotonic
-clock cannot establish continuity across restart;
+restart-surviving last observed UTC timestamp. The last observed UTC timestamp
+remains monotonically non-decreasing. Update it atomically with the floor on
+every durable ledger write to `max(previous_value, now_utc_ms)`. If a write
+observes a lower current UTC reading, record `INCOMPLETE_COVERAGE`, retain the
+previous value, and never overwrite it with a lower value; do not launch later
+slots. Before dispatching any new slot or retry, persist the resulting floor
+and last observed timestamp. A process-monotonic clock cannot establish
+continuity across restart;
 it is supplemental evidence only.
 If a dispatched operation lacks durable terminal settlement, or its
 dispatch/settlement status is ambiguous after restart, treat any interval
@@ -568,11 +589,15 @@ refund elapsed time, and the process-monotonic clock resets. Fail closed on
 every coordinator restart: record `INCOMPLETE_COVERAGE`, retain all
 reservations, operations, and active phase/deadline records, do not classify an
 active phase as missing, and do not launch later slots. While the coordinator
-remains live, anchor effective elapsed time at
+remains live, read the current process-monotonic elapsed time at every
+dispatch, retry, budget check, and active-phase deadline check. Anchor effective
+elapsed time at the live-process maximum:
 `max(experiment_elapsed_floor_ms, max(0, now_utc_ms -
-experiment_started_at_utc))`; a forward UTC shift may expire the budget earlier.
-Compare effective elapsed time with the frozen wall-clock limit; the absolute
-stop deadline is the corresponding deadline in this same clock domain. Reload
+experiment_started_at_utc), current_process_monotonic_elapsed_ms)`. This live-
+process maximum does not wait for a ledger write; a forward UTC shift may expire
+the budget earlier. Compare effective elapsed time with the frozen wall-clock
+limit; the absolute stop deadline is the corresponding deadline in this same
+clock domain. Reload
 that record and cumulative resource usage; never
 reset the deadline, elapsed floor, or spent budgets. Downtime counts toward
 the stop limit. If the record is missing, corrupt, or the clock source cannot
