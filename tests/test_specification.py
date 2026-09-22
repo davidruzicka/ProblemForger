@@ -476,6 +476,10 @@ class SpecificationChecks(unittest.TestCase):
             "`WORKER_NETWORK_DENIAL_VERIFIED`",
             "before task exposure",
             "do not expose a selected task",
+            "`WORKER_NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics",
+            "`worker_policy_id`",
+            "`worker_network_evidence_ref`",
+            "final scoring",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)

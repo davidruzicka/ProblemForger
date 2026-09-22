@@ -223,7 +223,9 @@ mismatched denial evidence.
 The worker/agent namespace is separately network-denied before task exposure;
 worker-controlled tools cannot retrieve remote solutions, and its
 `WORKER_NETWORK_DENIAL_VERIFIED` result is bound to the manifest, runtime, and
-worker policy. A missing worker isolation proof prevents exposure.
+worker policy. A missing worker isolation proof prevents exposure or final
+scoring; missing, corrupt, or mismatched worker denial evidence produces
+`EVIDENCE_INCOMPLETE`.
 
 ## Presentation
 
