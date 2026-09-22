@@ -68,7 +68,7 @@ class SpecificationChecks(unittest.TestCase):
             "`SLOT_STARTED`",
             "completed slot with valid evidence is skipped",
             "started slot may resume only",
-            "nonterminal started slot",
+            "nonterminal slot with a bound evaluator",
             "Persist an evaluator `STARTED` invocation record",
             "`EVALUATION_INCOMPLETE`",
             "never rerun the evaluator",
@@ -84,8 +84,8 @@ class SpecificationChecks(unittest.TestCase):
             "agent-result record binds terminal state to the patch digest",
             "explicit `NO_PATCH`",
             "in one durable transition",
-            "atomic terminalization at the deadline",
-            "rejects subsequent attempt, operation, or evaluator writes",
+            "Terminalize atomically at the applicable phase deadline",
+            "terminal fence rejects new dispatch, semantic results, and outcome-changing writes",
             "clean-baseline identity",
             "repository tree and dependency identity",
             "bound to the slot and evaluator result",
@@ -107,11 +107,50 @@ class SpecificationChecks(unittest.TestCase):
             "reconcile terminal agent results first",
             "Finalize `NO_PATCH`",
             "launch the first evaluator invocation",
-            "if deadline and budget permit",
+            "experiment-wide stop deadline, evaluator-applicable budget, and setup permit",
             "one exclusive experiment coordinator",
             "atomic compare-and-set",
             "only the owner may dispatch",
             "no concurrent owner",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_evaluator_deadline_is_separate_from_agent_deadline(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "`absolute_evaluator_deadline`",
+            "separate from `absolute_evaluator_deadline`",
+            "agent deadline fences agent attempts and operations",
+            "evaluator deadline fences evaluator writes",
+            "experiment-wide stop deadline",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_terminal_fence_preserves_post_deadline_accounting(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "idempotent usage settlements",
+            "cancellation/interruption records",
+            "cannot reopen the slot",
+            "cannot reopen the slot or change the outcome",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_phase_limits_and_recovery_preserve_bound_work(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "does not invalidate that result",
+            "does not suppress its first evaluator",
+            "already authorized operation may finish and settle",
+            "Limit exhaustion alone does not mark the slot unresolved",
+            "phase-specific unresolved reason",
+            "trusted runner confirms the same invocation is active",
+            "Otherwise `EVALUATION_INCOMPLETE`",
+            "does not by itself make the attempt nonretryable",
+            "new reservation",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
@@ -160,7 +199,7 @@ class SpecificationChecks(unittest.TestCase):
             "HarnessX source/runtime identity",
             "ProblemForger service source/runtime identity",
             "evaluator version and required-test definition",
-            "semantic deadline, resource limits, retry rule",
+            "agent semantic deadline, evaluator wall-clock allowance, resource limits, retry rule",
             "primary result rule",
             "The manifest is hashed",
             "compact manifest is intentional",

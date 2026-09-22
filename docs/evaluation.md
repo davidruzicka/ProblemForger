@@ -83,8 +83,8 @@ containing:
 - execution platform, dependency lockfiles, and image/archive digests when
   images or archives are used;
 - evaluator version and required-test definition;
-- workspace isolation mode, semantic deadline, resource limits, retry rule,
-  and human-intervention definition;
+- workspace isolation mode, agent semantic deadline, evaluator wall-clock
+  allowance, resource limits, retry rule, and human-intervention definition;
 - primary result rule, secondary cost/latency measures, and continuation
   tolerances;
 - random seeds where a component actually uses randomness.
@@ -149,6 +149,8 @@ telemetry is useful but not required to reconstruct the result.
 Freeze before exposure:
 
 - a semantic wall-clock deadline per agent run;
+- a separate evaluator wall-clock allowance for each produced patch, identical
+  for A and C;
 - a provider-spend or request budget, where the provider exposes one;
 - bounded tool/service-call and output limits;
 - one clean retry only for a failure before the first semantic model response,
@@ -182,9 +184,14 @@ A retry is eligible only when durable state explicitly says
 proves that no semantic response was accepted. An explicit pre-semantic
 transport failure therefore remains retryable even if its request was
 dispatched. A reservation is released only by a durable `NOT_DISPATCHED`
-settlement; without that proof it remains consumed and the attempt is not
-retryable. If neither acceptance nor interruption record can be durably
-committed, classify the attempt as shared evidence failure and stop new work.
+settlement; without that proof it remains consumed in budget accounting. That
+consumed reservation does not by itself make the attempt nonretryable: a
+terminal `PRE_SEMANTIC_FAILURE` may take its mandatory whole-slot retry when
+all dispatched operations are terminal, no semantic response was accepted,
+and a new reservation fits the remaining budget. The retry allocates a new
+reservation and never reuses the failed operation. If neither acceptance nor
+interruption record can be durably committed, classify the attempt as shared
+evidence failure and stop new work.
 Retain all attempt, reservation, settlement, and interruption records.
 
 ### Slot ledger, evaluator binding, and isolation
@@ -204,18 +211,28 @@ state `PLANNED`. The C run registration binds manifest hash, task ID, and
 configuration plus `run_id` to the same slot record before dispatch and
 scoring. Write
 `SLOT_STARTED` with durable `slot_started_at` and
-`absolute_slot_deadline` before agent dispatch. Retries and restarts reload
-that same absolute slot deadline; downtime counts toward it and never creates
-a fresh slot deadline. After restart, a completed slot with valid evidence is
-skipped. Before applying the missing fallback, reconcile terminal agent results
-first. Finalize `NO_PATCH` with its durable no-evaluation reason. If a valid
-patch digest is present but no evaluator invocation exists, launch the first
-evaluator invocation if deadline and budget permit; otherwise record incomplete
-evaluation. Then reconcile terminal evaluator evidence and finish the slot
-when all bound terminal evidence is valid. A started slot may resume only its
-one durably recorded eligible pre-semantic
-retry; otherwise a nonterminal started slot is marked missing and receives no
-new semantic trajectory.
+`absolute_slot_deadline` before agent dispatch. `absolute_slot_deadline` is the
+agent deadline and is separate from `absolute_evaluator_deadline`. Retries and
+restarts reload that same absolute slot deadline; downtime counts toward it and
+never creates a fresh slot deadline. After restart, a completed slot with valid
+evidence is skipped. Before applying the missing fallback, reconcile terminal
+agent results first. Finalize `NO_PATCH` with its durable no-evaluation reason.
+If a valid patch digest is present but no evaluator invocation exists, launch
+the first
+evaluator invocation if the experiment-wide stop deadline, evaluator-applicable
+budget, and setup permit; otherwise record incomplete evaluation. Before
+launching it, persist `evaluator_started_at` and `absolute_evaluator_deadline`
+in its `STARTED` record. The evaluator deadline is the earlier of the frozen
+evaluator allowance after start and the experiment-wide stop deadline; restarts
+reload it and downtime counts. A terminal agent patch recorded before its agent
+deadline remains eligible for its first evaluator after that deadline. Keep the
+slot nonterminal while this bound evaluation is running. Then reconcile
+terminal evaluator evidence and finish the slot when all bound terminal
+evidence is valid. A started slot may resume only its one durably recorded
+eligible pre-semantic retry; otherwise it receives no new semantic trajectory.
+A nonterminal slot with a bound evaluator remains open until that evaluator
+reaches terminal state or its evaluator or experiment deadline expires; only
+then is missingness applied.
 
 Each C slot uses a unique persisted `run_id` and a new run namespace. Before
 dispatch, verify a version-zero empty graph (apart from run registration) with
@@ -229,10 +246,18 @@ clean-workspace check. This identity is bound to the slot and evaluator result;
 a mismatch prevents dispatch or scoring and does not authorize substitution.
 
 Slot state is monotonic from `PLANNED` through `SLOT_STARTED` to one terminal
-state. Use atomic terminalization at the deadline, recording timeout/missing
-before accepting late work. The terminal fence rejects subsequent attempt,
-operation, or evaluator writes for that slot. If terminalization cannot be
-committed, stop new work as shared evidence failure.
+state. For new work, the agent deadline fences agent attempts and operations;
+the evaluator deadline fences evaluator writes. A terminal agent result does
+not close the evaluator phase, and a bound first evaluator may finish after the
+agent deadline but before its own deadline or the experiment-wide stop. The
+slot remains nonterminal while that evaluator phase is active. Terminalize
+atomically at the applicable phase deadline or explicit terminal outcome,
+recording timeout/missing before accepting late outcome-changing work. The
+terminal fence rejects new dispatch, semantic results, and outcome-changing
+writes. The trusted coordinator may still append idempotent usage settlements
+and cancellation/interruption records for operations reserved before the
+fence; these records cannot reopen the slot or change the outcome. If
+terminalization cannot be committed, stop new work as shared evidence failure.
 
 For an eligible first-attempt failure, the runner must take that retry unless
 a recorded deadline, exhausted budget, shared integrity failure, or operator
@@ -242,10 +267,18 @@ records. Retries do not reset deadlines or resource counters. After any
 semantic response (including accepted streamed content or a tool call), no
 whole-slot restart is allowed. Candidate evaluation has no extra retry.
 
-When a slot exhausts a limit, record an unresolved slot and continue unrelated
-slots if the experiment-wide runtime is still valid. Do not treat a missing
-slot as success or failure and do not buy extra retries after seeing its
-outcome.
+If an agent phase exhausts a limit, prevent new operations charged to that
+phase. An already authorized operation may finish and settle, and may produce
+its terminal agent result before the agent deadline. Limit exhaustion alone
+does not mark the slot unresolved. If no authorized operation can produce a
+terminal result, record a phase-specific unresolved reason and continue
+unrelated slots if the experiment-wide runtime is still valid. A limit reached
+after a valid terminal agent result does not invalidate that result and does
+not suppress its first evaluator; check the evaluator-applicable budget
+separately.
+If the evaluator phase exhausts its own limit, record `EVALUATION_INCOMPLETE`
+without invalidating the agent result. Do not treat a missing slot as success or
+failure and do not buy extra retries after seeing its outcome.
 
 Before a slot is scored as either 0 or 1, require complete and reconciled slot,
 attempt, operation, and evaluator records (or a durable no-evaluation reason
@@ -286,12 +319,16 @@ repaired by rerunning.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, candidate-patch digest, evaluator version/test
-definition, evaluator bundle digest, and clean-baseline identity. It has no
+definition, evaluator bundle digest, clean-baseline identity,
+`evaluator_started_at`, and `absolute_evaluator_deadline`. It has no
 raw-output digest. The terminal result record repeats that invocation binding
 and adds the test vector and raw-output digest only on the terminal result. A
-completed bound evaluation is reused after restart. A
-started evaluation without a durable complete bound result is
-`EVALUATION_INCOMPLETE`; never rerun the evaluator in this pilot.
+completed bound evaluation is reused after restart. On recovery, a started
+evaluation without a durable complete bound result remains open only when the
+trusted runner confirms the same invocation is active and within its recorded
+deadline; keep the slot nonterminal and accept only that bound terminal result.
+Otherwise `EVALUATION_INCOMPLETE` is recorded; never rerun the evaluator in
+this pilot.
 
 An agent result is a resolved binary outcome when the required evaluator tests
 complete and the declared success rule is satisfied. The default success rule
@@ -419,8 +456,9 @@ leaving stronger causal and external-validity questions for later work.
 <a id="p6-resource-budget"></a>
 ### Resource budget record
 
-The operator must write the actual per-run deadline, request/spend limit, tool
-limit, and experiment-wide stop limit into the manifest before task exposure.
+The operator must write the actual agent deadline, evaluator wall-clock
+allowance, request/spend limit, tool limit, and experiment-wide stop limit into
+the manifest before task exposure.
 The values are practical operating limits, not validity thresholds. If a limit
 is unavailable from a provider, record `UNKNOWN` and use the observable local
 limit rather than treating unknown usage as zero.
