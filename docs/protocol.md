@@ -32,8 +32,11 @@ registers an empty version-zero run before any proposal is accepted. A repeat
 create returns the existing registration only when the supplied metadata has the
 same canonical serialization and metadata hash; otherwise it returns an explicit
 `RUN_METADATA_CONFLICT` without changing the journal. Reopen/restart preserves
-that registration and its `graph_version = 0` / empty-journal state. No operation
-implicitly creates a run from an arbitrary ID; unknown runs return `NOT_FOUND`.
+that registration. For an existing run, reopening preserves the persisted
+journal and current graph version. Version zero and an empty journal apply only
+to a newly created run; reopening never resets a non-empty journal or graph
+version. No operation implicitly creates a run from an arbitrary ID; unknown
+runs return `NOT_FOUND`.
 
 The exact wire schema is finalized in P1.
 

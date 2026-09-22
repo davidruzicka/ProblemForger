@@ -89,7 +89,7 @@ current_graph_version(run_id)
 
 Requirements:
 
-- persist run registration before accepting proposals; `create_run` is idempotent only when the supplied run metadata has the same canonical serialization and metadata hash as the existing registration; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal, reopening preserves the registration and version-zero state, and every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
+- persist run registration before accepting proposals; `create_run` is idempotent only when the supplied run metadata has the same canonical serialization and metadata hash as the existing registration; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal. Version zero and an empty journal apply only to a newly created run; reopening preserves the persisted journal and current graph version and retains the registration; every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
 - canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
 - `record_proposal` returns `IDEMPOTENCY_CONFLICT` with the stored and supplied canonical request hashes when an existing `(run_id, proposal_id)` has a different request hash; it does not evaluate or mutate the proposal;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;

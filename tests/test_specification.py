@@ -428,6 +428,29 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
 
+    def test_task_success_rule_is_non_vacuous(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "at least one non-empty `FAIL_TO_PASS` test",
+            "A task with an empty `FAIL_TO_PASS` vector is ineligible",
+            "makes the success rule non-vacuous",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_reopen_preserves_nonempty_journals(self):
+        for path in ("docs/modules.md", "docs/protocol.md"):
+            document = " ".join(read(path).split())
+            with self.subTest(path=path):
+                self.assertIn(
+                    "Version zero and an empty journal apply only to a newly created run",
+                    document,
+                )
+                self.assertIn(
+                    "reopening preserves the persisted journal and current graph version",
+                    document,
+                )
+
     def test_missing_patch_bytes_remain_incomplete_evidence(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         reporting = evaluation.split("### Incomplete reporting", 1)[1].split(

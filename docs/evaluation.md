@@ -133,6 +133,9 @@ candidate/evaluator communication. Evaluate this predicate from pinned task
 metadata and the frozen required-test definition before selecting the six
 tasks. If the predicate cannot be proved, the task is ineligible. Do not
 inspect a selected task's gold patch while evaluating this predicate.
+The same eligibility predicate requires at least one non-empty `FAIL_TO_PASS`
+test vector. A task with an empty `FAIL_TO_PASS` vector is ineligible; this
+makes the success rule non-vacuous.
 
 The benchmark adapter selects six eligible tasks deterministically from its
 declared candidate order. Development and smoke tasks must be separate from
