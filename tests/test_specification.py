@@ -48,6 +48,9 @@ class SpecificationChecks(unittest.TestCase):
             "must not launch more work",
             "spend usage is `UNKNOWN`",
             "records every dispatched operation as terminal",
+            "If a dispatched operation lacks durable terminal settlement",
+            "Clock continuity is ambiguous",
+            "do not launch later slots",
             "If neither acceptance nor interruption record can be durably committed",
             "released only by a durable `NOT_DISPATCHED` settlement",
             "operation reservation/settlement ledger",
@@ -106,6 +109,9 @@ class SpecificationChecks(unittest.TestCase):
             "worker authority to read host paths outside its task workspace",
             "worker cannot read or write evaluator tests",
             "recorder, ledger, or credentials",
+            "Candidate code runs in a separate restricted process/namespace",
+            "inherits no evaluator authority",
+            "Never import or execute candidate code in the trusted evaluator process",
             "evaluator bundle digest",
             "trusted runner",
             "slot ledger key includes `run_id`",
@@ -146,6 +152,8 @@ class SpecificationChecks(unittest.TestCase):
             "host paths outside the task workspace",
             "trusted evaluator alone receives the read-only evaluator bundle",
             "must not expose evaluator outputs",
+            "separate restricted process/namespace",
+            "never inherits evaluator authority",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, risks)

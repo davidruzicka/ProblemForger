@@ -182,7 +182,8 @@ Mitigation: task selection may use only predeclared metadata fields; worker
 authority must not read evaluator bundles, gold patches, hidden tests, or
 non-task artifacts on host paths outside the task workspace. The trusted
 evaluator alone receives the read-only evaluator bundle; agent execution must
-not expose evaluator outputs.
+not expose evaluator outputs. Candidate code runs in a separate restricted
+process/namespace and never inherits evaluator authority.
 
 ## Presentation
 

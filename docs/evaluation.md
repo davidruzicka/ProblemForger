@@ -371,6 +371,12 @@ recorder, ledger, or credentials. The trusted runner verifies the evaluator
 bundle digest before execution and records that evaluator bundle digest in the
 bound result; a mismatch is `EVIDENCE_INCOMPLETE` and is not repaired by
 rerunning.
+Never import or execute candidate code in the trusted evaluator process.
+Candidate code runs in a separate restricted process/namespace and inherits no
+evaluator authority; it may access only its declared task workspace and
+runtime dependencies. The candidate sandbox has no read access to evaluator or
+gold artifacts, hidden tests, evaluator outputs, recorder, ledger, credentials,
+or other non-task host paths.
 Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, candidate-patch digest, evaluator version/test
@@ -533,6 +539,13 @@ record. This is the restart-stable clock domain. Every durable ledger write
 advances the floor to the greatest of its previous value, the elapsed time
 observed from `experiment_started_at_utc`, and the process-monotonic elapsed
 time. Before dispatching any new slot or retry, persist the resulting floor.
+If a dispatched operation lacks durable terminal settlement, or its
+dispatch/settlement status is ambiguous after restart, treat any interval
+after the last durable floor update as unmeasurable. Clock continuity is
+ambiguous: record `INCOMPLETE_COVERAGE`, retain the reservation and operation,
+and do not reconcile it by releasing budget; do not launch later slots. The
+unresolved in-flight interval remains charged to the incomplete pilot rather
+than becoming available for new work.
 On coordinator restart, anchor effective elapsed time at
 `max(experiment_elapsed_floor_ms, max(0, now_utc_ms -
 experiment_started_at_utc))`; a backward UTC shift cannot reduce effective
