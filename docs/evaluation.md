@@ -96,7 +96,7 @@ containing:
 - complete ordered A/C slot list: each task's A slot before its C slot;
 - execution platform, dependency lockfiles, and image/archive digests when
   images or archives are used;
-- evaluator adapter, source/runtime identity, and required-test definition;
+- evaluator version and required-test definition, plus evaluator adapter/source/runtime identity;
 - workspace isolation mode, candidate sandbox policy identity/configuration,
   and worker/agent network policy identity;
 - agent semantic deadline, evaluator wall-clock allowance, resource limits, retry
