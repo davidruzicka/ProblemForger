@@ -786,7 +786,13 @@ Before starting the first slot, persist `experiment_started_at_utc`,
 `experiment_elapsed_floor_ms`, `experiment_last_observed_utc_ms`,
 `experiment_process_monotonic_started_ms`, and
 `experiment_stop_elapsed_limit_ms` with the experiment ID in the retained
-execution record. Capture `experiment_process_monotonic_started_ms` at the
+execution record. At experiment start, compute and freeze
+`experiment_stop_elapsed_limit_ms = absolute_stop_deadline_utc -
+experiment_started_at_utc`; it must be nonnegative. On reload, verify that
+equality; a missing, corrupt, negative, or mismatched value records
+`INCOMPLETE_COVERAGE` and forbids further dispatch. The absolute UTC deadline is
+retained for reporting/audit only; enforcement uses the frozen elapsed limit
+and the effective elapsed clock described below. Capture `experiment_process_monotonic_started_ms` at the
 same experiment-start transition. `current_process_monotonic_elapsed_ms` is
 the difference between the current reading and that experiment-start reading;
 never use unanchored process uptime. It must come from a suspend-inclusive
@@ -841,8 +847,9 @@ experiment_started_at_utc), current_process_monotonic_elapsed_ms)`. This live-
 process maximum does not wait for a ledger write; a forward UTC shift may expire
 the budget earlier. Before accepting work or terminalizing a phase, compare
 phase deadlines with effective elapsed time; never compare phase deadlines to
-raw UTC. Compare effective elapsed time with the frozen wall-clock limit; the
-absolute stop deadline is the corresponding deadline in this same clock domain.
+raw UTC. Compare effective elapsed time with the frozen
+`experiment_stop_elapsed_limit_ms`; `absolute_stop_deadline_utc` is reporting
+metadata only and is never used as an independent enforcement value.
 Reload
 that record and cumulative resource usage; never
 reset the deadline, elapsed floor, or spent budgets. Downtime counts toward
