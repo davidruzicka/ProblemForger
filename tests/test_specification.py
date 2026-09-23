@@ -186,7 +186,7 @@ class SpecificationChecks(unittest.TestCase):
             "takes precedence over candidate-failure classification",
             "A completed validator `REJECT` is allowed only when",
             "A validator `ERROR`, crash, timeout, permission, disk, resource, or other infrastructure failure maps to `EVIDENCE_INCOMPLETE`",
-            "never emits `CANDIDATE_PATCH_INVALID`"
+            "never emits `CANDIDATE_PATCH_INVALID`",
             "`TIMEOUT` maps to `EVALUATION_INCOMPLETE`",
             "`MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION` maps to `EVIDENCE_INCOMPLETE`",
             "`CANDIDATE_PATCH_INVALID` remains a trusted runner outcome",
