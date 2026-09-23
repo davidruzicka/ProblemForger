@@ -276,6 +276,8 @@ class SpecificationChecks(unittest.TestCase):
             "Restart never resumes an active evaluator",
             "started evaluation without a durable complete bound result at restart is recorded as `EVALUATION_INCOMPLETE`",
             "does not by itself make the attempt nonretryable",
+            "trusted, evidenced `CANDIDATE_PATCH_INVALID` outcome is an observed 0",
+            "`MALFORMED_RESPONSE`, other incomplete/evidence-failure outcomes",
             "new reservation",
         ):
             with self.subTest(phrase=phrase):

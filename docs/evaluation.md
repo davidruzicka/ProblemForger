@@ -250,9 +250,10 @@ Freeze before exposure:
   scoring:
   1. shared evidence/integrity failure takes precedence and stops new work;
   2. accepted or ambiguous semantic exposure, or an unresolved dispatched
-     operation, prohibits retry. Retain any terminal result for scoring; a
-     malformed candidate remains an observed 0, while no terminal result or
-     mandatory evidence remains missing;
+     operation, prohibits retry. Retain any complete terminal result for scoring; a
+     trusted, evidenced `CANDIDATE_PATCH_INVALID` outcome is an observed 0, while
+     `MALFORMED_RESPONSE`, other incomplete/evidence-failure outcomes, no terminal
+     result, or missing mandatory evidence remains missing;
   3. select one failure cause from durable observations. An explicit provider
      HTTP status takes precedence over a consequent harness exit: `HTTP_429`
      maps to 429, `HTTP_5XX` maps to 500–599, and other statuses are
