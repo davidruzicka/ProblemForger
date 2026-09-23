@@ -804,6 +804,7 @@ class SpecificationChecks(unittest.TestCase):
             "checker_version",
             "EVIDENCE-RECOVERY",
             "ABANDONED",
+            "the owning service records `ABANDONED`",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, verification)
