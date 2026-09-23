@@ -200,9 +200,12 @@ every required `FAIL_TO_PASS` test fails through a valid completed test outcome
 and every required `PASS_TO_PASS` test passes. Infrastructure, missing-test,
 timeout, protocol, or sandbox errors do not satisfy either condition. Bind the
 record to the `manifest_hash`, task ID, clean-baseline identity, runtime/image
-identity, evaluator bundle and test definition, effective sandbox policy, and
-the vector digest. Keep this setup result hidden from the agent and separate
-from the measured candidate-evaluation count. A wrong baseline vector or
+identity, evaluator bundle and test definition, effective sandbox policy,
+`baseline_vector_ref`, `baseline_vector_sha256`, `baseline_raw_output_ref`,
+and `baseline_raw_output_sha256`. Retain the exact per-test baseline vector
+and bounded raw setup output under those immutable references. Keep this setup
+result hidden from the agent and separate from the measured candidate-
+evaluation count. A wrong baseline vector or
 baseline-condition failure is task-specific `MISSING_SETUP` with no task
 substitution; missing, corrupt, or mismatched baseline evidence is
 `EVIDENCE_INCOMPLETE`. A shared baseline-verification failure stops measured
@@ -746,8 +749,12 @@ slot ledger, evaluator invocation/result records, operation
 reservation/settlement ledger, cost/latency measurements,
 human-intervention log, the bounded manifest/runtime/sandbox-policy-bound
 `NETWORK_DENIAL_VERIFIED` and `WORKER_NETWORK_DENIAL_VERIFIED` diagnostics,
-including their policy identities and evidence references, and all failure
-reasons.
+including their policy identities and evidence references, the
+`BASELINE_VECTOR_VERIFIED` records, exact per-test baseline vectors, bounded
+raw baseline setup outputs, immutable artifact references, and their digests,
+and all failure reasons. A missing, corrupt, or mismatched baseline vector or
+raw setup artifact is `EVIDENCE_INCOMPLETE`; never regenerate it after task
+exposure.
 Redact credentials without changing content that was visible to the agent or
 affected its behavior.
 
