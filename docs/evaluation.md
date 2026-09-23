@@ -203,9 +203,8 @@ record to the `manifest_hash`, task ID, clean-baseline identity, runtime/image
 identity, evaluator bundle and test definition, effective sandbox policy,
 `baseline_vector_ref`, `baseline_vector_sha256`, `baseline_raw_output_ref`,
 and `baseline_raw_output_sha256`. Retain the exact per-test baseline vector
-and bounded raw setup output under those immutable references. Keep this setup
-result hidden from the agent and separate from the measured candidate-
-evaluation count. A wrong baseline vector or
+and bounded raw setup output under those immutable references. Keep this setup result hidden from the agent and separate from
+the measured candidate-evaluation count. A wrong baseline vector or
 baseline-condition failure is task-specific `MISSING_SETUP` with no task
 substitution; missing, corrupt, or mismatched baseline evidence is
 `EVIDENCE_INCOMPLETE`. A shared baseline-verification failure stops measured
