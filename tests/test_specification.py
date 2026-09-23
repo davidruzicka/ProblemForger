@@ -178,6 +178,15 @@ class SpecificationChecks(unittest.TestCase):
             "never use native or object-capable deserialization",
             "status values are `OK`, `RUNTIME_ERROR`, `TIMEOUT`, `MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION`",
             "`RUNTIME_ERROR` produces a completed failing test vector",
+            "failure_origin: CANDIDATE",
+            "candidate execution began",
+            "A process start or nonzero exit alone is insufficient",
+            "failure_origin: INFRASTRUCTURE",
+            "unknown attribution also maps to `EVIDENCE_INCOMPLETE`",
+            "takes precedence over candidate-failure classification",
+            "A validator `REJECT` is allowed only when",
+            "A validator `ERROR`, crash, timeout, permission, disk, resource, or other infrastructure failure maps to `EVIDENCE_INCOMPLETE`",
+            "never emits `CANDIDATE_PATCH_INVALID`"
             "`TIMEOUT` maps to `EVALUATION_INCOMPLETE`",
             "`MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION` maps to `EVIDENCE_INCOMPLETE`",
             "`CANDIDATE_PATCH_INVALID` remains a trusted runner outcome",
@@ -322,6 +331,8 @@ class SpecificationChecks(unittest.TestCase):
             "primary result rule",
             "The manifest is hashed",
             "compact manifest is intentional",
+            "manifest hash is finalized before any measured-run evidence is created",
+            "contains no IDs or references to post-freeze evidence records"
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, manifest)
@@ -411,6 +422,12 @@ class SpecificationChecks(unittest.TestCase):
             "MISSING_SETUP",
             "PROVIDER_UNAVAILABLE",
             "EVALUATION_INCOMPLETE",
+            "`BASELINE_VECTOR_VERIFIED`",
+            "every `FAIL_TO_PASS` test fails through a valid completed test outcome",
+            "every required `PASS_TO_PASS` test passes",
+            "Infrastructure, missing-test, timeout, protocol, or sandbox errors do not satisfy",
+            "wrong baseline vector or baseline-condition failure is task-specific `MISSING_SETUP`",
+            "separate from the measured candidate-evaluation count",
             "CANDIDATE_PATCH_INVALID",
             "EVIDENCE_INCOMPLETE",
             "INCOMPLETE_EVIDENCE",

@@ -94,8 +94,7 @@ containing:
   images or archives are used;
 - evaluator version and required-test definition;
 - workspace isolation mode, candidate sandbox policy identity/configuration,
-  worker/agent network policy identity, and the `NETWORK_DENIAL_VERIFIED` and
-  `WORKER_NETWORK_DENIAL_VERIFIED` preflight evidence record identities;
+  and worker/agent network policy identity;
 - agent semantic deadline, evaluator wall-clock allowance, resource limits, retry
   rule, and human-intervention definition;
 - primary result rule, secondary cost/latency measures, and continuation
@@ -105,6 +104,14 @@ containing:
 The manifest is hashed and retained with every run. A compact manifest is
 intentional: it pins the inputs needed to operate and interpret the pilot
 without pretending that every opaque provider behavior is content-addressable.
+The manifest hash is finalized before any measured-run evidence is created. It
+contains no IDs or references to post-freeze evidence records. The
+`NETWORK_DENIAL_VERIFIED`, `BASELINE_VECTOR_VERIFIED`, and each attempt-specific
+`WORKER_NETWORK_DENIAL_VERIFIED` record are immutable post-freeze evidence:
+each records the frozen `manifest_hash` plus its runtime, policy, task, and
+attempt bindings, while consumer records store its evidence reference.
+Creating, retaining, or validating these records never mutates or rehashes the
+manifest.
 
 For P6, A records `NONE`; C requires non-null intervention and governance
 identities. Retain the identified content, including resolved defaults. Before
@@ -184,7 +191,23 @@ and requires exact equality with the policy identity in that record. It binds
 identity or reference is `EVIDENCE_INCOMPLETE` and prevents launch and
 scoring. If policy inspection, canary reachability, a policy-specific denial,
 or the durable bound result is missing, record `EVIDENCE_INCOMPLETE`, do not
-dispatch measured work, and do not evaluate a patch. These checks run without executing a selected task. If a
+dispatch measured work, and do not evaluate a patch. These checks run without executing a selected task.
+After the manifest is frozen and the policy checks above succeed, before any
+selected task is exposed, the trusted evaluator executes each selected task's
+unmodified clean baseline under the frozen runtime, evaluator, test, and
+sandbox configuration. Persist a `BASELINE_VECTOR_VERIFIED` record only when
+every required `FAIL_TO_PASS` test fails through a valid completed test outcome
+and every required `PASS_TO_PASS` test passes. Infrastructure, missing-test,
+timeout, protocol, or sandbox errors do not satisfy either condition. Bind the
+record to the `manifest_hash`, task ID, clean-baseline identity, runtime/image
+identity, evaluator bundle and test definition, effective sandbox policy, and
+the vector digest. Keep this setup result hidden from the agent and separate
+from the measured candidate-evaluation count. A wrong baseline vector or
+baseline-condition failure is task-specific `MISSING_SETUP` with no task
+substitution; missing, corrupt, or mismatched baseline evidence is
+`EVIDENCE_INCOMPLETE`. A shared baseline-verification failure stops measured
+dispatch as `INCOMPLETE_EVIDENCE`.
+If a
 selected task's compatibility predicate is missing, mismatched, or cannot be
 verified, record task-specific `MISSING_SETUP`, do not expose or evaluate that
 task, and do not substitute a different task. A shared inability to apply the
@@ -392,7 +415,12 @@ outcome with `evaluator_invocation: NOT_DISPATCHED`), then validate its mandator
 evidence: the
 manifest/version reference, the agent terminal record, the exact candidate
 patch bytes and digest where either A or C produced one, and the evaluator
-output where evaluation ran. For every candidate evaluation, also
+output where evaluation ran.
+For every selected task, require its bound `BASELINE_VECTOR_VERIFIED` setup
+record and revalidate the manifest, task, clean-baseline, runtime/image,
+evaluator-bundle/test-definition, sandbox-policy, and vector-digest bindings.
+Loss, corruption, or mismatch produces `EVIDENCE_INCOMPLETE`; a failed
+baseline condition remains `MISSING_SETUP` and is never a candidate outcome. For every candidate evaluation, also
 require the bound `NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics.
 Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the
 manifest, the effective measured sandbox, and the evaluator invocation; loss,
@@ -527,10 +555,20 @@ not candidate-controlled output, assigns the status in `TRUSTED_RESULT`. The
 status values are `OK`, `RUNTIME_ERROR`, `TIMEOUT`, `MALFORMED_RESPONSE`,
 `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION`. `OK` is evaluated by the hidden
 assertions. `RUNTIME_ERROR` produces a completed failing test vector and an
-observed zero. `TIMEOUT` maps to `EVALUATION_INCOMPLETE`. A
+observed zero only when its terminal payload proves `failure_origin: CANDIDATE`,
+candidate execution began, the candidate process/namespace identity is bound,
+candidate code caused the failure, and supervisor, IPC, sandbox, evaluator,
+and dependency setup were healthy. A process start or nonzero exit alone is
+insufficient. `TIMEOUT` maps to `EVALUATION_INCOMPLETE`. A launch, dependency,
+supervisor, IPC, evaluator, or other infrastructure error maps to
+`EVIDENCE_INCOMPLETE` with `failure_origin: INFRASTRUCTURE` and no completed
+test vector; unknown attribution also maps to `EVIDENCE_INCOMPLETE`. A
 `MALFORMED_RESPONSE`, `PROTOCOL_ERROR`, or `SANDBOX_VIOLATION` maps to
-`EVIDENCE_INCOMPLETE`. A pre-output `RUNTIME_ERROR` remains a complete failing
-test vector and observed zero even when `observed_output_sha256` is null.
+`EVIDENCE_INCOMPLETE` and takes precedence over candidate-failure
+classification. A pre-output `RUNTIME_ERROR` remains a complete failing test
+vector and observed zero even when `observed_output_sha256` is null only when
+the same candidate-causation evidence is present; otherwise it is
+`EVIDENCE_INCOMPLETE`.
 `CANDIDATE_PATCH_INVALID` remains a trusted runner
 outcome, not a candidate-controlled status, and is an observed zero only when
 the patch-invalid evidence is complete.
@@ -569,8 +607,14 @@ Restart never resumes an active evaluator, and no later slot dispatch is allowed
 in this pilot.
 
 Patch validation is a trusted coordinator transition separate from the evaluator's
-`TRUSTED_RESULT` status. When retained candidate patch bytes are
-digest-verified but fail the frozen baseline/applicability validator, append a
+`TRUSTED_RESULT` status. A completed validator `REJECT` is allowed only when
+healthy trusted validation proves that retained, digest-verified candidate
+content is malformed or cannot be applied to the verified baseline and emits a
+deterministic content/applicability reason and bounded evidence. A validator
+`ERROR`, crash, timeout, permission, disk, resource, or other infrastructure
+failure maps to `EVIDENCE_INCOMPLETE` with `failure_origin: INFRASTRUCTURE`
+and never emits `CANDIDATE_PATCH_INVALID`. When a completed validator `REJECT`
+occurs, append a
 durable terminal agent/slot outcome with code `CANDIDATE_PATCH_INVALID` and bind
 it to the manifest hash, slot ID, task ID, configuration, slot `run_id` (or
 explicit `NULL` for A), `agent_attempt_id`, candidate-patch digest and
@@ -627,9 +671,11 @@ infrastructure success. The report must distinguish:
 - `RUN_INTERRUPTED` — execution began but did not finish;
 - `EVALUATION_INCOMPLETE` — candidate evaluation produced neither a completed
   required test vector nor a complete, evidenced candidate-patch rejection;
-- `CANDIDATE_PATCH_INVALID` — retained, digest-verified candidate content is
-  demonstrably malformed or cannot be applied to the verified frozen baseline;
-  with all other mandatory evidence complete, this is an observed 0;
+- `CANDIDATE_PATCH_INVALID` — a completed trusted validator `REJECT` proves
+  retained, digest-verified candidate content is demonstrably malformed or
+  cannot be applied to the verified frozen baseline; with all other mandatory
+  evidence complete, this is an observed 0. Validator errors are
+  `EVIDENCE_INCOMPLETE`, not candidate failures;
 - `EVIDENCE_INCOMPLETE` — mandatory evidence is missing, unreadable, corrupt, or
   fails its binding checks, including absent retained patch bytes for a
   recorded produced patch; this takes precedence over candidate-failure
