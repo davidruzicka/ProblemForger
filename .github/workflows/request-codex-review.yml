@@ -13,7 +13,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: codex-review-request-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: codex-review-request-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
@@ -40,6 +40,19 @@ jobs:
                 per_page: 100,
               },
             );
+
+            const current = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const currentHeadSha = current.data.head.sha;
+            if (currentHeadSha !== headSha) {
+              core.info(
+                `Skipping stale review request for ${headSha}; current head is ${currentHeadSha}`,
+              );
+              return;
+            }
 
             const alreadyRequested = comments.some(
               (comment) =>

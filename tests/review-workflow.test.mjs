@@ -21,7 +21,7 @@ function comment(login, type, body = `${marker}\n${sha}`) {
   return { user: { login, type }, body };
 }
 
-async function invoke(comments, { listError, createError } = {}) {
+async function invoke(comments, { listError, createError, currentHeadSha = sha } = {}) {
   const created = [];
   const listComments = () => {};
   const github = {
@@ -31,14 +31,22 @@ async function invoke(comments, { listError, createError } = {}) {
       if (listError) throw listError;
       return comments;
     },
-    rest: { issues: {
-      listComments,
-      createComment: async (args) => {
-        if (createError) throw createError;
-        created.push(args);
-        comments.push(comment('github-actions[bot]', 'Bot', args.body));
+    rest: {
+      issues: {
+        listComments,
+        createComment: async (args) => {
+          if (createError) throw createError;
+          created.push(args);
+          comments.push(comment('github-actions[bot]', 'Bot', args.body));
+        },
       },
-    } },
+      pulls: {
+        get: async (args) => {
+          assert.deepEqual(args, { owner: 'fixture', repo: 'fixture', pull_number: 22 });
+          return { data: { head: { sha: currentHeadSha } } };
+        },
+      },
+    },
   };
   await run(github, context, { info() {} });
   return created;
@@ -75,10 +83,15 @@ test('serialized same-head invocations share one durable comment', async () => {
   assert.equal(comments.length, 1);
 });
 
-test('same PR and payload head serialize without cancellation', () => {
+test('stale event payload does not request an old head', async () => {
+  const created = await invoke([], { currentHeadSha: 'b'.repeat(40) });
+  assert.equal(created.length, 0);
+});
+
+test('same PR events serialize without cancellation', () => {
   const concurrency = workflow.match(/^concurrency:\n((?: {2}[^\n]*\n)*)/m)?.[1];
   assert.equal(concurrency,
-    '  group: codex-review-request-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}\n' +
+    '  group: codex-review-request-${{ github.event.pull_request.number }}\n' +
     '  cancel-in-progress: false\n');
 });
 

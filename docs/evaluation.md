@@ -96,7 +96,7 @@ containing:
 - complete ordered A/C slot list: each task's A slot before its C slot;
 - execution platform, dependency lockfiles, and image/archive digests when
   images or archives are used;
-- evaluator version and required-test definition;
+- evaluator adapter, source/runtime identity, and required-test definition;
 - workspace isolation mode, candidate sandbox policy identity/configuration,
   and worker/agent network policy identity;
 - agent semantic deadline, evaluator wall-clock allowance, resource limits, retry
@@ -143,10 +143,17 @@ compatibility. The benchmark adapter's eligibility predicate therefore
 requires that required tests and task setup must be network-free: they may not
 require DNS, external sockets, loopback, local HTTP/DB/browser-driver
 services, or arbitrary IPC. Only `CANDIDATE_EVAL_IPC_V1` is allowed for
-candidate/evaluator communication. Evaluate this predicate from pinned task
-metadata and the frozen required-test definition before selecting the six
-tasks. If the predicate cannot be proved, the task is ineligible. Do not
-inspect a selected task's gold patch while evaluating this predicate.
+candidate/evaluator communication. The eligibility predicate must also prove
+that every required test and fixture preserves the frozen required-test
+semantics through `CANDIDATE_EVAL_IPC_V1`: candidate code runs outside the
+trusted evaluator process, and the trusted side does not disclose hidden test
+or fixture code, expected outputs, or assertions to the candidate. Tasks that
+require trusted-process candidate execution, candidate imports or monkeypatching
+inside the evaluator, or another IPC/host path are ineligible. Prove this from
+pinned task metadata, evaluator adapter/source/runtime identity, and the frozen
+required-test definition before selecting the six tasks. If the predicate
+cannot be proved, the task is ineligible. Do not inspect a selected task's
+gold patch while evaluating this predicate.
 The same eligibility predicate requires at least one non-empty `FAIL_TO_PASS`
 test vector. A task with an empty `FAIL_TO_PASS` vector is ineligible; this
 makes the success rule non-vacuous.
@@ -171,8 +178,10 @@ Before the first measured agent run:
 2. verify HarnessX, ProblemForger service startup, evaluator availability, and
    the selected model capability;
 3. run the evaluator on a separate smoke fixture, not on a selected task;
-4. verify each selected task's recorded network-free compatibility, including
-   its pinned metadata and required-test definition, against the manifest;
+4. verify each selected task's recorded network-free compatibility and
+   candidate/evaluator isolation compatibility, including its pinned task
+   metadata, evaluator adapter/source/runtime identity, and required-test
+   definition, against the manifest;
 5. verify a clean isolated workspace and the declared resource accounting.
 
 The network-denial smoke fixture is an authoritative isolation check, not just
