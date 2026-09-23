@@ -184,7 +184,7 @@ class SpecificationChecks(unittest.TestCase):
             "failure_origin: INFRASTRUCTURE",
             "unknown attribution also maps to `EVIDENCE_INCOMPLETE`",
             "takes precedence over candidate-failure classification",
-            "A validator `REJECT` is allowed only when",
+            "A completed validator `REJECT` is allowed only when",
             "A validator `ERROR`, crash, timeout, permission, disk, resource, or other infrastructure failure maps to `EVIDENCE_INCOMPLETE`",
             "never emits `CANDIDATE_PATCH_INVALID`"
             "`TIMEOUT` maps to `EVALUATION_INCOMPLETE`",
