@@ -838,7 +838,8 @@ phase terminalization above, and do not launch later slots. In this contract, ph
 deadlines are elapsed-domain values: `absolute_slot_deadline` is the effective
 elapsed value at slot start plus the frozen agent allowance, and
 `absolute_evaluator_deadline` is the effective elapsed value at evaluator start
-bounded by `experiment_stop_elapsed_limit_ms`. While the coordinator
+plus the frozen evaluator allowance, bounded by `experiment_stop_elapsed_limit_ms`.
+While the coordinator
 remains live, read the current process-monotonic elapsed time at every
 dispatch, retry, budget check, and active-phase deadline check. Anchor effective
 elapsed time at the live-process maximum:

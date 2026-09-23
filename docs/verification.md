@@ -113,9 +113,11 @@ P3/P6 should begin with claims for which mechanically evaluable evidence exists.
 Configuration C may reject or escalate a mutation when:
 
 - schema/core graph invariants fail;
-- the mutation is based on a stale graph version;
 - required deterministic evidence is missing or contradicts the proposal;
 - a protected anchor would be changed without an explicitly authorized meta-operation.
+
+A stale graph version is a protocol `CONFLICT` before policy decision, not a C
+`REJECT` or `ESCALATE` classification.
 
 Do not invent deterministic checks for semantic properties that are not mechanically decidable.
 

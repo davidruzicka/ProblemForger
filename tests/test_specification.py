@@ -232,6 +232,7 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "`absolute_evaluator_deadline`",
             "separate from `absolute_evaluator_deadline`",
+            "effective elapsed value at evaluator start plus the frozen evaluator allowance",
             "agent deadline fences agent attempts and operations",
             "evaluator deadline fences evaluator writes",
             "experiment-wide stop deadline",
@@ -259,6 +260,17 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, risks)
+
+    def test_graph_projection_preserves_evidence_references_without_raw_evidence(self):
+        protocol = " ".join(read("docs/protocol.md").split())
+        for phrase in (
+            "Proposal-status and audit responses return only",
+            "Graph-state projections may include immutable evidence references",
+            "never expose evidence content",
+            "internal recovery inputs",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
 
     def test_terminal_fence_preserves_post_deadline_accounting(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
@@ -708,10 +720,12 @@ class SpecificationChecks(unittest.TestCase):
             "`has_more` indicates whether additional visible records existed after that cursor when the query was read",
             "Later appends may be retrieved by polling the returned cursor",
             "no unbounded journal response",
-            "filtered public projection",
+            "filtered public projections",
             "authorizes the caller for the explicit `run_id`",
-            "does not return normalized mutation operations",
-            "evidence content or references",
+            "they do not return normalized mutation operations",
+            "Proposal-status and audit responses return only",
+            "Graph-state projections may include immutable evidence references",
+            "never expose evidence content",
             "raw `read_journal` records remain internal",
         ):
             with self.subTest(phrase=phrase):
@@ -809,12 +823,30 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, verification)
 
+        verification_text = " ".join(verification.split())
+        self.assertIn(
+            "A stale graph version is a protocol `CONFLICT` before policy decision",
+            verification_text,
+        )
+        self.assertIn(
+            "not a C `REJECT` or `ESCALATE` classification",
+            verification_text,
+        )
+
     def test_plan_keeps_p11_portability_and_package_level_p6(self):
         plan = read("PLAN.md")
         self.assertIn("portability validation belongs to P11", plan)
         self.assertIn("one compact manifest", plan)
         self.assertIn("small paired A/C pilot", plan)
         self.assertIn("at least one controlled benchmark compares the baseline", plan)
+        self.assertIn(
+            "all reported improvements include cost/latency and the coverage/validity evidence required by their frozen experiment contract",
+            plan,
+        )
+        self.assertIn(
+            "the single-run P6 pilot is reported as a practical paired observation, not as repeated-run statistics",
+            plan,
+        )
 
     def test_methodology_is_discoverable_and_not_a_second_algorithm(self):
         methodology = " ".join(read("docs/methodology.md").split())

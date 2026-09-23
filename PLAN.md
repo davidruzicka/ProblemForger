@@ -143,7 +143,7 @@ The PoC is complete when:
 - at least one controlled benchmark compares the baseline with the complete ProblemForger package;
 - calibration claims use task-level held-out data;
 - routing, if enabled, includes uncertainty and exploration controls;
-- all reported improvements include cost/latency and repeated-run statistics;
+- all reported improvements include cost/latency and the coverage/validity evidence required by their frozen experiment contract; the single-run P6 pilot is reported as a practical paired observation, not as repeated-run statistics;
 - negative or null results are retained.
 
 ## Contributor workflow
