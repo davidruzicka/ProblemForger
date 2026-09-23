@@ -55,7 +55,7 @@ class SpecificationChecks(unittest.TestCase):
             "last observed UTC timestamp remains monotonically non-decreasing",
             "never overwrite it with a lower value",
             "Before dispatching any new slot or retry, persist the resulting floor",
-            "Compare effective elapsed time with the frozen wall-clock limit",
+            "Compare effective elapsed time with the frozen `experiment_stop_elapsed_limit_ms`",
             "never reset the deadline",
             "missing outcome is undefined, never 0",
         ):
