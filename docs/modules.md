@@ -127,7 +127,8 @@ A recording/in-memory or JSONL sink may be used initially.
 Inject only where deterministic tests or reproducibility require it. The initial service needs only two small capabilities:
 
 - a service clock for request deadlines and telemetry;
-- an ID source for run/proposal/journal identifiers.
+- an ID source for run and journal identifiers; proposal IDs are supplied by
+  clients and are never minted or replaced by the service.
 
 The initial service does not persist a lease clock or expose claim TTLs. Domain code does not implement a provider-specific clock algorithm. Claims, leases, and fencing are deferred until a measured parallel-worker requirement exists.
 

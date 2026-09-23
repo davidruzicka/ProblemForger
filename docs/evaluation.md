@@ -27,8 +27,12 @@ are useful later diagnostics, not prerequisites for this pilot.
 
 The pilot uses six tasks selected by a deterministic benchmark-adapter rule.
 There is one fresh agent run per task/configuration and one evaluator run for
-each produced candidate patch. The planned size is therefore twelve A/C slots
-and at most twelve candidate-patch evaluations. An eligible first-attempt
+each produced candidate patch, except when trusted validation rejects it as
+`CANDIDATE_PATCH_INVALID`: that terminal outcome records
+`evaluator_invocation: NOT_DISPATCHED` and has no evaluator run. The planned
+size is therefore twelve A/C slots and at most twelve candidate-patch
+evaluations; invalid-patch terminalizations are counted separately. An eligible
+first-attempt
 failure can require one clean whole-slot retry, so the actual agent attempt
 count can exceed twelve and must be reported separately from the planned slot
 count. These counts describe an operational pilot, not statistical precision.

@@ -288,7 +288,9 @@ class SpecificationChecks(unittest.TestCase):
             "Academic uncertainty is acceptable",
             "six tasks",
             "one fresh agent run per task/configuration",
-            "one evaluator run for each produced candidate patch",
+            "one evaluator run for each produced candidate patch, except when trusted validation rejects it as `CANDIDATE_PATCH_INVALID`",
+            "`evaluator_invocation: NOT_DISPATCHED` and has no evaluator run",
+            "invalid-patch terminalizations are counted separately",
             "planned size is therefore twelve A/C slots",
             "at most twelve candidate-patch evaluations",
             "actual agent attempt count can exceed twelve",
@@ -772,6 +774,7 @@ class SpecificationChecks(unittest.TestCase):
         module = read("docs/modules.md")
         self.assertIn("create_run(run_id, run_metadata)", module)
         self.assertIn("RUN_METADATA_CONFLICT", module)
+        self.assertIn("proposal IDs are supplied by clients and are never minted or replaced by the service", module)
         self.assertIn("graph_version=0, last_journal_position=0", module)
         self.assertIn("every operation against an unknown run returns `NOT_FOUND`", module)
         for phrase in (
