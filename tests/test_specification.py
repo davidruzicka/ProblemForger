@@ -423,7 +423,7 @@ class SpecificationChecks(unittest.TestCase):
             "PROVIDER_UNAVAILABLE",
             "EVALUATION_INCOMPLETE",
             "`BASELINE_VECTOR_VERIFIED`",
-            "every `FAIL_TO_PASS` test fails through a valid completed test outcome",
+            "every required `FAIL_TO_PASS` test fails through a valid completed test outcome",
             "every required `PASS_TO_PASS` test passes",
             "Infrastructure, missing-test, timeout, protocol, or sandbox errors do not satisfy",
             "wrong baseline vector or baseline-condition failure is task-specific `MISSING_SETUP`",
@@ -530,7 +530,7 @@ class SpecificationChecks(unittest.TestCase):
             "## Practical human decision", 1
         )[0]
         self.assertIn(
-            "`CANDIDATE_PATCH_INVALID` — retained, digest-verified candidate content is demonstrably malformed",
+            "`CANDIDATE_PATCH_INVALID` — a completed trusted validator `REJECT` proves retained, digest-verified candidate content is demonstrably malformed",
             reporting,
         )
         self.assertIn(
