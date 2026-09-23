@@ -709,6 +709,21 @@ class SpecificationChecks(unittest.TestCase):
         self.assertNotIn("expected_claim_epoch", protocol)
         self.assertNotIn("spec-protocol-lease-clock", protocol)
 
+    def test_stale_proposals_conflict_before_policy_and_terminal_append(self):
+        protocol = " ".join(read("docs/protocol.md").split())
+        for phrase in (
+            "Before evaluating any governance policy",
+            "compares it with the receipt's stored `expected_graph_version`",
+            "do not invoke schema/evidence/governance policy",
+            "do not append `REJECT`, `RETRY`, `ESCALATE`, or `COMMIT`",
+            "append exactly one terminal `CONFLICT` audit record",
+            "before returning `CONFLICT`",
+            "rechecks this version precondition before any terminal append",
+            "must never finalize `REJECT`, `RETRY`, or `ESCALATE` for a stale receipt",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
+
     def test_public_graph_audit_surface_is_bounded(self):
         protocol = " ".join(read("docs/protocol.md").split())
         for phrase in (
@@ -721,7 +736,8 @@ class SpecificationChecks(unittest.TestCase):
             "Later appends may be retrieved by polling the returned cursor",
             "no unbounded journal response",
             "filtered public projections",
-            "authorizes the caller for the explicit `run_id`",
+            "authorizes run creation before registering a supplied run ID",
+            "performs caller-to-run authorization for the explicit `run_id` before any other run-scoped command or query reads or mutates that run",
             "they do not return normalized mutation operations",
             "Proposal-status and audit responses return only",
             "Graph-state projections may include immutable evidence references",

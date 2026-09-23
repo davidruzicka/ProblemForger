@@ -98,6 +98,17 @@ On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durab
 Proposal execution is owned by the service and serialized for the initial P1
 PoC. The durable receipt is the recovery point; it is not a worker lease.
 
+Before evaluating any governance policy for a pending proposal, the owning
+service reads the current run `graph_version` and compares it with the
+receipt's stored `expected_graph_version`. If they differ, the proposal is
+stale: do not invoke schema/evidence/governance policy and do not append
+`REJECT`, `RETRY`, `ESCALATE`, or `COMMIT`. Instead, append exactly one
+terminal `CONFLICT` audit record bound to `(run_id, proposal_id)` through the
+owning service before returning `CONFLICT`; if that durable append fails,
+return a persistence/service failure rather than a completed governance
+outcome. This pre-policy check is a protocol-owned proposal-finalization step, not an
+optional configuration-C policy rule.
+
 <a id="spec-protocol-store-owner"></a>
 <!-- spec-id: PROTOCOL.STORE-OWNER -->
 #### STORE-OWNER
@@ -157,6 +168,14 @@ decision and graph events are persisted exclusively through `append_graph`, with
 the same proposal binding and single-terminal checks plus the graph-version
 check. Non-terminal-only audit batches require no proposal and never advance
 `graph_version`; non-commit terminal appends also leave it unchanged.
+
+The serialized owning service rechecks this version precondition before any
+terminal append under the same finalization operation. A mismatch
+supersedes a candidate policy outcome and must durably append the one terminal
+`CONFLICT` for that receipt; it must never finalize `REJECT`, `RETRY`, or
+`ESCALATE` for a stale receipt. This closes the gap between the pre-policy
+check and terminal `append_audit` and keeps stale proposals from receiving a
+policy outcome.
 
 `VersionConflict` does not complete the proposal by itself. The serialized
 service must durably append the corresponding `CONFLICT` record before returning
@@ -235,7 +254,7 @@ get_audit_timeline(run_id, limit, after_journal_position?)
 propose_mutation(run_id, proposal_id, expected_graph_version, operations, evidence_refs)
 ```
 
-The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are not: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller. The harness/worker command plane authorizes the caller for the explicit `run_id` before reading and exposes filtered public projections. Proposal-status and audit responses return only `journal_position`, run/proposal identifiers, record kind, lifecycle state, governance outcome/reason, graph version, and other explicitly public metadata; they do not return normalized mutation operations, evidence content, raw outputs, credentials, or internal recovery inputs. Graph-state projections may include immutable evidence references as graph metadata required by the explicit graph API, but never expose evidence content, raw outputs, credentials, or internal recovery inputs; raw `read_journal` records remain internal to the owning service and authorized operator/recovery surfaces. The public audit query requires a `limit`. That limit is an integer, required, positive, finite, and no greater than the service's finite configured maximum; missing or invalid values return `INVALID_LIMIT`. Results are ordered by ascending `journal_position` after the exclusive cursor and return `next_after_journal_position` plus `has_more` for continuation. An omitted cursor starts at the beginning (position 0); `next_after_journal_position` is the last returned position, or the supplied cursor for an empty page. `has_more` indicates whether additional visible records existed after that cursor when the query was read. Later appends may be retrieved by polling the returned cursor. There is no unbounded journal response.
+The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are not: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller. The harness/worker command plane authorizes run creation before registering a supplied run ID and performs caller-to-run authorization for the explicit `run_id` before any other run-scoped command or query reads or mutates that run; it exposes filtered public projections. Proposal-status and audit responses return only `journal_position`, run/proposal identifiers, record kind, lifecycle state, governance outcome/reason, graph version, and other explicitly public metadata; they do not return normalized mutation operations, evidence content, raw outputs, credentials, or internal recovery inputs. Graph-state projections may include immutable evidence references as graph metadata required by the explicit graph API, but never expose evidence content, raw outputs, credentials, or internal recovery inputs; raw `read_journal` records remain internal to the owning service and authorized operator/recovery surfaces. The public audit query requires a `limit`. That limit is an integer, required, positive, finite, and no greater than the service's finite configured maximum; missing or invalid values return `INVALID_LIMIT`. Results are ordered by ascending `journal_position` after the exclusive cursor and return `next_after_journal_position` plus `has_more` for continuation. An omitted cursor starts at the beginning (position 0); `next_after_journal_position` is the last returned position, or the supplied cursor for an empty page. `has_more` indicates whether additional visible records existed after that cursor when the query was read. Later appends may be retrieved by polling the returned cursor. There is no unbounded journal response.
 
 Configuration B commits proposals after schema/version/core-invariant checks only.
 
