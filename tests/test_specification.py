@@ -771,7 +771,7 @@ class SpecificationChecks(unittest.TestCase):
                 self.assertIn(f"({Path(expected[spec_id]).name}#{anchor})", ownership)
 
     def test_run_registration_and_graph_version_rules_remain_explicit(self):
-        module = read("docs/modules.md")
+        module = " ".join(read("docs/modules.md").split())
         self.assertIn("create_run(run_id, run_metadata)", module)
         self.assertIn("RUN_METADATA_CONFLICT", module)
         self.assertIn("proposal IDs are supplied by clients and are never minted or replaced by the service", module)
