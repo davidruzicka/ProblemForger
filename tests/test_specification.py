@@ -515,6 +515,9 @@ class SpecificationChecks(unittest.TestCase):
                 "content-addressed `evaluator_identity_evidence_ref`",
                 "`evaluator_identity_evidence_sha256`",
                 "created from the artifacts actually loaded and pinned for that invocation",
+                "effective verifier configuration (including dependency roots, symlink policy, and transitive-content traversal rules)",
+                "exact test/command identity",
+                "must match the frozen required-test definition before the record is persisted",
                 "A missing or mismatched identity, evidence record, reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE`",
             )),
             ("scoring", scoring, (
@@ -522,6 +525,8 @@ class SpecificationChecks(unittest.TestCase):
                 "Resolve the evidence reference, verify its digest, trusted producer",
                 "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
                 "every referenced immutable artifact",
+                "validate the proof's effective verifier configuration and exact test/command identity against the frozen required-test definition and the loaded invocation for both baseline and candidate",
+                "matching checker version alone is insufficient",
                 "revalidate the effective `evaluator_adapter_source_runtime_identity` and `evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256` against the manifest, the immutable verification record, and the loaded evaluator used for that invocation",
             )),
             ("measured", measured, (

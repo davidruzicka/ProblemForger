@@ -117,12 +117,16 @@ execution or launch. Its schema is
 pinned artifacts. The record contains the frozen `manifest_hash`, the
 baseline or evaluator-invocation scope, the observed
 `evaluator_adapter_source_runtime_identity` recomputed from those artifacts,
-the verification method and checker version, and non-empty `artifact_refs`
-entries of `{role, ref, sha256}` covering the adapter, source, resolved
-configuration, runtime, dependencies, and transitively referenced content.
-The record is created from the artifacts actually loaded and pinned for that
-execution; mutable paths, copied manifest labels, and version labels are not
-evidence. Its `evaluator_identity_evidence_ref` is a content-addressed
+the verification method and checker version, the effective verifier
+configuration (including dependency roots, symlink policy, and
+transitive-content traversal rules), and the exact test/command identity.
+These configuration and command fields are part of the normalized record bytes
+covered by `evaluator_identity_evidence_sha256`; they are content identities,
+not mutable labels. It also contains non-empty `artifact_refs` entries of
+`{role, ref, sha256}` covering the adapter, source, resolved configuration,
+runtime, dependencies, and transitively referenced content. The record is
+created from the artifacts actually loaded and pinned for that execution;
+mutable paths, copied manifest labels, and version labels are not evidence. Its `evaluator_identity_evidence_ref` is a content-addressed
 immutable reference, and `evaluator_identity_evidence_sha256` covers the
 exact retained record bytes. Both are bound into the corresponding
 `BASELINE_VECTOR_VERIFIED`, evaluator `STARTED`, and terminal result
@@ -243,9 +247,12 @@ the invocation. It persists the trusted
 `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch, with its
 content-addressed `evaluator_identity_evidence_ref` and
 `evaluator_identity_evidence_sha256`, created from the artifacts actually
-loaded and pinned for that invocation. checking mutable paths without binding
-loaded artifacts is insufficient. A missing or mismatched identity, evidence
-record, reference, digest, or referenced artifact is
+loaded and pinned for that invocation. The effective verifier configuration
+(including dependency roots, symlink policy, and transitive-content traversal
+rules) and exact test/command identity must match the frozen required-test definition
+before the record is persisted. Checking mutable paths without binding loaded
+artifacts is insufficient. A missing or mismatched identity, evidence record,
+reference, digest, or referenced artifact is
 `EVIDENCE_INCOMPLETE` and prevents execution, launch, and scoring. Persist a
 `BASELINE_VECTOR_VERIFIED` record only when
 every required `FAIL_TO_PASS` test fails through a valid completed test outcome
@@ -482,8 +489,11 @@ Resolve the evidence reference, verify its digest, trusted producer,
 `EVALUATOR_IDENTITY_VERIFIED_V1` schema, `verification_result=VERIFIED`,
 baseline/scope bindings, and every referenced immutable artifact; recompute
 the identity from those retained bytes and compare it with the proof, baseline
-record, and frozen manifest. Loss, corruption, untrusted provenance, or
-mismatch produces `EVIDENCE_INCOMPLETE`; a failed baseline condition remains
+record, and frozen manifest. Also validate the proof's effective verifier
+configuration and exact test/command identity against the frozen required-test
+definition and the loaded invocation for both baseline and candidate; a
+matching checker version alone is insufficient. Loss, corruption, untrusted
+provenance, or mismatch produces `EVIDENCE_INCOMPLETE`; a failed baseline condition remains
 `MISSING_SETUP` and is never a candidate outcome. For every candidate
 evaluation, also revalidate the effective
 `evaluator_adapter_source_runtime_identity` and
