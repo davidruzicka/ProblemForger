@@ -510,7 +510,7 @@ class SpecificationChecks(unittest.TestCase):
                 "Before each clean-baseline execution and before every candidate evaluator launch",
                 "computes the effective `evaluator_adapter_source_runtime_identity`",
                 "requires exact equality with the manifest's evaluator adapter/source/runtime identity",
-                "checking mutable paths without binding loaded artifacts is insufficient",
+                "Checking mutable paths without binding loaded artifacts is insufficient",
                 "persists the trusted `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch",
                 "content-addressed `evaluator_identity_evidence_ref`",
                 "`evaluator_identity_evidence_sha256`",
