@@ -563,7 +563,7 @@ class SpecificationChecks(unittest.TestCase):
                 "invocation record binds the manifest hash",
                 "`evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, `producer_attestation_ref`, evaluator bundle digest",
                 "terminal result record repeats that full invocation binding",
-                "`producer_attestation_ref` is bound in the evaluator `STARTED` and terminal result consumer records",
+                "`evaluator_identity_evidence_sha256`, `producer_attestation_ref`, `sandbox_policy_id`",
                 "Before reusing a completed baseline after restart, obtain its `producer_attestation_ref` from the integrity-bound `BASELINE_VECTOR_VERIFIED` consumer record and cross-check it against the retained V1 record and exact evidence reference/digest",
                 "For a candidate evaluation after restart, obtain `producer_attestation_ref` from the integrity-bound candidate `STARTED` or terminal result record and cross-check it against the retained V1 record and exact candidate evidence reference/digest; perform the same evaluator identity, producer-provenance, verifier-profile, producer-attestation, and retained-content checks only when a candidate evaluator was actually dispatched",
                 "do not require a candidate `EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured sandbox",
