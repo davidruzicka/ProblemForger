@@ -514,7 +514,7 @@ class SpecificationChecks(unittest.TestCase):
                 "neither depends on a future evidence digest",
                 "unsigned canonical payload that includes `producer_id` and `producer_provenance` and omits `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, and `producer_attestation_ref`",
                 "separate immutable `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope",
-                "attestation binds `producer_id` and `producer_provenance` to the exact `evaluator_identity_evidence_ref` and `evaluator_identity_evidence_sha256`",
+                "envelope authenticates the trusted recorder and binds `producer_id` and `producer_provenance` to the exact `evaluator_identity_evidence_ref` and `evaluator_identity_evidence_sha256`",
                 "neither self-derived field is part of its own preimage",
                 "evidence reference and digest bind the complete V1 payload, including `producer_id` and `producer_provenance`",
                 "attestation reference is derived from the envelope with its own reference omitted, and the payload does not contain that reference",
@@ -543,7 +543,7 @@ class SpecificationChecks(unittest.TestCase):
             )),
             ("scoring", scoring, (
                 "runtime/image, `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, evaluator-bundle/test-definition",
-                "Resolve the evidence reference and verify its digest, `producer_attestation_ref`, and its authenticated `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope binds the exact evidence reference and digest to the payload's `producer_id` and `producer_provenance`",
+                "Resolve the evidence reference and verify its digest, the payload's `producer_attestation_ref` and verify its authenticated `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope binds the exact evidence reference and digest to the payload's `producer_id` and `producer_provenance`",
                 "Missing, unknown, unauthenticated, or mismatched producer provenance or attestation is `EVIDENCE_INCOMPLETE`",
                 "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
                 "every referenced immutable artifact",
@@ -565,7 +565,7 @@ class SpecificationChecks(unittest.TestCase):
                 "For a candidate evaluation after restart, perform the same evaluator identity, producer-provenance, verifier-profile, producer-attestation, and retained-content checks only when a candidate evaluator was actually dispatched",
                 "do not require a candidate `EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured sandbox",
                 "revalidate the terminal outcome, its complete no-evaluation/patch-validation evidence, the explicit marker, and the mandatory baseline proof against the manifest and retained evidence",
-                "Apply the same scoring-time producer identity/provenance, verifier-profile, producer-attestation, and retained-content checks to the mandatory baseline proof and any dispatched candidate proof during read-only restart reconciliation",
+                "Apply the same scoring-time producer identity/provenance, verifier-profile, trusted producer-attestation and retained-content checks to the mandatory baseline proof and any dispatched candidate proof during read-only restart reconciliation",
                 "do not substitute current producer metadata or regenerate provenance",
             )),
             ("retained", retained, (
