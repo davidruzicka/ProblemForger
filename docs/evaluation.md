@@ -109,17 +109,38 @@ The evaluator adapter/source/runtime identity is a content identity of the
 loaded adapter and source/runtime artifacts, resolved evaluator configuration,
 and runtime/dependency inputs; a version label alone is not sufficient.
 
+For every clean-baseline execution and candidate evaluator launch, the trusted
+runner persists an immutable `EVALUATOR_IDENTITY_VERIFIED` record before
+execution or launch. Its schema is
+`EVALUATOR_IDENTITY_VERIFIED_V1`; a trusted recorder sets
+`verification_result=VERIFIED` only after checking the actual loaded and
+pinned artifacts. The record contains the frozen `manifest_hash`, the
+baseline or evaluator-invocation scope, the observed
+`evaluator_adapter_source_runtime_identity` recomputed from those artifacts,
+the verification method and checker version, and non-empty `artifact_refs`
+entries of `{role, ref, sha256}` covering the adapter, source, resolved
+configuration, runtime, dependencies, and transitively referenced content.
+The record is created from the artifacts actually loaded and pinned for that
+execution; mutable paths, copied manifest labels, and version labels are not
+evidence. Its `evaluator_identity_evidence_ref` is a content-addressed
+immutable reference, and `evaluator_identity_evidence_sha256` covers the
+exact retained record bytes. Both are bound into the corresponding
+`BASELINE_VECTOR_VERIFIED`, evaluator `STARTED`, and terminal result
+records. A missing, unreadable, corrupt, untrusted, or mismatched record,
+reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE` and
+prevents execution, launch, reuse, and scoring.
+
 The manifest is hashed and retained with every run. A compact manifest is
 intentional: it pins the inputs needed to operate and interpret the pilot
 without pretending that every opaque provider behavior is content-addressable.
 The manifest hash is finalized before any measured-run evidence is created. It
 contains no IDs or references to post-freeze evidence records. The
-`NETWORK_DENIAL_VERIFIED`, `BASELINE_VECTOR_VERIFIED`, and each attempt-specific
-`WORKER_NETWORK_DENIAL_VERIFIED` record are immutable post-freeze evidence:
-each records the frozen `manifest_hash` plus its runtime, policy, task, and
-attempt bindings, while consumer records store its evidence reference.
-Creating, retaining, or validating these records never mutates or rehashes the
-manifest.
+`NETWORK_DENIAL_VERIFIED`, `BASELINE_VECTOR_VERIFIED`, each attempt-specific
+`WORKER_NETWORK_DENIAL_VERIFIED`, and every `EVALUATOR_IDENTITY_VERIFIED`
+record are immutable post-freeze evidence: each records the frozen
+`manifest_hash` plus the bindings relevant to its scope, while consumer
+records store its evidence reference. Creating, retaining, or validating these
+records never mutates or rehashes the manifest.
 
 For P6, A records `NONE`; C requires non-null intervention and governance
 identities. Retain the identified content, including resolved defaults. Before
@@ -218,16 +239,22 @@ candidate evaluator launch, the trusted runner computes the effective
 and source/runtime artifacts, resolved evaluator configuration, and
 runtime/dependency inputs. It requires exact equality with the manifest's
 evaluator adapter/source/runtime identity and pins those verified artifacts for
-the invocation; checking mutable paths without binding loaded artifacts is
-insufficient. A missing or mismatched identity is
+the invocation. It persists the trusted
+`EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch, with its
+content-addressed `evaluator_identity_evidence_ref` and
+`evaluator_identity_evidence_sha256`, created from the artifacts actually
+loaded and pinned for that invocation. checking mutable paths without binding
+loaded artifacts is insufficient. A missing or mismatched identity, evidence
+record, reference, digest, or referenced artifact is
 `EVIDENCE_INCOMPLETE` and prevents execution, launch, and scoring. Persist a
 `BASELINE_VECTOR_VERIFIED` record only when
 every required `FAIL_TO_PASS` test fails through a valid completed test outcome
 and every required `PASS_TO_PASS` test passes. Infrastructure, missing-test,
 timeout, protocol, or sandbox errors do not satisfy either condition. Bind the
 record to the `manifest_hash`, task ID, clean-baseline identity, runtime/image
-identity, `evaluator_adapter_source_runtime_identity`, evaluator bundle and
-test definition, effective sandbox policy,
+identity, `evaluator_adapter_source_runtime_identity`,
+`evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
+evaluator bundle and test definition, effective sandbox policy,
 `baseline_vector_ref`, `baseline_vector_sha256`, `baseline_raw_output_ref`,
 and `baseline_raw_output_sha256`. Retain the exact per-test baseline vector
 and bounded raw setup output under those immutable references. Keep this setup result hidden from the agent and separate from
@@ -448,14 +475,26 @@ patch bytes and digest where either A or C produced one, and the evaluator
 output where evaluation ran.
 For every selected task, require its bound `BASELINE_VECTOR_VERIFIED` setup
 record and revalidate the manifest, task, clean-baseline, runtime/image,
-`evaluator_adapter_source_runtime_identity`, evaluator-bundle/test-definition,
-sandbox-policy, and vector-digest bindings.
-Loss, corruption, or mismatch produces `EVIDENCE_INCOMPLETE`; a failed
-baseline condition remains `MISSING_SETUP` and is never a candidate outcome.
-For every candidate evaluation, also revalidate the effective
-`evaluator_adapter_source_runtime_identity` against the manifest and the
-loaded evaluator used for that invocation; loss, corruption, or mismatch
-produces `EVIDENCE_INCOMPLETE`. Require the bound
+`evaluator_adapter_source_runtime_identity`,
+`evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
+evaluator-bundle/test-definition, sandbox-policy, and vector-digest bindings.
+Resolve the evidence reference, verify its digest, trusted producer,
+`EVALUATOR_IDENTITY_VERIFIED_V1` schema, `verification_result=VERIFIED`,
+baseline/scope bindings, and every referenced immutable artifact; recompute
+the identity from those retained bytes and compare it with the proof, baseline
+record, and frozen manifest. Loss, corruption, untrusted provenance, or
+mismatch produces `EVIDENCE_INCOMPLETE`; a failed baseline condition remains
+`MISSING_SETUP` and is never a candidate outcome. For every candidate
+evaluation, also revalidate the effective
+`evaluator_adapter_source_runtime_identity` and
+`evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256`
+against the manifest, the immutable verification record, and the loaded
+evaluator used for that invocation; loss, corruption, or mismatch produces
+`EVIDENCE_INCOMPLETE`. The same baseline proof remains mandatory for
+`NO_PATCH`, `CANDIDATE_PATCH_INVALID`, and
+`evaluator_invocation: NOT_DISPATCHED`; these outcomes do not authorize
+substituting a current evaluator or omitting historical baseline evidence.
+Require the bound
 `NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics.
 Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the
 manifest, the effective measured sandbox, and the evaluator invocation; loss,
@@ -622,22 +661,29 @@ Persist an evaluator `STARTED` invocation record, bound to the slot and patch,
 before launching it. The invocation record binds the manifest hash, slot ID,
 task ID, configuration, slot `run_id` (or explicit `NULL` for A),
 candidate-patch digest, evaluator version/test
-definition, `evaluator_adapter_source_runtime_identity`, evaluator bundle digest,
-clean-baseline identity,
+definition, `evaluator_adapter_source_runtime_identity`,
+`evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
+evaluator bundle digest, clean-baseline identity,
 `sandbox_policy_id`, `network_denial_evidence_ref`,
 `evaluator_started_at`, and `absolute_evaluator_deadline`. The trusted
 runner verifies the effective measured sandbox policy against the bound
 `NETWORK_DENIAL_VERIFIED` record before launch. It has no
 raw-output digest. The terminal result record repeats that full invocation
 binding, including the slot `run_id`,
-`evaluator_adapter_source_runtime_identity`, `sandbox_policy_id`, and
+`evaluator_adapter_source_runtime_identity`,
+`evaluator_identity_evidence_ref`,
+`evaluator_identity_evidence_sha256`, `sandbox_policy_id`, and
 `network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
 (or null), plus the status-specific `terminal_payload` described above. The
-record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. Before reusing a completed bound evaluation after restart, revalidate its
-retained `evaluator_adapter_source_runtime_identity` and bound verification
-evidence against the manifest; do not substitute the currently installed
-evaluator. A missing, corrupt, or mismatched identity is
+record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. Before reusing a completed baseline or bound evaluation after restart,
+revalidate its retained `evaluator_adapter_source_runtime_identity`,
+`evaluator_identity_evidence_ref`,
+`evaluator_identity_evidence_sha256`, and immutable
+`EVALUATOR_IDENTITY_VERIFIED` record plus its referenced historical artifacts
+against the manifest; inspect retained bytes only. Never rerun baseline setup or
+the evaluator, execute retained evaluator code, regenerate verification
+evidence, or substitute the currently installed evaluator. A missing, corrupt, or mismatched identity is
 `EVIDENCE_INCOMPLETE`; never rerun the evaluator. A
 started evaluation without a durable complete bound result at restart is
 recorded as `EVALUATION_INCOMPLETE` with reason `COORDINATOR_RESTART`; this is
@@ -782,16 +828,21 @@ Retain the manifest, its hash, task order, task/image identities, source and
 dependency identities, model/provider metadata, exact request settings,
 candidate-patch digest, durable ProblemForger journal, raw evaluator output,
 slot ledger, evaluator invocation/result records, their effective evaluator
-adapter/source/runtime identities and bound verification evidence,
+adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records,
+their content-addressed `evaluator_identity_evidence_ref` values and
+`evaluator_identity_evidence_sha256` digests, and bound verification evidence,
 operation reservation/settlement ledger, cost/latency measurements,
 human-intervention log, the bounded manifest/runtime/sandbox-policy-bound
 `NETWORK_DENIAL_VERIFIED` and `WORKER_NETWORK_DENIAL_VERIFIED` diagnostics,
 including their policy identities and evidence references, the
 `BASELINE_VECTOR_VERIFIED` records, exact per-test baseline vectors, bounded
 raw baseline setup outputs, immutable artifact references, and their digests,
-and all failure reasons. A missing, corrupt, or mismatched baseline vector or
-raw setup artifact is `EVIDENCE_INCOMPLETE`; never regenerate it after task
-exposure.
+and all failure reasons. Retain the evaluator verification records, their
+reference/digest fields, and all transitively referenced evaluator artifact
+bytes outside worker/candidate authority for the lifetime of the pilot
+evidence. A missing, corrupt, or mismatched baseline vector, raw setup
+artifact, or evaluator verification artifact is `EVIDENCE_INCOMPLETE`; never
+regenerate it after task exposure.
 Redact credentials without changing content that was visible to the agent or
 affected its behavior.
 

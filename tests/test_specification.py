@@ -504,25 +504,34 @@ class SpecificationChecks(unittest.TestCase):
         for scope, text, phrases in (
             ("manifest", manifest, (
                 "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
+                "For every clean-baseline execution and candidate evaluator launch, the trusted runner persists an immutable `EVALUATOR_IDENTITY_VERIFIED` record",
             )),
             ("preflight", preflight, (
                 "Before each clean-baseline execution and before every candidate evaluator launch",
                 "computes the effective `evaluator_adapter_source_runtime_identity`",
                 "requires exact equality with the manifest's evaluator adapter/source/runtime identity",
                 "checking mutable paths without binding loaded artifacts is insufficient",
-                "A missing or mismatched identity is `EVIDENCE_INCOMPLETE`",
+                "persists the trusted `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch",
+                "content-addressed `evaluator_identity_evidence_ref`",
+                "`evaluator_identity_evidence_sha256`",
+                "created from the artifacts actually loaded and pinned for that invocation",
+                "A missing or mismatched identity, evidence record, reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE`",
             )),
             ("scoring", scoring, (
-                "runtime/image, `evaluator_adapter_source_runtime_identity`, evaluator-bundle/test-definition",
-                "revalidate the effective `evaluator_adapter_source_runtime_identity` against the manifest and the loaded evaluator used for that invocation",
+                "runtime/image, `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, evaluator-bundle/test-definition",
+                "Resolve the evidence reference, verify its digest, trusted producer",
+                "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
+                "every referenced immutable artifact",
+                "revalidate the effective `evaluator_adapter_source_runtime_identity` and `evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256` against the manifest, the immutable verification record, and the loaded evaluator used for that invocation",
             )),
             ("measured", measured, (
                 "invocation record binds the manifest hash",
-                "`evaluator_adapter_source_runtime_identity`, evaluator bundle digest",
+                "`evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, evaluator bundle digest",
                 "terminal result record repeats that full invocation binding",
+                "revalidate its retained `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, and immutable `EVALUATOR_IDENTITY_VERIFIED` record",
             )),
             ("retained", retained, (
-                "their effective evaluator adapter/source/runtime identities and bound verification evidence",
+                "their effective evaluator adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records, their content-addressed `evaluator_identity_evidence_ref` values and `evaluator_identity_evidence_sha256` digests, and bound verification evidence",
             )),
         ):
             for phrase in phrases:
