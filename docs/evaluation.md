@@ -113,9 +113,10 @@ The evaluator-identity verification profile is frozen before manifest hashing.
 It is `evaluator_verification_profile` and contains
 `verification_method`, `checker_version`,
 `verifier_command_identity`, and
-`effective_verifier_configuration`. `verifier_command_identity` binds the
-retained checker executable/script bytes by immutable reference and SHA-256
-digest plus its entry point. `effective_verifier_configuration` records
+`effective_verifier_configuration`. `verifier_command_identity` binds the complete verifier execution identity:
+retained checker executable/script bytes, its interpreter/runtime, and all
+transitive checker/helper dependency bytes—or a pinned image/archive containing
+them—each by immutable reference and SHA-256 digest, plus its entry point. `effective_verifier_configuration` records
 behavior-affecting arguments, environment, resolved defaults, dependency roots
 relative to pinned artifacts, symlink handling, and transitive-content
 traversal rules, including immutable identities of referenced configuration
@@ -145,7 +146,8 @@ bytes covered by `evaluator_identity_evidence_sha256`; they are content
 identities, not mutable labels. It also contains non-empty `artifact_refs`
 entries of
 `{role, ref, sha256}` covering the adapter, source, resolved configuration,
-runtime, dependencies, and transitively referenced content. The record is
+runtime, dependencies, transitively referenced evaluator content, and all
+verifier command identity content. The record is
 created from the artifacts actually loaded and pinned for that execution;
 mutable paths, copied manifest labels, and version labels are not evidence.
 Its `evaluator_identity_evidence_ref` is a content-addressed immutable
@@ -277,8 +279,8 @@ verification, the trusted runner records the effective
 `evaluator_verification_profile` actually used, observed by the trusted runner
 rather than copied from the manifest. Before setting
 `verification_result=VERIFIED`, require exact equality with the frozen
-profile and successful verification of its referenced checker and configuration
-content; the profile's effective verifier configuration (including dependency
+profile and successful verification of its referenced checker, interpreter/runtime,
+transitive dependency, and configuration content; the profile's effective verifier configuration (including dependency
 roots, symlink policy, and transitive-content traversal rules) and exact
 test/command identity must match that frozen profile. Checking mutable paths
 without binding loaded artifacts is insufficient. A missing or mismatched
@@ -523,8 +525,11 @@ record, and frozen manifest. For every baseline proof and every actually
 dispatched candidate proof, validate the complete
 `evaluator_verification_profile` against the frozen manifest, including
 method, checker version, command identity, and effective configuration.
-Resolve and digest-check its retained checker and configuration content as well
-as the evaluator artifacts; do not accept matching identity digests as a
+Resolve and digest-check its retained checker, interpreter/runtime, transitive
+checker/dependency, and configuration content as well as the evaluator
+artifacts. A changed checker helper, interpreter/runtime, or transitive
+dependency byte is a subject mismatch and produces
+`EVIDENCE_INCOMPLETE`. Do not accept matching identity digests as a
 substitute for these checks. These checks use retained historical bytes only
 and do not execute the verifier command. Missing, unreadable, corrupt,
 untrusted, or mismatched profile fields or referenced content produce
@@ -891,9 +896,10 @@ raw baseline setup outputs, immutable artifact references, and their digests,
 and all failure reasons. Retain the evaluator verification records, their
 reference/digest fields, and all transitively referenced evaluator artifact
 bytes outside worker/candidate authority for the lifetime of the pilot
-evidence. Also retain every `evaluator_verification_profile` and all checker
-and configuration content referenced by it under the same lifetime and
-worker/candidate isolation requirements. A missing, corrupt, or mismatched
+evidence. Also retain every `evaluator_verification_profile` and all checker,
+interpreter/runtime, and transitive checker dependency bytes (or pinned
+image/archive) referenced by it under the same lifetime and worker/candidate
+isolation requirements. A missing, corrupt, or mismatched
 baseline vector, raw setup artifact, evaluator verification artifact, or
 verifier-profile content is `EVIDENCE_INCOMPLETE`; never regenerate it after
 task exposure.

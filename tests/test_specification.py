@@ -506,7 +506,9 @@ class SpecificationChecks(unittest.TestCase):
                 "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
                 "evaluator-identity verification profile, frozen as `evaluator_verification_profile`",
                 "`verification_method`, `checker_version`, `verifier_command_identity`, and `effective_verifier_configuration`",
-                "retained checker executable/script bytes by immutable reference and SHA-256 digest",
+                "complete verifier execution identity",
+                "retained checker executable/script bytes, its interpreter/runtime, and all transitive checker/helper dependency bytes",
+                "pinned image/archive containing them",
                 "fixed before manifest hashing",
                 "contain no `manifest_hash`, computed evaluator identity, or post-freeze evidence, invocation, or result references",
                 "neither depends on a future evidence digest",
@@ -525,6 +527,7 @@ class SpecificationChecks(unittest.TestCase):
                 "created from the artifacts actually loaded and pinned for that invocation",
                 "effective verifier configuration (including dependency roots, symlink policy, and transitive-content traversal rules)",
                 "exact test/command identity",
+                "referenced checker, interpreter/runtime, transitive dependency, and configuration content",
                 "For both baseline and candidate verification",
                 "observed by the trusted runner rather than copied from the manifest",
                 "Before setting `verification_result=VERIFIED`, require exact equality with the frozen profile",
@@ -537,7 +540,8 @@ class SpecificationChecks(unittest.TestCase):
                 "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
                 "every referenced immutable artifact",
                 "validate the complete `evaluator_verification_profile` against the frozen manifest",
-                "Resolve and digest-check its retained checker and configuration content",
+                "Resolve and digest-check its retained checker, interpreter/runtime, transitive checker/dependency, and configuration content",
+                "A changed checker helper, interpreter/runtime, or transitive dependency byte is a subject mismatch and produces `EVIDENCE_INCOMPLETE`",
                 "Missing, unreadable, corrupt, untrusted, or mismatched profile fields or referenced content produce `EVIDENCE_INCOMPLETE`",
                 "no candidate verification record is required when no candidate evaluator was dispatched",
                                 "revalidate the effective `evaluator_adapter_source_runtime_identity` and `evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256` against the manifest, the immutable verification record, and the loaded evaluator used for that invocation",
@@ -551,7 +555,7 @@ class SpecificationChecks(unittest.TestCase):
             )),
             ("retained", retained, (
                 "their effective evaluator adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records, their content-addressed `evaluator_identity_evidence_ref` values and `evaluator_identity_evidence_sha256` digests, and bound verification evidence",
-                "Also retain every `evaluator_verification_profile` and all checker and configuration content referenced by it",
+                "Also retain every `evaluator_verification_profile` and all checker, interpreter/runtime, and transitive checker dependency bytes (or pinned image/archive) referenced by it",
             )),
         ):
             for phrase in phrases:
