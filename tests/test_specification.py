@@ -486,20 +486,21 @@ class SpecificationChecks(unittest.TestCase):
                 self.assertIn(phrase, evaluation)
 
     def test_evaluator_identity_is_bound_for_every_execution(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
+        raw_evaluation = read("docs/evaluation.md")
+        evaluation = " ".join(raw_evaluation.split())
         manifest = " ".join(read("docs/evaluation.md").split("## Pre-P6 manifest\n", 1)[1].split(
             "## Task selection and preflight\n", 1
         )[0].split())
-        preflight = " ".join(evaluation.split("### Preflight\n", 1)[1].split(
+        preflight = " ".join(raw_evaluation.split("### Preflight\n", 1)[1].split(
             "## Execution controls\n", 1
         )[0].split())
-        scoring = " ".join(evaluation.split("Before a slot is scored", 1)[1].split(
+        scoring = " ".join(raw_evaluation.split("Before a slot is scored", 1)[1].split(
             "## Measured evaluation\n", 1
         )[0].split())
-        measured = " ".join(evaluation.split("## Measured evaluation\n", 1)[1].split(
+        measured = " ".join(raw_evaluation.split("## Measured evaluation\n", 1)[1].split(
             "## Practical human decision\n", 1
         )[0].split())
-        retained = " ".join(evaluation.split("## Retained evidence and integrity rules\n", 1)[1].split())
+        retained = " ".join(raw_evaluation.split("## Retained evidence and integrity rules\n", 1)[1].split())
         for scope, text, phrases in (
             ("manifest", manifest, (
                 "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
