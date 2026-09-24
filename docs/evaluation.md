@@ -318,8 +318,8 @@ timeout, protocol, or sandbox errors do not satisfy either condition. Bind the
 record to the `manifest_hash`, task ID, clean-baseline identity, runtime/image
 identity, `evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
-evaluator bundle and test definition, effective sandbox policy,
-`baseline_vector_ref`, `baseline_vector_sha256`, `baseline_raw_output_ref`,
+`producer_attestation_ref`, evaluator bundle and test definition, effective
+sandbox policy, `baseline_vector_ref`, `baseline_vector_sha256`, `baseline_raw_output_ref`,
 and `baseline_raw_output_sha256`. Retain the exact per-test baseline vector
 and bounded raw setup output under those immutable references. Keep this setup result hidden from the agent and separate from
 the measured candidate-evaluation count. A wrong baseline vector or
@@ -541,11 +541,13 @@ For every selected task, require its bound `BASELINE_VECTOR_VERIFIED` setup
 record and revalidate the manifest, task, clean-baseline, runtime/image,
 `evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
-evaluator-bundle/test-definition, sandbox-policy, and vector-digest bindings.
-Resolve the evidence reference and verify its digest, the payload's
-`producer_attestation_ref` and verify its authenticated
-`EVALUATOR_PRODUCER_ATTESTATION_V1` envelope binds the exact evidence
-reference and digest to the payload's `producer_id` and
+`producer_attestation_ref`, evaluator-bundle/test-definition, sandbox-policy,
+and vector-digest bindings.
+Resolve `producer_attestation_ref` from that integrity-bound
+`BASELINE_VECTOR_VERIFIED` consumer record, verify it matches the retained V1
+record metadata and the consumer's exact evidence reference and digest, then
+verify its authenticated `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope binds
+that exact evidence reference and digest to the payload's `producer_id` and
 `producer_provenance`, and the `EVALUATOR_IDENTITY_VERIFIED_V1` schema, `verification_result=VERIFIED`,
 baseline/scope bindings, and every referenced immutable artifact; recompute
 the identity from those retained bytes and compare it with the proof, baseline
@@ -571,10 +573,14 @@ is required when no candidate evaluator was dispatched. Loss, corruption,
 untrusted provenance, or mismatch produces `EVIDENCE_INCOMPLETE`; a failed baseline condition remains
 `MISSING_SETUP` and is never a candidate outcome. For every candidate
 evaluation, also revalidate the effective
-`evaluator_adapter_source_runtime_identity` and
-`evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256`
-against the manifest, the immutable verification record, and the loaded
-evaluator used for that invocation; loss, corruption, or mismatch produces
+`evaluator_adapter_source_runtime_identity`,
+`evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256`, and
+`producer_attestation_ref` from the integrity-bound evaluator `STARTED` or
+terminal result record against the manifest, the immutable verification record,
+the invocation's exact evidence reference and digest, and the loaded evaluator
+used for that invocation. Resolve the attestation and verify its authenticated
+envelope binds that exact candidate evidence reference and digest to the
+candidate payload's producer fields; loss, corruption, or mismatch produces
 `EVIDENCE_INCOMPLETE`. The same baseline proof remains mandatory for
 `NO_PATCH`, `CANDIDATE_PATCH_INVALID`, and
 `evaluator_invocation: NOT_DISPATCHED`; these outcomes do not authorize
@@ -752,7 +758,7 @@ task ID, configuration, slot `run_id` (or explicit `NULL` for A),
 candidate-patch digest, evaluator version/test
 definition, `evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
-evaluator bundle digest, clean-baseline identity,
+`producer_attestation_ref`, evaluator bundle digest, clean-baseline identity,
 `sandbox_policy_id`, `network_denial_evidence_ref`,
 `evaluator_started_at`, and `absolute_evaluator_deadline`. The trusted
 runner verifies the effective measured sandbox policy against the bound
@@ -761,19 +767,25 @@ raw-output digest. The terminal result record repeats that full invocation
 binding, including the slot `run_id`,
 `evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`,
-`evaluator_identity_evidence_sha256`, `sandbox_policy_id`, and
-`network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
+`evaluator_identity_evidence_sha256`, `producer_attestation_ref`,
+`sandbox_policy_id`, and `network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
 (or null), plus the status-specific `terminal_payload` described above. The
-record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. Before reusing a completed baseline after restart, revalidate its retained
+record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. Before reusing a completed baseline after restart, obtain its
+`producer_attestation_ref` from the integrity-bound
+`BASELINE_VECTOR_VERIFIED` consumer record and cross-check it against the
+retained V1 record and exact evidence reference/digest; revalidate its retained
 `evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`,
 `evaluator_identity_evidence_sha256`, and immutable
 `EVALUATOR_IDENTITY_VERIFIED` record plus its referenced historical artifacts
 against the manifest; inspect retained bytes only. For a candidate evaluation
-after restart, perform the same evaluator identity, producer-provenance,
-verifier-profile, producer-attestation, and retained-content checks only when
-a candidate evaluator was actually dispatched. For `NO_PATCH` or
+after restart, obtain
+`producer_attestation_ref` from the integrity-bound candidate `STARTED` or
+terminal result record and cross-check it against the retained V1 record and
+exact candidate evidence reference/digest; perform the same evaluator identity,
+producer-provenance, verifier-profile, producer-attestation, and retained-content
+checks only when a candidate evaluator was actually dispatched. For `NO_PATCH` or
 `CANDIDATE_PATCH_INVALID` with
 `evaluator_invocation: NOT_DISPATCHED`, do not require a candidate
 `EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured
