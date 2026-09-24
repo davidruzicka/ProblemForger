@@ -560,8 +560,10 @@ class SpecificationChecks(unittest.TestCase):
                 "invocation record binds the manifest hash",
                 "`evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, evaluator bundle digest",
                 "terminal result record repeats that full invocation binding",
-                "revalidate its retained `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, and immutable `EVALUATOR_IDENTITY_VERIFIED` record",
-                "Apply the same scoring-time producer identity/provenance, verifier-profile, trusted assignment/registration, and retained-content checks during read-only restart reconciliation",
+                "For a candidate evaluation after restart, perform the same evaluator identity, producer-provenance, verifier-profile, trusted assignment/registration, and retained-content checks only when a candidate evaluator was actually dispatched",
+                "do not require a candidate `EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured sandbox",
+                "revalidate the terminal outcome, its complete no-evaluation/patch-validation evidence, the explicit marker, and the mandatory baseline proof against the manifest and retained evidence",
+                "Apply the same scoring-time producer identity/provenance, verifier-profile, trusted assignment/registration, and retained-content checks to the mandatory baseline proof and any dispatched candidate proof during read-only restart reconciliation",
                 "do not substitute current producer metadata or regenerate provenance",
             )),
             ("retained", retained, (

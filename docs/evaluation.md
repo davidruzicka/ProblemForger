@@ -752,16 +752,26 @@ binding, including the slot `run_id`,
 `network_denial_evidence_ref`, and adds the recomputed `observed_output_sha256` when output was decoded (or
 null), the trusted `candidate_frame_sha256` when a candidate frame was received
 (or null), plus the status-specific `terminal_payload` described above. The
-record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. Before reusing a completed baseline or bound evaluation after restart,
-revalidate its retained `evaluator_adapter_source_runtime_identity`,
+record is terminal even when it has no test vector. An evidenced patch rejection is a complete terminal evaluation without a test vector; it is a terminal evaluation-phase outcome and is marked `evaluator_invocation: NOT_DISPATCHED`. Before reusing a completed baseline after restart, revalidate its retained
+`evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`,
 `evaluator_identity_evidence_sha256`, and immutable
 `EVALUATOR_IDENTITY_VERIFIED` record plus its referenced historical artifacts
-against the manifest; inspect retained bytes only. Never rerun baseline setup or
-the evaluator, execute retained evaluator code, regenerate verification
-evidence, or substitute the currently installed evaluator. Apply the same
-scoring-time producer identity/provenance, verifier-profile, trusted
-assignment/registration, and retained-content checks during read-only restart
+against the manifest; inspect retained bytes only. For a candidate evaluation
+after restart, perform the same evaluator identity, producer-provenance,
+verifier-profile, trusted assignment/registration, and retained-content checks
+only when a candidate evaluator was actually dispatched. For `NO_PATCH` or
+`CANDIDATE_PATCH_INVALID` with
+`evaluator_invocation: NOT_DISPATCHED`, do not require a candidate
+`EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured
+sandbox; instead revalidate the terminal outcome, its complete
+no-evaluation/patch-validation evidence, the explicit marker, and the mandatory
+baseline proof against the manifest and retained evidence. Never rerun baseline
+setup or the evaluator, execute retained evaluator code, regenerate
+verification evidence, or substitute the currently installed evaluator. Apply
+the same scoring-time producer identity/provenance, verifier-profile, trusted
+assignment/registration, and retained-content checks to the mandatory baseline
+proof and any dispatched candidate proof during read-only restart
 reconciliation; do not substitute current producer metadata or regenerate
 provenance, and no current verifier configuration may replace the recorded
 profile. A missing, corrupt, or mismatched identity is
