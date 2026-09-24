@@ -485,6 +485,49 @@ class SpecificationChecks(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, evaluation)
 
+    def test_evaluator_identity_is_bound_for_every_execution(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        manifest = " ".join(read("docs/evaluation.md").split("## Pre-P6 manifest\n", 1)[1].split(
+            "## Task selection and preflight\n", 1
+        )[0].split())
+        preflight = " ".join(evaluation.split("### Preflight\n", 1)[1].split(
+            "## Execution controls\n", 1
+        )[0].split())
+        scoring = " ".join(evaluation.split("Before a slot is scored", 1)[1].split(
+            "## Measured evaluation\n", 1
+        )[0].split())
+        measured = " ".join(evaluation.split("## Measured evaluation\n", 1)[1].split(
+            "## Practical human decision\n", 1
+        )[0].split())
+        retained = " ".join(evaluation.split("## Retained evidence and integrity rules\n", 1)[1].split())
+        for scope, text, phrases in (
+            ("manifest", manifest, (
+                "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
+            )),
+            ("preflight", preflight, (
+                "Before each clean-baseline execution and before every candidate evaluator launch",
+                "computes the effective `evaluator_adapter_source_runtime_identity`",
+                "requires exact equality with the manifest's evaluator adapter/source/runtime identity",
+                "checking mutable paths without binding loaded artifacts is insufficient",
+                "A missing or mismatched identity is `EVIDENCE_INCOMPLETE`",
+            )),
+            ("scoring", scoring, (
+                "runtime/image, `evaluator_adapter_source_runtime_identity`, evaluator-bundle/test-definition",
+                "revalidate the effective `evaluator_adapter_source_runtime_identity` against the manifest and the loaded evaluator used for that invocation",
+            )),
+            ("measured", measured, (
+                "invocation record binds the manifest hash",
+                "`evaluator_adapter_source_runtime_identity`, evaluator bundle digest",
+                "terminal result record repeats that full invocation binding",
+            )),
+            ("retained", retained, (
+                "their effective evaluator adapter/source/runtime identities and bound verification evidence",
+            )),
+        ):
+            for phrase in phrases:
+                with self.subTest(scope=scope, phrase=phrase):
+                    self.assertIn(phrase, text)
+
     def test_task_success_rule_is_non_vacuous(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (

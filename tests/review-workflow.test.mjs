@@ -21,8 +21,9 @@ function comment(login, type, body = `${marker}\n${sha}`) {
   return { user: { login, type }, body };
 }
 
-async function invoke(comments, { listError, createError, currentHeadSha = sha } = {}) {
+async function invoke(comments, { listError, createError, currentHeadSha = sha, currentHeadShas } = {}) {
   const created = [];
+  const headResponses = currentHeadShas ? [...currentHeadShas] : [currentHeadSha];
   const listComments = () => {};
   const github = {
     paginate: async (method, args) => {
@@ -43,7 +44,8 @@ async function invoke(comments, { listError, createError, currentHeadSha = sha }
       pulls: {
         get: async (args) => {
           assert.deepEqual(args, { owner: 'fixture', repo: 'fixture', pull_number: 22 });
-          return { data: { head: { sha: currentHeadSha } } };
+          const responseSha = headResponses.shift() ?? currentHeadSha;
+          return { data: { head: { sha: responseSha } } };
         },
       },
     },
@@ -65,7 +67,7 @@ for (const [name, comments, expected] of [
     const created = await invoke(comments);
     assert.equal(created.length, expected);
     if (expected) {
-      assert.equal(created[0].body, `${marker}\n@codex review\n\nRequested automatically for head \`${sha}\`.`);
+      assert.equal(created[0].body, `${marker}\n@codex review head ${sha}\n\nRequested automatically for head \`${sha}\`.`);
       assert.equal(created[0].issue_number, 22);
     }
   });
@@ -85,6 +87,11 @@ test('serialized same-head invocations share one durable comment', async () => {
 
 test('stale event payload does not request an old head', async () => {
   const created = await invoke([], { currentHeadSha: 'b'.repeat(40) });
+  assert.equal(created.length, 0);
+});
+
+test('head changing after the check does not post a stale command', async () => {
+  const created = await invoke([], { currentHeadShas: [sha, 'b'.repeat(40)] });
   assert.equal(created.length, 0);
 });
 

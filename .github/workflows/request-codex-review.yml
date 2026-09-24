@@ -67,9 +67,21 @@ jobs:
               return;
             }
 
+            const latest = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (latest.data.head.sha !== headSha) {
+              core.info(
+                `Skipping review request after head changed from ${headSha} to ${latest.data.head.sha}`,
+              );
+              return;
+            }
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: `${marker}\n@codex review\n\nRequested automatically for head \`${headSha}\`.`,
+              body: `${marker}\n@codex review head ${headSha}\n\nRequested automatically for head \`${headSha}\`.`,
             });
