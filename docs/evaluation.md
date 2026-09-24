@@ -150,14 +150,24 @@ runtime, dependencies, transitively referenced evaluator content, and all
 verifier command identity content. The record is
 created from the artifacts actually loaded and pinned for that execution;
 mutable paths, copied manifest labels, and version labels are not evidence.
-The V1 record has an unsigned canonical payload that omits both
+The record also contains `producer_id` and `producer_provenance`, assigned
+through the approved evidence-producing integration under EVIDENCE-TRUST, not
+accepted from worker/candidate claims. `producer_id` identifies the
+authenticated producer and `producer_provenance` identifies its assigned
+origin/integration plus the immutable trusted assignment/registration binding.
+The binding is retained outside worker/candidate authority and does not contain
+this record's self-derived reference or digest. The presence of these fields or
+a matching content digest alone does not establish trusted provenance. The V1
+record has an unsigned canonical payload that includes `producer_id` and
+`producer_provenance` and omits both
 `evaluator_identity_evidence_ref` and
 `evaluator_identity_evidence_sha256`. Its content-addressed immutable
 reference and SHA-256 digest are both derived from that payload; neither
 self-derived field is part of its own preimage. This introduces no
-manifest/evidence hash cycle. Both are bound into the corresponding
-`BASELINE_VECTOR_VERIFIED`, evaluator `STARTED`, and terminal result
-records. A missing, unreadable, corrupt, untrusted, or mismatched record,
+manifest/evidence hash cycle. The evidence reference and digest bind the
+complete V1 payload, including `producer_id` and `producer_provenance`, into
+the corresponding `BASELINE_VECTOR_VERIFIED`, evaluator `STARTED`, and
+terminal result records. A missing, unreadable, corrupt, untrusted, or mismatched record,
 reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE` and
 prevents execution, launch, reuse, and scoring.
 
@@ -274,13 +284,17 @@ the invocation. It persists the trusted
 `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch, with its
 content-addressed `evaluator_identity_evidence_ref` and
 `evaluator_identity_evidence_sha256`, created from the artifacts actually
-loaded and pinned for that invocation. For both baseline and candidate
-verification, the trusted runner records the effective
+loaded and pinned for that invocation. The record's `producer_id` and
+`producer_provenance` are retained from the authenticated trusted recorder;
+worker/candidate claims and manifest labels cannot supply them. For both
+baseline and candidate verification, the trusted runner records the effective
 `evaluator_verification_profile` actually used, observed by the trusted runner
 rather than copied from the manifest. Before setting
 `verification_result=VERIFIED`, require exact equality with the frozen
 profile and successful verification of its referenced checker, interpreter/runtime,
-transitive dependency, and configuration content; the profile's effective verifier configuration (including dependency
+transitive dependency, and configuration content; validate `producer_id` and
+`producer_provenance` against the retained trusted assignment/registration
+binding for that exact evidence payload. The profile's effective verifier configuration (including dependency
 roots, symlink policy, and transitive-content traversal rules) and exact
 test/command identity must match that frozen profile. Checking mutable paths
 without binding loaded artifacts is insufficient. A missing or mismatched
@@ -517,11 +531,16 @@ record and revalidate the manifest, task, clean-baseline, runtime/image,
 `evaluator_adapter_source_runtime_identity`,
 `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`,
 evaluator-bundle/test-definition, sandbox-policy, and vector-digest bindings.
-Resolve the evidence reference, verify its digest, trusted producer,
+Resolve the evidence reference and verify its digest, the payload's
+`producer_id` and `producer_provenance` against the retained trusted
+assignment/registration binding for that exact evidence payload, and the
 `EVALUATOR_IDENTITY_VERIFIED_V1` schema, `verification_result=VERIFIED`,
 baseline/scope bindings, and every referenced immutable artifact; recompute
 the identity from those retained bytes and compare it with the proof, baseline
-record, and frozen manifest. For every baseline proof and every actually
+record, and frozen manifest. Missing, unknown, unauthenticated, or mismatched
+producer provenance is `EVIDENCE_INCOMPLETE`; worker/candidate-supplied
+labels and matching content digests are not authentication evidence. For every
+baseline proof and every actually
 dispatched candidate proof, validate the complete
 `evaluator_verification_profile` against the frozen manifest, including
 method, checker version, command identity, and effective configuration.
@@ -741,9 +760,11 @@ revalidate its retained `evaluator_adapter_source_runtime_identity`,
 against the manifest; inspect retained bytes only. Never rerun baseline setup or
 the evaluator, execute retained evaluator code, regenerate verification
 evidence, or substitute the currently installed evaluator. Apply the same
-scoring-time verifier-profile and retained-content checks during read-only
-restart reconciliation; no current verifier configuration may replace the
-recorded profile. A missing, corrupt, or mismatched identity is
+scoring-time producer identity/provenance, verifier-profile, trusted
+assignment/registration, and retained-content checks during read-only restart
+reconciliation; do not substitute current producer metadata or regenerate
+provenance, and no current verifier configuration may replace the recorded
+profile. A missing, corrupt, or mismatched identity is
 `EVIDENCE_INCOMPLETE`; never rerun the evaluator. A
 started evaluation without a durable complete bound result at restart is
 recorded as `EVALUATION_INCOMPLETE` with reason `COORDINATOR_RESTART`; this is
@@ -889,7 +910,9 @@ dependency identities, model/provider metadata, exact request settings,
 candidate-patch digest, durable ProblemForger journal, raw evaluator output,
 slot ledger, evaluator invocation/result records, their effective evaluator
 adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records,
-their content-addressed `evaluator_identity_evidence_ref` values and
+their `producer_id` and `producer_provenance` values, the retained trusted
+assignment/registration bindings required to authenticate each evidence
+payload, their content-addressed `evaluator_identity_evidence_ref` values and
 `evaluator_identity_evidence_sha256` digests, and bound verification evidence,
 operation reservation/settlement ledger, cost/latency measurements,
 human-intervention log, the bounded manifest/runtime/sandbox-policy-bound
