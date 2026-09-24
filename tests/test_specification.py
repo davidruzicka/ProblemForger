@@ -504,6 +504,14 @@ class SpecificationChecks(unittest.TestCase):
         for scope, text, phrases in (
             ("manifest", manifest, (
                 "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
+                "evaluator-identity verification profile, frozen as `evaluator_verification_profile`",
+                "`verification_method`, `checker_version`, `verifier_command_identity`, and `effective_verifier_configuration`",
+                "retained checker executable/script bytes by immutable reference and SHA-256 digest",
+                "fixed before manifest hashing",
+                "contain no `manifest_hash`, computed evaluator identity, or post-freeze evidence, invocation, or result references",
+                "neither depends on a future evidence digest",
+                "canonical normalized V1 record with its own digest field omitted from the preimage",
+                "no manifest/evidence hash cycle",
                 "For every clean-baseline execution and candidate evaluator launch, the trusted runner persists an immutable `EVALUATOR_IDENTITY_VERIFIED` record",
             )),
             ("preflight", preflight, (
@@ -517,6 +525,9 @@ class SpecificationChecks(unittest.TestCase):
                 "created from the artifacts actually loaded and pinned for that invocation",
                 "effective verifier configuration (including dependency roots, symlink policy, and transitive-content traversal rules)",
                 "exact test/command identity",
+                "For both baseline and candidate verification",
+                "observed by the trusted runner rather than copied from the manifest",
+                "Before setting `verification_result=VERIFIED`, require exact equality with the frozen profile",
                 "must match the frozen required-test definition before the record is persisted",
                 "A missing or mismatched identity, evidence record, reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE`",
             )),
@@ -525,6 +536,10 @@ class SpecificationChecks(unittest.TestCase):
                 "Resolve the evidence reference, verify its digest, trusted producer",
                 "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
                 "every referenced immutable artifact",
+                "validate the complete `evaluator_verification_profile` against the frozen manifest",
+                "Resolve and digest-check its retained checker and configuration content",
+                "Missing, unreadable, corrupt, untrusted, or mismatched profile fields or referenced content produce `EVIDENCE_INCOMPLETE`",
+                "no candidate verification record is required when no candidate evaluator was dispatched",
                 "validate the proof's effective verifier configuration and exact test/command identity against the frozen required-test definition and the loaded invocation for both baseline and candidate",
                 "matching checker version alone is insufficient",
                 "revalidate the effective `evaluator_adapter_source_runtime_identity` and `evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256` against the manifest, the immutable verification record, and the loaded evaluator used for that invocation",
@@ -534,9 +549,11 @@ class SpecificationChecks(unittest.TestCase):
                 "`evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, evaluator bundle digest",
                 "terminal result record repeats that full invocation binding",
                 "revalidate its retained `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, and immutable `EVALUATOR_IDENTITY_VERIFIED` record",
+                "Apply the same scoring-time verifier-profile and retained-content checks during read-only restart reconciliation",
             )),
             ("retained", retained, (
                 "their effective evaluator adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records, their content-addressed `evaluator_identity_evidence_ref` values and `evaluator_identity_evidence_sha256` digests, and bound verification evidence",
+                "Also retain every `evaluator_verification_profile` and all checker and configuration content referenced by it",
             )),
         ):
             for phrase in phrases:

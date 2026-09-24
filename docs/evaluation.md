@@ -96,7 +96,7 @@ containing:
 - complete ordered A/C slot list: each task's A slot before its C slot;
 - execution platform, dependency lockfiles, and image/archive digests when
   images or archives are used;
-- evaluator version and required-test definition, plus evaluator adapter/source/runtime identity;
+- evaluator version and required-test definition, plus evaluator adapter/source/runtime identity, and evaluator-identity verification profile, frozen as `evaluator_verification_profile`;
 - workspace isolation mode, candidate sandbox policy identity/configuration,
   and worker/agent network policy identity;
 - agent semantic deadline, evaluator wall-clock allowance, resource limits, retry
@@ -109,6 +109,24 @@ The evaluator adapter/source/runtime identity is a content identity of the
 loaded adapter and source/runtime artifacts, resolved evaluator configuration,
 and runtime/dependency inputs; a version label alone is not sufficient.
 
+The evaluator-identity verification profile is frozen before manifest hashing.
+It is `evaluator_verification_profile` and contains
+`verification_method`, `checker_version`,
+`verifier_command_identity`, and
+`effective_verifier_configuration`. `verifier_command_identity` binds the
+retained checker executable/script bytes by immutable reference and SHA-256
+digest plus its entry point. `effective_verifier_configuration` records
+behavior-affecting arguments, environment, resolved defaults, dependency roots
+relative to pinned artifacts, symlink handling, and transitive-content
+traversal rules, including immutable identities of referenced configuration
+content. The profile preserves all required loaded-artifact and
+transitive-content coverage; a matching profile alone is not proof of coverage.
+The profile and referenced content are fixed before manifest hashing and contain
+no `manifest_hash`, computed evaluator identity, or post-freeze evidence,
+invocation, or result references. Per-execution subject/scope bindings remain
+in the verification record. The frozen manifest and each verification-record digest cover the profile;
+neither depends on a future evidence digest.
+
 For every clean-baseline execution and candidate evaluator launch, the trusted
 runner persists an immutable `EVALUATOR_IDENTITY_VERIFIED` record before
 execution or launch. Its schema is
@@ -117,18 +135,25 @@ execution or launch. Its schema is
 pinned artifacts. The record contains the frozen `manifest_hash`, the
 baseline or evaluator-invocation scope, the observed
 `evaluator_adapter_source_runtime_identity` recomputed from those artifacts,
-the verification method and checker version, the effective verifier
-configuration (including dependency roots, symlink policy, and
-transitive-content traversal rules), and the exact test/command identity.
-These configuration and command fields are part of the normalized record bytes
-covered by `evaluator_identity_evidence_sha256`; they are content identities,
-not mutable labels. It also contains non-empty `artifact_refs` entries of
+the effective `evaluator_verification_profile` actually used, including
+`verification_method`, `checker_version`,
+`verifier_command_identity`, and
+`effective_verifier_configuration`. The trusted runner observes this profile
+from the invocation; it is not copied from the manifest. The profile and its
+referenced checker/configuration content are part of the normalized record
+bytes covered by `evaluator_identity_evidence_sha256`; they are content
+identities, not mutable labels. It also contains non-empty `artifact_refs`
+entries of
 `{role, ref, sha256}` covering the adapter, source, resolved configuration,
 runtime, dependencies, and transitively referenced content. The record is
 created from the artifacts actually loaded and pinned for that execution;
-mutable paths, copied manifest labels, and version labels are not evidence. Its `evaluator_identity_evidence_ref` is a content-addressed
-immutable reference, and `evaluator_identity_evidence_sha256` covers the
-exact retained record bytes. Both are bound into the corresponding
+mutable paths, copied manifest labels, and version labels are not evidence.
+Its `evaluator_identity_evidence_ref` is a content-addressed immutable
+reference to canonical record bytes, and
+`evaluator_identity_evidence_sha256` is computed over the canonical
+normalized V1 record with its own digest field omitted from the preimage; the
+reference uses the same canonical bytes. This introduces no manifest/evidence
+hash cycle. Both are bound into the corresponding
 `BASELINE_VECTOR_VERIFIED`, evaluator `STARTED`, and terminal result
 records. A missing, unreadable, corrupt, untrusted, or mismatched record,
 reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE` and
@@ -247,12 +272,17 @@ the invocation. It persists the trusted
 `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch, with its
 content-addressed `evaluator_identity_evidence_ref` and
 `evaluator_identity_evidence_sha256`, created from the artifacts actually
-loaded and pinned for that invocation. The effective verifier configuration
-(including dependency roots, symlink policy, and transitive-content traversal
-rules) and exact test/command identity must match the frozen required-test definition
-before the record is persisted. Checking mutable paths without binding loaded
-artifacts is insufficient. A missing or mismatched identity, evidence record,
-reference, digest, or referenced artifact is
+loaded and pinned for that invocation. For both baseline and candidate
+verification, the trusted runner records the effective
+`evaluator_verification_profile` actually used, observed by the trusted runner
+rather than copied from the manifest. Before setting
+`verification_result=VERIFIED`, require exact equality with the frozen
+profile and successful verification of its referenced checker and configuration
+content; the profile's effective verifier configuration (including dependency
+roots, symlink policy, and transitive-content traversal rules) and exact
+test/command identity must match that frozen profile. Checking mutable paths
+without binding loaded artifacts is insufficient. A missing or mismatched
+identity, profile, evidence record, reference, digest, or referenced artifact is
 `EVIDENCE_INCOMPLETE` and prevents execution, launch, and scoring. Persist a
 `BASELINE_VECTOR_VERIFIED` record only when
 every required `FAIL_TO_PASS` test fails through a valid completed test outcome
@@ -489,11 +519,19 @@ Resolve the evidence reference, verify its digest, trusted producer,
 `EVALUATOR_IDENTITY_VERIFIED_V1` schema, `verification_result=VERIFIED`,
 baseline/scope bindings, and every referenced immutable artifact; recompute
 the identity from those retained bytes and compare it with the proof, baseline
-record, and frozen manifest. Also validate the proof's effective verifier
-configuration and exact test/command identity against the frozen required-test
-definition and the loaded invocation for both baseline and candidate; a
-matching checker version alone is insufficient. Loss, corruption, untrusted
-provenance, or mismatch produces `EVIDENCE_INCOMPLETE`; a failed baseline condition remains
+record, and frozen manifest. For every baseline proof and every actually
+dispatched candidate proof, validate the complete
+`evaluator_verification_profile` against the frozen manifest, including
+method, checker version, command identity, and effective configuration.
+Resolve and digest-check its retained checker and configuration content as well
+as the evaluator artifacts; do not accept matching identity digests as a
+substitute for these checks. These checks use retained historical bytes only
+and do not execute the verifier command. Missing, unreadable, corrupt,
+untrusted, or mismatched profile fields or referenced content produce
+`EVIDENCE_INCOMPLETE`. They apply to baseline proof even for `NO_PATCH` and
+`CANDIDATE_PATCH_INVALID`/`NOT_DISPATCHED`; no candidate verification record
+is required when no candidate evaluator was dispatched. Loss, corruption,
+untrusted provenance, or mismatch produces `EVIDENCE_INCOMPLETE`; a failed baseline condition remains
 `MISSING_SETUP` and is never a candidate outcome. For every candidate
 evaluation, also revalidate the effective
 `evaluator_adapter_source_runtime_identity` and
@@ -693,7 +731,10 @@ revalidate its retained `evaluator_adapter_source_runtime_identity`,
 `EVALUATOR_IDENTITY_VERIFIED` record plus its referenced historical artifacts
 against the manifest; inspect retained bytes only. Never rerun baseline setup or
 the evaluator, execute retained evaluator code, regenerate verification
-evidence, or substitute the currently installed evaluator. A missing, corrupt, or mismatched identity is
+evidence, or substitute the currently installed evaluator. Apply the same
+scoring-time verifier-profile and retained-content checks during read-only
+restart reconciliation; no current verifier configuration may replace the
+recorded profile. A missing, corrupt, or mismatched identity is
 `EVIDENCE_INCOMPLETE`; never rerun the evaluator. A
 started evaluation without a durable complete bound result at restart is
 recorded as `EVALUATION_INCOMPLETE` with reason `COORDINATOR_RESTART`; this is
@@ -850,9 +891,12 @@ raw baseline setup outputs, immutable artifact references, and their digests,
 and all failure reasons. Retain the evaluator verification records, their
 reference/digest fields, and all transitively referenced evaluator artifact
 bytes outside worker/candidate authority for the lifetime of the pilot
-evidence. A missing, corrupt, or mismatched baseline vector, raw setup
-artifact, or evaluator verification artifact is `EVIDENCE_INCOMPLETE`; never
-regenerate it after task exposure.
+evidence. Also retain every `evaluator_verification_profile` and all checker
+and configuration content referenced by it under the same lifetime and
+worker/candidate isolation requirements. A missing, corrupt, or mismatched
+baseline vector, raw setup artifact, evaluator verification artifact, or
+verifier-profile content is `EVIDENCE_INCOMPLETE`; never regenerate it after
+task exposure.
 Redact credentials without changing content that was visible to the agent or
 affected its behavior.
 
