@@ -897,9 +897,9 @@ and all failure reasons. Retain the evaluator verification records, their
 reference/digest fields, and all transitively referenced evaluator artifact
 bytes outside worker/candidate authority for the lifetime of the pilot
 evidence. Also retain every `evaluator_verification_profile` and all checker,
-interpreter/runtime, and transitive checker dependency bytes (or pinned
-image/archive) referenced by it under the same lifetime and worker/candidate
-isolation requirements. A missing, corrupt, or mismatched
+interpreter/runtime, and transitive checker dependency bytes, plus all
+referenced configuration content (or a pinned image/archive containing them),
+under the same lifetime and worker/candidate isolation requirements. A missing, corrupt, or mismatched
 baseline vector, raw setup artifact, evaluator verification artifact, or
 verifier-profile content is `EVIDENCE_INCOMPLETE`; never regenerate it after
 task exposure.

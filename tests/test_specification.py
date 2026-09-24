@@ -555,7 +555,7 @@ class SpecificationChecks(unittest.TestCase):
             )),
             ("retained", retained, (
                 "their effective evaluator adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records, their content-addressed `evaluator_identity_evidence_ref` values and `evaluator_identity_evidence_sha256` digests, and bound verification evidence",
-                "Also retain every `evaluator_verification_profile` and all checker, interpreter/runtime, and transitive checker dependency bytes (or pinned image/archive) referenced by it",
+                "Also retain every `evaluator_verification_profile` and all checker, interpreter/runtime, and transitive checker dependency bytes, plus all referenced configuration content (or a pinned image/archive containing them)",
             )),
         ):
             for phrase in phrases:
