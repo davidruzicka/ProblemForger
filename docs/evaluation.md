@@ -150,12 +150,12 @@ runtime, dependencies, transitively referenced evaluator content, and all
 verifier command identity content. The record is
 created from the artifacts actually loaded and pinned for that execution;
 mutable paths, copied manifest labels, and version labels are not evidence.
-Its `evaluator_identity_evidence_ref` is a content-addressed immutable
-reference to canonical record bytes, and
-`evaluator_identity_evidence_sha256` is computed over the canonical
-normalized V1 record with its own digest field omitted from the preimage; the
-reference uses the same canonical bytes. This introduces no manifest/evidence
-hash cycle. Both are bound into the corresponding
+The V1 record has an unsigned canonical payload that omits both
+`evaluator_identity_evidence_ref` and
+`evaluator_identity_evidence_sha256`. Its content-addressed immutable
+reference and SHA-256 digest are both derived from that payload; neither
+self-derived field is part of its own preimage. This introduces no
+manifest/evidence hash cycle. Both are bound into the corresponding
 `BASELINE_VECTOR_VERIFIED`, evaluator `STARTED`, and terminal result
 records. A missing, unreadable, corrupt, untrusted, or mismatched record,
 reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE` and
@@ -547,12 +547,16 @@ evaluator used for that invocation; loss, corruption, or mismatch produces
 `NO_PATCH`, `CANDIDATE_PATCH_INVALID`, and
 `evaluator_invocation: NOT_DISPATCHED`; these outcomes do not authorize
 substituting a current evaluator or omitting historical baseline evidence.
-Require the bound
-`NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics.
+Require the bound `NETWORK_DENIAL_VERIFIED` record and its bounded
+diagnostics for every slot. If a candidate evaluator was actually dispatched:
 Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the
 manifest, the effective measured sandbox, and the evaluator invocation; loss,
 corruption, or mismatch produces `EVIDENCE_INCOMPLETE` rather than a complete
-slot. For every dispatched agent attempt, including clean retries, require its
+slot. For `NO_PATCH` or `CANDIDATE_PATCH_INVALID` with
+`evaluator_invocation: NOT_DISPATCHED`, do not require a candidate evaluator
+invocation or measured sandbox; instead revalidate the retained preflight
+`NETWORK_DENIAL_VERIFIED` record and its policy identity and diagnostics
+against the manifest and candidate sandbox policy only. For every dispatched agent attempt, including clean retries, require its
 attempt-specific `WORKER_NETWORK_DENIAL_VERIFIED` record and bounded
 diagnostics. Revalidate `agent_attempt_id`, `worker_policy_id`, and
 `worker_network_evidence_ref` against the manifest, the effective worker
