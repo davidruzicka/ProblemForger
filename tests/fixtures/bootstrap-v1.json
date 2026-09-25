@@ -1,0 +1,412 @@
+{
+  "numpy_version": "2.3.5",
+  "tasks": [
+    {
+      "instance_id": "synthetic-00",
+      "resolved": [
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          true,
+          false,
+          false
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-01",
+      "resolved": [
+        [
+          1,
+          0,
+          1
+        ],
+        [
+          false,
+          true,
+          false
+        ],
+        [
+          true,
+          false,
+          true
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-02",
+      "resolved": [
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          false,
+          false,
+          true
+        ],
+        [
+          false,
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-03",
+      "resolved": [
+        [
+          1,
+          0,
+          1
+        ],
+        [
+          true,
+          false,
+          false
+        ],
+        [
+          false,
+          true,
+          false
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-04",
+      "resolved": [
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          false,
+          true,
+          false
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-05",
+      "resolved": [
+        [
+          1,
+          0,
+          1
+        ],
+        [
+          false,
+          false,
+          true
+        ],
+        [
+          true,
+          false,
+          true
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-06",
+      "resolved": [
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          true,
+          false,
+          false
+        ],
+        [
+          false,
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-07",
+      "resolved": [
+        [
+          1,
+          0,
+          1
+        ],
+        [
+          false,
+          true,
+          false
+        ],
+        [
+          false,
+          true,
+          false
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-08",
+      "resolved": [
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          false,
+          false,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-09",
+      "resolved": [
+        [
+          1,
+          0,
+          1
+        ],
+        [
+          true,
+          false,
+          false
+        ],
+        [
+          true,
+          false,
+          true
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-10",
+      "resolved": [
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          false,
+          true,
+          false
+        ],
+        [
+          false,
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "instance_id": "synthetic-11",
+      "resolved": [
+        [
+          1,
+          0,
+          1
+        ],
+        [
+          false,
+          false,
+          true
+        ],
+        [
+          false,
+          true,
+          false
+        ]
+      ]
+    }
+  ],
+  "expected": {
+    "8": {
+      "task_ids": [
+        "synthetic-00",
+        "synthetic-01",
+        "synthetic-02",
+        "synthetic-03",
+        "synthetic-04",
+        "synthetic-05",
+        "synthetic-06",
+        "synthetic-07"
+      ],
+      "comparisons": [
+        "B-A",
+        "C-B"
+      ],
+      "indices_sha256": "2421f16bad55b365e236b771236d132bcb656e955386a0e7d28a2b21411b765c",
+      "point_pp": [
+        -16.666666666666668,
+        16.666666666666668
+      ],
+      "ci_pp": [
+        [
+          -29.166666666666668,
+          -8.333333333333334
+        ],
+        [
+          -4.166666666666667,
+          41.66666666666667
+        ]
+      ]
+    },
+    "9": {
+      "task_ids": [
+        "synthetic-00",
+        "synthetic-01",
+        "synthetic-02",
+        "synthetic-03",
+        "synthetic-04",
+        "synthetic-05",
+        "synthetic-06",
+        "synthetic-07",
+        "synthetic-08"
+      ],
+      "comparisons": [
+        "B-A",
+        "C-B"
+      ],
+      "indices_sha256": "e6dd93d7f3fc16a3280126aa691186e827fdf5c9e7ebe19c3cd4240787e1ef56",
+      "point_pp": [
+        -14.814814814814815,
+        22.22222222222222
+      ],
+      "ci_pp": [
+        [
+          -25.925925925925927,
+          -3.7037037037037037
+        ],
+        [
+          -3.7037037037037037,
+          48.148148148148145
+        ]
+      ]
+    },
+    "10": {
+      "task_ids": [
+        "synthetic-00",
+        "synthetic-01",
+        "synthetic-02",
+        "synthetic-03",
+        "synthetic-04",
+        "synthetic-05",
+        "synthetic-06",
+        "synthetic-07",
+        "synthetic-08",
+        "synthetic-09"
+      ],
+      "comparisons": [
+        "B-A",
+        "C-B"
+      ],
+      "indices_sha256": "3075b9b84ac0d205737f18e7c69eefe5fb921c4f2e541ce64e30c6ee081db280",
+      "point_pp": [
+        -16.666666666666668,
+        23.333333333333336
+      ],
+      "ci_pp": [
+        [
+          -26.666666666666668,
+          0.0
+        ],
+        [
+          -6.666666666666667,
+          46.66666666666667
+        ]
+      ]
+    },
+    "11": {
+      "task_ids": [
+        "synthetic-00",
+        "synthetic-01",
+        "synthetic-02",
+        "synthetic-03",
+        "synthetic-04",
+        "synthetic-05",
+        "synthetic-06",
+        "synthetic-07",
+        "synthetic-08",
+        "synthetic-09",
+        "synthetic-10"
+      ],
+      "comparisons": [
+        "B-A",
+        "C-B"
+      ],
+      "indices_sha256": "70ca7e3afcf1ddb86ecbd4a4c8b3d03fd6a30bd7d55a2ee0940fb9220299b87d",
+      "point_pp": [
+        -15.151515151515152,
+        18.18181818181818
+      ],
+      "ci_pp": [
+        [
+          -24.242424242424242,
+          -6.0606060606060606
+        ],
+        [
+          -6.0606060606060606,
+          39.39393939393939
+        ]
+      ]
+    },
+    "12": {
+      "task_ids": [
+        "synthetic-00",
+        "synthetic-01",
+        "synthetic-02",
+        "synthetic-03",
+        "synthetic-04",
+        "synthetic-05",
+        "synthetic-06",
+        "synthetic-07",
+        "synthetic-08",
+        "synthetic-09",
+        "synthetic-10",
+        "synthetic-11"
+      ],
+      "comparisons": [
+        "B-A",
+        "C-B"
+      ],
+      "indices_sha256": "a7153b67f1728d4151aab8ee3bd005fc18afa685963e86c28bb97eb7cd26e39a",
+      "point_pp": [
+        -16.666666666666664,
+        16.666666666666664
+      ],
+      "ci_pp": [
+        [
+          -25.0,
+          -5.555555555555555
+        ],
+        [
+          -8.333333333333332,
+          38.888888888888886
+        ]
+      ]
+    }
+  }
+}

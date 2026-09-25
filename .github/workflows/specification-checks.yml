@@ -1,0 +1,45 @@
+name: Specification checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: specification-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check specification contracts and links
+        run: |
+          python3 -m venv "$RUNNER_TEMP/spec-checks-venv"
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m pip install -r tests/requirements.txt
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test the review-request script without posting comments
+        run: node --test tests/review-workflow.test.mjs
+      - name: Check whitespace
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
+          elif [ "$PUSH_BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            git diff --check "$PUSH_AFTER_SHA^" "$PUSH_AFTER_SHA"
+          else
+            git diff --check "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA"
+          fi

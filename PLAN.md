@@ -25,49 +25,75 @@ The initial domain is software engineering because tests, compilers, type checke
 - making reliability claims before controlled evaluation;
 - requiring a graphical UI for correctness.
 
+## P0 decisions now fixed
+
+The P0 audit established constraints whose current normative details live in the
+linked ADRs and requirement IDs:
+
+- harness-neutral service boundary — [ADR 0001](docs/adr/0001-harness-neutral-core.md) and [ADR 0009](docs/adr/0009-separate-local-process-service-boundary.md);
+- graph vocabulary and separated lifecycle/evidence axes — [GRAPH.MODEL](docs/problem-graph.md#spec-graph-model) and [ADR 0007](docs/adr/0007-separate-lifecycle-verification-and-evidence-axes.md);
+- durable journal, graph-version atomicity, exclusive provider ownership, serialized recovery — [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), [PROTOCOL.STORE-OWNER](docs/protocol.md#spec-protocol-store-owner), ADR 0006;
+- evidence trust/binding/recovery and review-loop checkpoints — [VERIFICATION.EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [VERIFICATION.EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), [VERIFICATION.EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery), [REVIEW.LOOP](docs/review-loop.md#spec-review-loop);
+- the frozen P6-AC practical experiment — [EVALUATION.MODEL](docs/evaluation.md#spec-evaluation-model), [EVALUATION.PRE-P6](docs/evaluation.md#spec-evaluation-pre-p6), [EVALUATION.PREFLIGHT](docs/evaluation.md#spec-evaluation-preflight), [EVALUATION.MEASURED-EVALUATION](docs/evaluation.md#spec-evaluation-measured-evaluation).
+
+See the [accepted ADRs](docs/adr/).
+
 ## Phase order
 
 - [ ] **P0 — Specification audit and experiment contract**
-  - audit these documents for contradictions, ambiguous contracts, untestable requirements, and hidden assumptions;
-  - select the first benchmark/task set and freeze primary metrics before implementation;
-  - decompose P1 into bounded implementation issues.
+  - [x] audit specifications/ADRs for contradictions and hidden assumptions;
+  - [x] verify and expand related work from current primary sources;
+  - [x] freeze the first P6-AC practical evaluation protocol;
+  - [x] resolve event, lifecycle, evidence, runtime-boundary, and graph-interaction ambiguities;
+  - [x] decompose P1 into bounded implementation issues;
+  - [ ] merge/review the P0 specification PR.
+
+P1 may begin only after the P0 specification PR is reviewed/merged.
 
 - [ ] **P1 — Harness-neutral core contracts and module system**
-  - domain types and stable ports;
-  - typed provider configuration and module loader;
-  - event schema and compatibility/versioning rules;
-  - in-memory providers needed for tests.
+  - Python package/tooling and dependency boundaries;
+  - durable journal and graph-version implementation under [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), and ADR 0006;
+  - `EventStore` providers and contract tests, including exclusive ownership, serialized proposal recovery, and restart-safe replay;
+  - typed provider configuration and explicit module registry/composition root;
+  - observation/telemetry contract;
+  - local service transport decision and protocol skeleton;
+  - graph command/query contract needed by later adapters.
 
 - [ ] **P2 — Event-sourced ProblemGraph**
   - minimal node/edge schema;
-  - immutable event log;
-  - deterministic replay;
+  - deterministic replay/projection;
   - graph versions and provenance;
-  - lifecycle and invalidation semantics;
-  - in-memory + SQLite event-store adapters.
+  - entity invalidation/supersession semantics;
+  - provider-agnostic replay/projection tests over the EventStore contract.
 
 - [ ] **P3 — Governed mutations and deterministic evidence**
   - proposed vs committed mutations;
   - preconditions/invariants;
   - deterministic/external evidence;
-  - commit/reject/retry/escalate decisions;
-  - root anchors and drift-relevant provenance.
+  - commit/reject/retry/escalate/conflict decisions;
+  - protected root anchors and global checks.
 
 - [ ] **P4 — HarnessX adapter**
-  - thin integration only;
+  - thin processor/client integration only;
   - capability declaration;
-  - normalized ProblemForger events;
+  - ProblemForger graph tools;
+  - observation telemetry;
   - no ProblemForger domain logic in the adapter.
 
-- [ ] **P5 — Pi adapter**
-  - independent portability validation;
-  - same ProblemForger core and protocol;
+- [ ] **P5 — Pi adapter preparation**
+  - adapter preparation and protocol smoke checks only; portability validation belongs to P11;
+  - same ProblemForger service/protocol;
+  - thin TypeScript extension/client;
   - minimal native TUI status only.
 
-- [ ] **P6 — Baseline and graph/governance evaluation**
-  - compare harness baseline vs explicit graph vs deterministic governance;
-  - repeated paired runs;
-  - cost, latency, propagation, and transition-error measurements.
+P5 completion is not a dependency blocking P6; the initial evaluation uses HarnessX.
+
+- [ ] **P6 — Practical whole-system evaluation**
+  - implement issue #8 against the normative evaluation IDs in `docs/evaluation.md`;
+  - freeze one compact manifest containing the benchmark adapter, selected model/provider metadata, ProblemForger service/runtime configuration, task IDs, and metrics before exposing selected tasks;
+  - run the small paired A/C pilot with one agent run and one evaluator run per task, enforce isolation/deadline/resource limits, retain raw artifacts, and compute simple paired outcomes and efficiency metrics;
+  - preserve null/negative results and report the declared validity limitations;
+  - run the optional B diagnostic only as a separately frozen experiment when mechanism attribution is needed.
 
 - [ ] **P7 — Learned verifier**
   - verifier port and baseline implementation;
@@ -76,8 +102,8 @@ The initial domain is software engineering because tests, compilers, type checke
 
 - [ ] **P8 — Calibration and abstention**
   - calibrated probability of verdict correctness;
-  - held-out calibration set;
-  - reliability diagrams/Brier/ECE;
+  - task-level held-out calibration;
+  - reliability/Brier/ECE/selective accuracy;
   - novelty/OOD signal;
   - abstention/escalation policy.
 
@@ -88,42 +114,38 @@ The initial domain is software engineering because tests, compilers, type checke
   - controlled exploration/shadow evaluation to reduce selection bias.
 
 - [ ] **P10 — Observer/debug UI**
-  - harness-neutral event-stream consumer;
+  - harness-neutral consumer of optional telemetry, graph projections, and the read-only durable governance/audit timeline exposed by the service;
   - current objective/node, provenance, evidence, model rationale, confidence, timeline, warnings, local graph;
-  - graph visualization is secondary to causal/provenance inspection.
+  - graph visualization remains secondary to causal/provenance inspection.
 
 - [ ] **P11 — Full ablation and portability study**
+  - independently validate portability through the Pi adapter prepared in P5;
   - baseline;
   - + problem graph;
   - + deterministic governance;
   - + learned verifier;
   - + calibration/abstention;
   - + routing;
-  - repeat across HarnessX and Pi where technically comparable.
+  - run the separate frozen harness-comparison experiment in `docs/evaluation.md` and never pool it with P6;
+  - repeat across HarnessX and Pi where technically comparable;
+  - re-audit and freeze an independent external-validity benchmark.
 
 ## Definition of done for the PoC
 
 The PoC is complete when:
 
-- the same core runs through at least HarnessX and Pi adapters;
-- authoritative graph state is replayable from events;
+- the same core/service runs through at least HarnessX and Pi adapters;
+- authoritative graph state is replayable from graph-changing durable journal records;
+- every governance proposal/outcome needed for audit/evaluation survives restart;
+- harness telemetry is not required for graph replay or governance audit;
 - graph mutations cannot be silently committed by the worker model;
 - deterministic evidence and learned evidence are represented separately;
-- at least one controlled benchmark compares the planned ablations;
-- calibration claims use held-out data;
+- at least one controlled benchmark compares the baseline with the complete ProblemForger package;
+- calibration claims use task-level held-out data;
 - routing, if enabled, includes uncertainty and exploration controls;
-- all reported improvements include cost/latency and repeated-run statistics;
+- all reported improvements include cost/latency and the coverage/validity evidence required by their frozen experiment contract; the single-run P6 pilot is reported as a practical paired observation, not as repeated-run statistics;
 - negative or null results are retained.
 
-## Execution model for ChatGPT Work
+## Contributor workflow
 
-Do not implement an entire phase from this file directly.
-
-For each phase:
-
-1. audit the phase against specifications and accepted ADRs;
-2. create/decompose GitHub issues;
-3. implement the highest-priority unblocked issue only;
-4. provide tests/evidence;
-5. update documentation or propose ADR changes when necessary;
-6. continue with the next issue.
+Follow [AGENTS.md](AGENTS.md#work-procedure) for implementation, issue decomposition, verification, and review procedures.
