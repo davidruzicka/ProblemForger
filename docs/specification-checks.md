@@ -30,16 +30,18 @@ document is the only normative definition for each requirement.
 
 ## Run checks
 
-From the repository root, use Python 3.12+ in a virtual environment and Node.js 18+. The Python checks use only the standard library; no credentials are needed:
+From the repository root, use Python 3.12+ in a virtual environment and Node.js 18+. The package, architecture checker, and tests use only the standard library; coverage.py is test-only. No credentials are needed:
 
 ```sh
-python3 -m pip install -r tests/requirements.txt
-python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+python3 -m pip install -e . -r tests/requirements.txt
+python3 -m scripts.check_architecture
+python3 -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
+python3 -m coverage report --fail-under=90
 node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The Python suite checks the practical P6-AC contract, including the direct A/C
+The bootstrap tests verify the package layers import without harness/provider dependencies and that the architecture check rejects absolute, relative, dynamic, SQLite, and harness imports from core. Coverage must remain at least 90%. The document tests check the practical P6-AC contract, including the direct A/C
 comparison, six-task target with one agent/evaluator run per task, the compact
 manifest, operational continuation decision, simple resource limits, explicit
 hosted-model identity limits, sensitivity reporting, pre-measurement task
@@ -53,7 +55,7 @@ In CI, the whitespace check uses the actual event range: pull requests compare t
 
 The Node suite extracts and executes the actual inline script in the review-request workflow with a mocked GitHub client. It checks trusted-marker deduplication, spoofed/missing comments, new heads, pagination arguments, and API failure propagation. It also checks the pinned review action, least-privilege permissions, and the event-aware whitespace contract. No comments or reviews are posted. It does not validate GitHub event delivery or prove that the external Codex integration accepts the bot's request.
 
-The specification-checks workflow runs these commands with read-only repository permission and no repository secrets. The separate review-request workflow uses write permissions to post its review request. Its trusted `pull_request_target` context must never check out or execute PR-head code.
+The package, architecture, and specification-check workflow runs these checks with read-only repository permission and no repository secrets. The separate review-request workflow uses write permissions to post its review request. Its trusted `pull_request_target` context must never check out or execute PR-head code.
 
 ## Regression evidence and implementation fixtures
 
