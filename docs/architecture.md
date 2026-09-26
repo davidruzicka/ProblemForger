@@ -62,7 +62,8 @@ Contains:
 - durable governance audit-record and graph-domain-event definitions;
 - pure replay/projection logic.
 
-It must not depend on SQLite, PostgreSQL, a specific model API, HarnessX, Pi, a UI framework, or provider-specific settings.
+It must not depend on SQLite, PostgreSQL, a specific model API, HarnessX, Pi,
+a UI framework (including `tkinter`), or provider-specific settings.
 
 The core also does **not** own model inference in the initial PoC. Model execution remains a harness responsibility. Later routing asks the harness to select a model; it does not move inference into the core.
 

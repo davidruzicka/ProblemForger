@@ -42,10 +42,12 @@ git diff --check
 ```
 
 The bootstrap tests verify the package layers import without harness/provider
-dependencies. Core and ports may import the Python standard library and
-`problemforger.core`/`problemforger.ports`; application use cases may also
-import `problemforger.application`. In these layers, the architecture check
-rejects other dependencies, SQLite, dynamic imports, and relative imports that
+dependencies. Core and ports may import provider-neutral Python standard
+library modules and `problemforger.core`/`problemforger.ports`; application use
+cases may also import `problemforger.application`. The architecture check
+explicitly rejects SQLite (`sqlite3`/`_sqlite3`), the UI toolkit
+(`tkinter`/`_tkinter`), import-system access (`importlib`, `builtins`, and
+dynamic imports), other unapproved dependencies, and relative imports that
 escape the package root. Coverage must remain at least 90%. The document tests
 check the practical P6-AC contract, including the direct A/C
 comparison, six-task target with one agent/evaluator run per task, the compact

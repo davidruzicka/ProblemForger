@@ -22,6 +22,8 @@ APPLICATION_USE_CASE_ALLOWED_IMPORT_PREFIXES = (
 FORBIDDEN_STDLIB_IMPORT_PREFIXES = (
     "sqlite3",
     "_sqlite3",
+    "tkinter",
+    "_tkinter",
     "importlib",
     "builtins",
 )
@@ -60,7 +62,9 @@ def _import_targets(node: ast.AST, package: str) -> list[str | None]:
 
 
 def _is_forbidden(module: str, allowed_import_prefixes: tuple[str, ...]) -> bool:
-    """Allow stdlib and layer imports; reject providers and higher layers."""
+    """Allow provider-neutral stdlib and layer imports; reject providers and
+    higher layers.
+    """
     if not module:
         return False
 

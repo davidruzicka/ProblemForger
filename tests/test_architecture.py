@@ -133,6 +133,35 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_ui_framework_stdlib_imports_in_core_and_ports(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            ports_root = package_root / "ports"
+            core_root.mkdir(parents=True)
+            ports_root.mkdir()
+            (core_root / "ui.py").write_text(
+                "import tkinter\n",
+                encoding="utf-8",
+            )
+            (ports_root / "ui.py").write_text(
+                "from tkinter import ttk\n"
+                "import _tkinter\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        self.assertEqual(3, len(violations))
+        for imported_module in ("tkinter", "tkinter.ttk", "_tkinter"):
+            with self.subTest(imported_module=imported_module):
+                self.assertTrue(
+                    any(
+                        f"forbidden import '{imported_module}'" in item
+                        for item in violations
+                    )
+                )
+
     def test_rejects_provider_dependencies_inside_application_use_cases(self):
         with TemporaryDirectory() as temporary:
             package_root = Path(temporary) / "src" / "problemforger"
