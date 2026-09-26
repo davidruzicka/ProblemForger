@@ -133,6 +133,48 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_provider_dependencies_inside_application_use_cases(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            ports_root = package_root / "ports"
+            commands_root = package_root / "application" / "commands"
+            queries_root = package_root / "application" / "queries"
+            core_root.mkdir(parents=True)
+            ports_root.mkdir()
+            commands_root.mkdir(parents=True)
+            queries_root.mkdir()
+            (core_root / "governor.py").write_text(
+                "from problemforger.ports import EventStore\n",
+                encoding="utf-8",
+            )
+            (commands_root / "submit.py").write_text(
+                "import sqlite3\n"
+                "import harnessx.agent\n"
+                "from problemforger.modules.persistence.sqlite import "
+                "SqliteEventStore\n",
+                encoding="utf-8",
+            )
+            (queries_root / "read_graph.py").write_text(
+                "import json\n"
+                "from problemforger.application.commands.submit import SubmitProposal\n"
+                "from problemforger.core.events import GraphEvent\n"
+                "from problemforger.ports import EventStore\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        self.assertEqual(3, len(violations))
+        self.assertTrue(any("sqlite3" in item for item in violations))
+        self.assertTrue(any("harnessx.agent" in item for item in violations))
+        self.assertTrue(
+            any(
+                "problemforger.modules.persistence.sqlite" in item
+                for item in violations
+            )
+        )
+
     def test_resolves_relative_provider_and_adapter_imports(self):
         with TemporaryDirectory() as temporary:
             package_root = Path(temporary) / "src" / "problemforger"

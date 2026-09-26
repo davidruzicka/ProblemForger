@@ -1,4 +1,4 @@
-"""Enforce provider-neutral imports in core and ports."""
+"""Enforce dependency boundaries for core, ports, and application use cases."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ CORE_ROOT = PACKAGE_ROOT / "core"
 PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES = (
     "problemforger.core",
     "problemforger.ports",
+)
+APPLICATION_USE_CASE_ALLOWED_IMPORT_PREFIXES = (
+    "problemforger.application",
+    *PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES,
 )
 # These standard-library modules still violate provider-neutral boundaries.
 FORBIDDEN_STDLIB_IMPORT_PREFIXES = (
@@ -55,8 +59,8 @@ def _import_targets(node: ast.AST, package: str) -> list[str | None]:
     return [f"{base}.{alias.name}" for alias in node.names]
 
 
-def _is_forbidden(module: str) -> bool:
-    """Allow stdlib and core/ports imports; reject providers and upper layers."""
+def _is_forbidden(module: str, allowed_import_prefixes: tuple[str, ...]) -> bool:
+    """Allow stdlib and layer imports; reject providers and higher layers."""
     if not module:
         return False
 
@@ -71,7 +75,7 @@ def _is_forbidden(module: str) -> bool:
 
     return not any(
         module == prefix or module.startswith(f"{prefix}.")
-        for prefix in PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES
+        for prefix in allowed_import_prefixes
     )
 
 
@@ -80,19 +84,32 @@ def _is_dynamic_import(node: ast.AST) -> bool:
 
 
 def find_violations(core_root: Path, package_root: Path) -> list[str]:
-    """Return static import violations in core and provider-neutral ports."""
+    """Return import violations in core, ports, and application use cases."""
     if not core_root.is_dir():
         return [f"{core_root}: core package directory does not exist"]
 
-    files = sorted(core_root.rglob("*.py"))
-    if not files:
+    core_files = sorted(core_root.rglob("*.py"))
+    if not core_files:
         return [f"{core_root}: no Python files found"]
+
+    files: list[tuple[Path, tuple[str, ...]]] = [
+        (path, PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES) for path in core_files
+    ]
     ports_root = package_root / "ports"
     if ports_root.is_dir():
-        files.extend(sorted(ports_root.rglob("*.py")))
+        files.extend(
+            (path, PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES)
+            for path in sorted(ports_root.rglob("*.py"))
+        )
+    application_root = package_root / "application"
+    if application_root.is_dir():
+        files.extend(
+            (path, APPLICATION_USE_CASE_ALLOWED_IMPORT_PREFIXES)
+            for path in sorted(application_root.rglob("*.py"))
+        )
 
     violations: list[str] = []
-    for path in files:
+    for path, allowed_import_prefixes in files:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except SyntaxError as error:
@@ -106,11 +123,11 @@ def find_violations(core_root: Path, package_root: Path) -> list[str]:
             for target in _import_targets(node, package):
                 if target is None:
                     violations.append(f"{path}: relative import escapes package root")
-                elif _is_forbidden(target):
+                elif _is_forbidden(target, allowed_import_prefixes):
                     violations.append(f"{path}: forbidden import {target!r}")
             if _is_dynamic_import(node):
                 violations.append(
-                    f"{path}: dynamic import is forbidden in core and ports"
+                    f"{path}: dynamic import is forbidden in provider-neutral layers"
                 )
 
     return violations
@@ -121,7 +138,7 @@ def main(core_root: Path = CORE_ROOT, package_root: Path = PACKAGE_ROOT) -> int:
     if violations:
         print("\n".join(violations), file=sys.stderr)
         return 1
-    print("Core/ports dependency boundary check passed.")
+    print("Provider-neutral dependency boundary check passed.")
     return 0
 
 
