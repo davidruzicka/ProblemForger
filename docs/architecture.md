@@ -63,8 +63,9 @@ Contains:
 - pure replay/projection logic.
 
 It must not depend on persistence providers (including SQLite, PostgreSQL,
-`dbm`, or `shelve`), a specific model API, HarnessX, Pi, a UI framework
-(including `tkinter`), or provider-specific settings.
+`dbm`, or `shelve`), service transports (including `http.server`,
+`socketserver`, or `wsgiref`), a specific model API, HarnessX, Pi, UI frameworks
+(including `tkinter` or `curses`), or provider-specific settings.
 
 The core also does **not** own model inference in the initial PoC. Model execution remains a harness responsibility. Later routing asks the harness to select a model; it does not move inference into the core.
 

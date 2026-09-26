@@ -199,6 +199,51 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     )
                 )
 
+    def test_rejects_unapproved_stdlib_transport_and_ui_modules(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            ports_root = package_root / "ports"
+            application_root = package_root / "application" / "commands"
+            core_root.mkdir(parents=True)
+            ports_root.mkdir()
+            application_root.mkdir(parents=True)
+            (core_root / "server.py").write_text(
+                "import http.server\n"
+                "from http import server\n",
+                encoding="utf-8",
+            )
+            (ports_root / "server.py").write_text(
+                "import socketserver\n"
+                "from wsgiref.simple_server import make_server\n",
+                encoding="utf-8",
+            )
+            (application_root / "terminal_ui.py").write_text(
+                "import curses\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        expected_imports = (
+            "socketserver",
+            "wsgiref.simple_server.make_server",
+            "curses",
+        )
+        self.assertEqual(len(expected_imports) + 2, len(violations))
+        self.assertEqual(
+            2,
+            sum(item.endswith("forbidden import 'http.server'") for item in violations),
+        )
+        for imported_module in expected_imports:
+            with self.subTest(imported_module=imported_module):
+                self.assertTrue(
+                    any(
+                        f"forbidden import '{imported_module}'" in item
+                        for item in violations
+                    )
+                )
+
     def test_rejects_provider_dependencies_inside_application_use_cases(self):
         with TemporaryDirectory() as temporary:
             package_root = Path(temporary) / "src" / "problemforger"
@@ -253,6 +298,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (core_root / "allowed.py").write_text(
+                "from __future__ import annotations\n"
+                "from collections.abc import Mapping\n"
+                "from dataclasses import dataclass\n"
+                "from typing import Protocol\n"
                 "import json\n"
                 "from ..ports import EventStore\n"
                 "from .models import Node\n"

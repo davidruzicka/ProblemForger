@@ -42,14 +42,14 @@ git diff --check
 ```
 
 The bootstrap tests verify the package layers import without harness/provider
-dependencies. Core and ports may import provider-neutral Python standard
-library modules and `problemforger.core`/`problemforger.ports`; application use
-cases may also import `problemforger.application`. The architecture check
-explicitly rejects SQLite (`sqlite3`/`_sqlite3`), dbm-backed storage
-(`dbm`, `shelve`, `_dbm`, `_gdbm`), the UI toolkit
-(`tkinter`/`_tkinter`), import-system access (`importlib`, `builtins`, and
-dynamic imports), other unapproved dependencies, and relative imports that
-escape the package root. Coverage must remain at least 90%. The document tests
+dependencies. Core, ports, and application use cases may import only reviewed,
+provider-neutral standard-library modules; core and ports may also import
+`problemforger.core`/`problemforger.ports`, while application use cases may
+also import `problemforger.application`. The architecture check rejects
+unlisted stdlib modules, other unapproved dependencies, dynamic imports, and
+relative imports that escape the package root. Add a stdlib module to the
+allowlist only when its use is provider-neutral. Coverage must remain at least
+90%. The document tests
 check the practical P6-AC contract, including the direct A/C
 comparison, six-task target with one agent/evaluator run per task, the compact
 manifest, operational continuation decision, simple resource limits, explicit
