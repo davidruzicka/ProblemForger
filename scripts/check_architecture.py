@@ -1,4 +1,4 @@
-"""Enforce core imports from the standard library, core, and ports only."""
+"""Enforce provider-neutral imports in core and ports."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = ROOT / "src" / "problemforger"
 CORE_ROOT = PACKAGE_ROOT / "core"
-CORE_ALLOWED_IMPORT_PREFIXES = (
+PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES = (
     "problemforger.core",
     "problemforger.ports",
 )
-# These standard-library modules still violate the core architecture.
+# These standard-library modules still violate provider-neutral boundaries.
 FORBIDDEN_STDLIB_IMPORT_PREFIXES = (
     "sqlite3",
     "_sqlite3",
@@ -71,7 +71,7 @@ def _is_forbidden(module: str) -> bool:
 
     return not any(
         module == prefix or module.startswith(f"{prefix}.")
-        for prefix in CORE_ALLOWED_IMPORT_PREFIXES
+        for prefix in PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES
     )
 
 
@@ -80,13 +80,16 @@ def _is_dynamic_import(node: ast.AST) -> bool:
 
 
 def find_violations(core_root: Path, package_root: Path) -> list[str]:
-    """Return static imports that cross the core dependency boundary."""
+    """Return static import violations in core and provider-neutral ports."""
     if not core_root.is_dir():
         return [f"{core_root}: core package directory does not exist"]
 
     files = sorted(core_root.rglob("*.py"))
     if not files:
         return [f"{core_root}: no Python files found"]
+    ports_root = package_root / "ports"
+    if ports_root.is_dir():
+        files.extend(sorted(ports_root.rglob("*.py")))
 
     violations: list[str] = []
     for path in files:
@@ -106,7 +109,9 @@ def find_violations(core_root: Path, package_root: Path) -> list[str]:
                 elif _is_forbidden(target):
                     violations.append(f"{path}: forbidden import {target!r}")
             if _is_dynamic_import(node):
-                violations.append(f"{path}: dynamic import is forbidden in core")
+                violations.append(
+                    f"{path}: dynamic import is forbidden in core and ports"
+                )
 
     return violations
 
@@ -116,7 +121,7 @@ def main(core_root: Path = CORE_ROOT, package_root: Path = PACKAGE_ROOT) -> int:
     if violations:
         print("\n".join(violations), file=sys.stderr)
         return 1
-    print("Core dependency boundary check passed.")
+    print("Core/ports dependency boundary check passed.")
     return 0
 
 

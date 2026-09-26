@@ -41,7 +41,7 @@ node --test tests/review-workflow.test.mjs
 git diff --check
 ```
 
-The bootstrap tests verify the package layers import without harness/provider dependencies. Core may import the Python standard library and `problemforger.core`/`problemforger.ports`; the architecture check rejects other dependencies, SQLite, dynamic imports, and relative imports that escape the package root. Coverage must remain at least 90%. The document tests check the practical P6-AC contract, including the direct A/C
+The bootstrap tests verify the package layers import without harness/provider dependencies. Core and ports may import the Python standard library and `problemforger.core`/`problemforger.ports`; the architecture check rejects other dependencies, SQLite, dynamic imports, and relative imports that escape the package root in both layers. Coverage must remain at least 90%. The document tests check the practical P6-AC contract, including the direct A/C
 comparison, six-task target with one agent/evaluator run per task, the compact
 manifest, operational continuation decision, simple resource limits, explicit
 hosted-model identity limits, sensitivity reporting, pre-measurement task

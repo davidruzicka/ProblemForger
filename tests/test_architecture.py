@@ -99,6 +99,40 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(module=module):
                 self.assertTrue(any(module in item for item in violations))
 
+    def test_rejects_provider_dependencies_inside_ports(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            ports_root = package_root / "ports"
+            core_root.mkdir(parents=True)
+            ports_root.mkdir()
+            (core_root / "governor.py").write_text(
+                "from problemforger.ports import EventStore\n",
+                encoding="utf-8",
+            )
+            (ports_root / "__init__.py").write_text(
+                "from psycopg import Connection\n",
+                encoding="utf-8",
+            )
+            (ports_root / "event_store.py").write_text(
+                "import json\n"
+                "from ..core.events import GraphEvent\n"
+                "from .telemetry import TelemetrySink\n"
+                "from ..modules.persistence.sqlite import SqliteEventStore\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        self.assertEqual(2, len(violations))
+        self.assertTrue(any("psycopg" in item for item in violations))
+        self.assertTrue(
+            any(
+                "problemforger.modules.persistence.sqlite" in item
+                for item in violations
+            )
+        )
+
     def test_resolves_relative_provider_and_adapter_imports(self):
         with TemporaryDirectory() as temporary:
             package_root = Path(temporary) / "src" / "problemforger"
