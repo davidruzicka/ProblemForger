@@ -1,1 +1,2 @@
-# The specification checks use only the Python standard library.
+# Unit tests use the Python standard library; coverage.py measures their source coverage.
+coverage>=7.6,<8
