@@ -162,6 +162,43 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     )
                 )
 
+    def test_rejects_stdlib_persistence_providers_in_architecture_layers(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            ports_root = package_root / "ports"
+            application_root = package_root / "application" / "commands"
+            core_root.mkdir(parents=True)
+            ports_root.mkdir()
+            application_root.mkdir(parents=True)
+            (core_root / "store.py").write_text(
+                "import dbm\n"
+                "from dbm.gnu import open as open_dbm\n",
+                encoding="utf-8",
+            )
+            (ports_root / "store.py").write_text(
+                "import shelve\n"
+                "import _dbm\n",
+                encoding="utf-8",
+            )
+            (application_root / "store.py").write_text(
+                "import _gdbm\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        expected_imports = ("dbm", "dbm.gnu.open", "shelve", "_dbm", "_gdbm")
+        self.assertEqual(len(expected_imports), len(violations))
+        for imported_module in expected_imports:
+            with self.subTest(imported_module=imported_module):
+                self.assertTrue(
+                    any(
+                        f"forbidden import '{imported_module}'" in item
+                        for item in violations
+                    )
+                )
+
     def test_rejects_provider_dependencies_inside_application_use_cases(self):
         with TemporaryDirectory() as temporary:
             package_root = Path(temporary) / "src" / "problemforger"

@@ -45,7 +45,8 @@ The bootstrap tests verify the package layers import without harness/provider
 dependencies. Core and ports may import provider-neutral Python standard
 library modules and `problemforger.core`/`problemforger.ports`; application use
 cases may also import `problemforger.application`. The architecture check
-explicitly rejects SQLite (`sqlite3`/`_sqlite3`), the UI toolkit
+explicitly rejects SQLite (`sqlite3`/`_sqlite3`), dbm-backed storage
+(`dbm`, `shelve`, `_dbm`, `_gdbm`), the UI toolkit
 (`tkinter`/`_tkinter`), import-system access (`importlib`, `builtins`, and
 dynamic imports), other unapproved dependencies, and relative imports that
 escape the package root. Coverage must remain at least 90%. The document tests

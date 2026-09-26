@@ -18,10 +18,14 @@ APPLICATION_USE_CASE_ALLOWED_IMPORT_PREFIXES = (
     "problemforger.application",
     *PROVIDER_NEUTRAL_ALLOWED_IMPORT_PREFIXES,
 )
-# These standard-library modules still violate provider-neutral boundaries.
+# These stdlib modules expose concrete storage/UI or dynamic-import machinery.
 FORBIDDEN_STDLIB_IMPORT_PREFIXES = (
     "sqlite3",
     "_sqlite3",
+    "dbm",
+    "shelve",
+    "_dbm",
+    "_gdbm",
     "tkinter",
     "_tkinter",
     "importlib",
