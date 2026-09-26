@@ -1,4 +1,4 @@
-"""Reject provider and harness dependencies from the ProblemForger core."""
+"""Enforce core imports from the standard library, core, and ports only."""
 
 from __future__ import annotations
 
@@ -10,12 +10,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = ROOT / "src" / "problemforger"
 CORE_ROOT = PACKAGE_ROOT / "core"
-FORBIDDEN_IMPORT_PREFIXES = (
-    "problemforger.modules",
-    "problemforger.adapters",
+CORE_ALLOWED_IMPORT_PREFIXES = (
+    "problemforger.core",
+    "problemforger.ports",
+)
+# These standard-library modules still violate the core architecture.
+FORBIDDEN_STDLIB_IMPORT_PREFIXES = (
     "sqlite3",
-    "harnessx",
-    "pi",
+    "_sqlite3",
     "importlib",
     "builtins",
 )
@@ -32,7 +34,7 @@ def _resolve_import(module: str | None, level: int, package: str) -> str | None:
 
     parts = package.split(".") if package else []
     keep = len(parts) - level + 1
-    if keep < 0:
+    if keep <= 0:
         return None
     return ".".join([*parts[:keep], *([module] if module else [])])
 
@@ -54,21 +56,27 @@ def _import_targets(node: ast.AST, package: str) -> list[str | None]:
 
 
 def _is_forbidden(module: str) -> bool:
-    return any(
+    """Allow stdlib and core/ports imports; reject providers and upper layers."""
+    if not module:
+        return False
+
+    if any(
         module == prefix or module.startswith(f"{prefix}.")
-        for prefix in FORBIDDEN_IMPORT_PREFIXES
+        for prefix in FORBIDDEN_STDLIB_IMPORT_PREFIXES
+    ):
+        return True
+
+    if module.partition(".")[0] in sys.stdlib_module_names:
+        return False
+
+    return not any(
+        module == prefix or module.startswith(f"{prefix}.")
+        for prefix in CORE_ALLOWED_IMPORT_PREFIXES
     )
 
 
 def _is_dynamic_import(node: ast.AST) -> bool:
-    if not isinstance(node, ast.Call):
-        return False
-    if isinstance(node.func, ast.Name):
-        return node.func.id == "__import__"
-    return isinstance(node.func, ast.Attribute) and node.func.attr in {
-        "import_module",
-        "__import__",
-    }
+    return isinstance(node, ast.Name) and node.id == "__import__"
 
 
 def find_violations(core_root: Path, package_root: Path) -> list[str]:

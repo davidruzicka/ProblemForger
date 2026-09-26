@@ -6,7 +6,6 @@ from contextlib import redirect_stderr, redirect_stdout
 import importlib
 from io import StringIO
 import unittest
-from unittest.mock import patch
 
 from scripts.check_architecture import find_violations, main
 
@@ -65,6 +64,41 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertTrue(any("pi" in item for item in violations))
         self.assertTrue(any("problemforger.modules'" in item for item in violations))
 
+    def test_rejects_unapproved_providers_and_upper_layers(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            core_root.mkdir(parents=True)
+            (core_root / "bad.py").write_text(
+                "import psycopg\n"
+                "import openai\n"
+                "import sqlite3\n"
+                "import _sqlite3\n"
+                "from problemforger.config import ProviderConfig\n"
+                "from problemforger.application import submit\n"
+                "from problemforger.service import start\n"
+                "from ..config import ProviderConfig\n"
+                "from ..application import submit\n"
+                "from ..service import start\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        expected_imports = (
+            "psycopg",
+            "openai",
+            "sqlite3",
+            "_sqlite3",
+            "problemforger.config",
+            "problemforger.application",
+            "problemforger.service",
+        )
+        self.assertEqual(10, len(violations))
+        for module in expected_imports:
+            with self.subTest(module=module):
+                self.assertTrue(any(module in item for item in violations))
+
     def test_resolves_relative_provider_and_adapter_imports(self):
         with TemporaryDirectory() as temporary:
             package_root = Path(temporary) / "src" / "problemforger"
@@ -79,6 +113,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             (core_root / "allowed.py").write_text(
                 "import json\n"
                 "from ..ports import EventStore\n"
+                "from .models import Node\n"
                 "def read(): return json.loads('{}')\n",
                 encoding="utf-8",
             )
@@ -98,15 +133,41 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             (core_root / "bad.py").write_text(
                 "import importlib\n"
                 "__import__('problemforger.modules.persistence.sqlite')\n"
-                "importlib.import_module('problemforger.adapters.harnessx')\n",
+                "importlib.import_module('problemforger.adapters.harnessx')\n"
+                "from importlib import import_module as load\n"
+                "load('problemforger.adapters.harnessx')\n"
+                "loader = __import__\n"
+                "loader('problemforger.modules.persistence.sqlite')\n",
                 encoding="utf-8",
             )
 
             violations = find_violations(core_root, package_root)
 
-        self.assertEqual(3, len(violations))
+        self.assertEqual(4, len(violations))
         self.assertTrue(any("importlib" in item for item in violations))
-        self.assertTrue(any("dynamic import" in item for item in violations))
+        self.assertEqual(
+            2,
+            sum("dynamic import" in item for item in violations),
+        )
+
+    def test_allows_unrelated_methods_named_like_import_functions(self):
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            core_root.mkdir(parents=True)
+            (core_root / "ordinary.py").write_text(
+                "class Mapper:\n"
+                "    def import_module(self, name): return name\n"
+                "    def __import__(self, name): return name\n"
+                "mapper = Mapper()\n"
+                "mapper.import_module('artifact')\n"
+                "mapper.__import__('artifact')\n",
+                encoding="utf-8",
+            )
+
+            violations = find_violations(core_root, package_root)
+
+        self.assertEqual([], violations)
 
     def test_reports_invalid_python_instead_of_skipping_it(self):
         with TemporaryDirectory() as temporary:
@@ -129,11 +190,18 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 "from ....modules import provider\n",
                 encoding="utf-8",
             )
+            (core_root / "also_bad.py").write_text(
+                "from ...modules import provider\n"
+                "from ... import modules\n",
+                encoding="utf-8",
+            )
 
             violations = find_violations(core_root, package_root)
 
-        self.assertEqual(1, len(violations))
-        self.assertIn("relative import escapes package root", violations[0])
+        self.assertEqual(3, len(violations))
+        self.assertTrue(
+            all("relative import escapes package root" in item for item in violations)
+        )
 
     def test_reports_missing_or_empty_core_packages(self):
         with TemporaryDirectory() as temporary:
@@ -147,20 +215,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("no Python files found", empty[0])
 
     def test_command_reports_success_and_failure(self):
-        success = StringIO()
-        with patch("scripts.check_architecture.find_violations", return_value=[]):
-            with redirect_stdout(success):
-                self.assertEqual(0, main())
-        self.assertIn("check passed", success.getvalue())
+        with TemporaryDirectory() as temporary:
+            package_root = Path(temporary) / "src" / "problemforger"
+            core_root = package_root / "core"
+            core_root.mkdir(parents=True)
+            (core_root / "valid.py").write_text("import json\n", encoding="utf-8")
 
-        failure = StringIO()
-        with patch(
-            "scripts.check_architecture.find_violations",
-            return_value=["forbidden import"],
-        ):
+            success = StringIO()
+            with redirect_stdout(success):
+                self.assertEqual(0, main(core_root, package_root))
+            self.assertIn("check passed", success.getvalue())
+
+            (core_root / "invalid.py").write_text("import psycopg\n", encoding="utf-8")
+            failure = StringIO()
             with redirect_stderr(failure):
-                self.assertEqual(1, main())
-        self.assertIn("forbidden import", failure.getvalue())
+                self.assertEqual(1, main(core_root, package_root))
+            self.assertIn("forbidden import 'psycopg'", failure.getvalue())
 
 
 if __name__ == "__main__":
