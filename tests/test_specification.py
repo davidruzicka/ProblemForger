@@ -13,6 +13,32 @@ def read(path):
 
 
 class SpecificationChecks(unittest.TestCase):
+    def test_p1_journal_recovery_and_schema_contract(self):
+        protocol = " ".join(read("docs/protocol.md").split())
+        modules = " ".join(read("docs/modules.md").split())
+        for phrase in (
+            "`c_run_recovery_context` containing the manifest hash (`manifest_hash`)",
+            "the effective graph-intervention identity (`effective_graph_intervention_identity`)",
+            "the effective governance-policy identity (`effective_governance_policy_identity`)",
+            "outside the normalized request and its hash",
+            "non-C receipts set this field to null",
+            "C-run service logic requires the context",
+            "A mismatch is recorded as `ABANDONED`",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
+        for phrase in (
+            "A change to a record's wire shape or meaning increments `record_schema_version`",
+            "normalized-request shape changes increment `request_schema_version`",
+            "canonicalization or hash inputs also increments the request-hash version",
+            "Graph-event payload changes increment `event_schema_version`",
+            "P1 supports version 1 only for each schema/hash version and rejects unsupported values",
+            "Correlation and causation IDs link related records",
+            "they do not determine journal-position assignment or graph-version progression",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, modules)
+
     def test_retry_evidence_and_restart_invariants(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (
@@ -926,6 +952,30 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, module)
+
+    def test_journal_envelopes_and_request_hash_versions_are_explicit(self):
+        module = " ".join(read("docs/modules.md").split())
+        protocol = " ".join(read("docs/protocol.md").split())
+        for phrase in (
+            "The first durable record receives `journal_position=1`",
+            "`protocol_schema_version` identifies the protocol contract; `record_schema_version` versions the record wire shape; nested requests and graph events carry their own schema versions",
+            "`proposal_abandoned` (terminal operational recovery status, not a governance outcome)",
+            "every graph event in its ordered batch uses that resulting version",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, module)
+        for phrase in (
+            "The normalized request schema starts at version 1",
+            "an ordered `operations` array",
+            "an ordered `evidence` array",
+            "`sort_keys=True`",
+            "`allow_nan=False`",
+            "problemforger.normalized-mutation-request.v1",
+            "sha256:problemforger-request-v1:<lowercase hex digest>",
+            "clients do not need to implement the canonicalizer",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
 
     def test_evidence_trust_and_recovery_remain_independent(self):
         verification = read("docs/verification.md")

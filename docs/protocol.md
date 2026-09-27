@@ -93,7 +93,49 @@ The service must persist the final decision record before returning a completed 
 
 Every mutation command carries a client-generated `proposal_id` that is unique within the ProblemForger run and acts as the idempotency key for transport retries.
 
-On the first accepted submission of `(run_id, proposal_id)`, ProblemForger durably records the complete normalized mutation request together with a canonical request hash covering the mutation payload, expected graph version, and evidence content identities. Evidence references resolve to immutable versioned records, not mutable path/URL contents. The receipt retains the normalized evidence inputs required by [EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery), including inline worker assertions. A C run registration must bind the verified, non-null identities from its manifest; the service rejects missing or `NONE` identities and verifies loaded policy/configuration against the bound identity before accepting a proposal. For a C run, the durable receipt also stores the manifest hash plus the effective graph-intervention identity and effective governance-policy identity from run metadata. Recovery verifies those identities before resuming a pending proposal; a mismatch is recorded as `ABANDONED` and requires a new manifest/version. The durable receipt must contain enough versioned input to resume governance after process restart without consulting transient client state.
+On the first accepted submission of `(run_id, proposal_id)`, ProblemForger
+durably records the complete normalized mutation request together with a
+canonical request hash covering the mutation payload, expected graph version,
+and evidence content identities. Evidence references resolve to immutable
+versioned records, not mutable path/URL contents. The receipt retains the
+normalized evidence inputs required by
+[EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery),
+including inline worker assertions. The durable receipt must contain enough
+versioned input to resume governance after process restart without consulting
+transient client state.
+
+A C run registration must bind the verified, non-null identities from its
+manifest; the service rejects missing or `NONE` identities and verifies loaded
+policy/configuration against the bound identity before accepting a proposal.
+For a C run, the durable receipt stores a `c_run_recovery_context` containing
+the manifest hash (`manifest_hash`), the effective graph-intervention identity
+(`effective_graph_intervention_identity`), and the effective governance-policy
+identity (`effective_governance_policy_identity`) copied from run metadata. The
+three non-empty identities are stored together, outside the normalized request
+and its hash; non-C receipts set this field to null. C-run service logic
+requires the context and verifies it against the registered run before
+resuming a pending proposal. A mismatch is recorded as `ABANDONED` and requires
+a new manifest/version.
+
+The normalized request schema starts at version 1 and contains
+`request_schema_version`, non-negative `expected_graph_version`, an ordered
+`operations` array, and an ordered `evidence` array. Each operation and evidence
+item is a JSON object. The evidence array preserves immutable evidence/content
+identities and inline assertions needed for recovery; evidence trust and
+provenance rules remain those in `EVIDENCE-TRUST` and `EVIDENCE-BINDING`.
+
+For request-hash version 1, the service serializes that complete normalized
+object as canonical UTF-8 JSON using Python 3.12+'s standard `json.dumps` with
+`sort_keys=True`, `separators=(",", ":")`, `ensure_ascii=False`, and
+`allow_nan=False`. Object keys must be strings and duplicate keys, non-finite
+numbers, and non-JSON Python values are rejected; array order is preserved.
+The hash is SHA-256 over the domain bytes
+`problemforger.normalized-mutation-request.v1\0` followed by those JSON bytes,
+encoded as `sha256:problemforger-request-v1:<lowercase hex digest>`. The service
+computes this hash after normalization; clients do not need to implement the
+canonicalizer. Changing the canonicalization or hash input requires a new hash
+version. The hash therefore binds the expected version, operations, and every
+normalized evidence identity/assertion in the request.
 
 Proposal execution is owned by the service and serialized for the initial P1
 PoC. The durable receipt is the recovery point; it is not a worker lease.
