@@ -152,6 +152,37 @@ class JournalValueTests(unittest.TestCase):
             digest,
         )
 
+    def test_normalized_request_hash_preserves_array_order_and_utf8_vector(self):
+        operations = (
+            JsonDocument.from_value({"operation": "add", "id": "node-1"}),
+            JsonDocument.from_value({"operation": "remove", "id": "node-2"}),
+        )
+        evidence = (
+            JsonDocument.from_value({"content_digest": "sha256:first"}),
+            JsonDocument.from_value({"content_digest": "sha256:second"}),
+        )
+        original = NormalizedMutationRequest(1, 0, operations, evidence)
+
+        self.assertNotEqual(
+            proposal_request_hash(original),
+            proposal_request_hash(replace(original, operations=tuple(reversed(operations)))),
+        )
+        self.assertNotEqual(
+            proposal_request_hash(original),
+            proposal_request_hash(replace(original, evidence=tuple(reversed(evidence)))),
+        )
+
+        unicode_request = NormalizedMutationRequest(
+            1,
+            0,
+            (JsonDocument.from_value({"label": "café"}),),
+            (JsonDocument.from_value({"label": "雪"}),),
+        )
+        self.assertEqual(
+            "sha256:problemforger-request-v1:e11bb58d6a38ffa29f184dbb1d9e4c393aed6f413109f68925cf5e0e30922959",
+            proposal_request_hash(unicode_request),
+        )
+
     def test_c_run_recovery_context_round_trips_without_changing_request_hash(self):
         context = CRunRecoveryContext(
             manifest_hash="sha256:manifest-1",
@@ -251,6 +282,15 @@ class JournalValueTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             metadata(recorded_at=datetime(2026, 9, 27, 6, 0))
+
+    def test_identifiers_must_be_utf8_encodable_on_construction_and_decode(self):
+        with self.assertRaisesRegex(ValueError, "valid UTF-8"):
+            RecordMetadata("\ud800", "record-1", RECORDED_AT)
+
+        wire = json.loads(serialize_entry(JournalEntry(1, receipt())))
+        wire["record"]["run_id"] = "\ud800"
+        with self.assertRaisesRegex(ValueError, "valid UTF-8"):
+            deserialize_entry(json.dumps(wire, ensure_ascii=True))
 
     def test_receipt_hash_is_recomputed_and_checked_on_decode(self):
         serialized = serialize_entry(JournalEntry(1, receipt()))
@@ -544,8 +584,12 @@ class JournalValueTests(unittest.TestCase):
             reason_code="version_mismatch",
         )
         self.assertEqual(0, future_version_conflict.resulting_graph_version)
-        with self.assertRaises(ValueError):
-            decision(outcome=GovernanceOutcome.REJECT, reason_code=None)
+        with self.assertRaisesRegex(ValueError, "reason_code"):
+            decision(
+                outcome=GovernanceOutcome.REJECT,
+                resulting_version=0,
+                reason_code=None,
+            )
 
     def test_committed_batch_is_ordered_and_uses_one_new_graph_version(self):
         second = graph_event(record_id="event-2")
@@ -571,15 +615,29 @@ class JournalValueTests(unittest.TestCase):
                 decision=decision(),
                 graph_events=(graph_event(proposal_id="another-proposal"),),
             )
-        with self.assertRaises(ValueError):
+        rejected = decision(
+            outcome=GovernanceOutcome.REJECT,
+            expected_version=1,
+            resulting_version=1,
+            reason_code="policy_rejected",
+        )
+        with self.assertRaisesRegex(ValueError, "requires a COMMIT decision"):
             CommittedMutationBatch(
-                decision=decision(outcome=GovernanceOutcome.REJECT, resulting_version=0, reason_code="no"),
-                graph_events=(graph_event(version=0),),
+                decision=rejected,
+                graph_events=(graph_event(version=1),),
             )
 
     def test_graph_event_schema_version_and_payload_are_validated(self):
         event = graph_event()
         self.assertEqual(event, deserialize_entry(serialize_entry(JournalEntry(1, event))).record)
+
+        with self.assertRaisesRegex(ValueError, "unsupported graph event schema version"):
+            replace(event, event_schema_version=2)
+
+        wire = json.loads(serialize_entry(JournalEntry(1, event)))
+        wire["record"]["event_schema_version"] = 999
+        with self.assertRaisesRegex(ValueError, "unsupported graph event schema version"):
+            deserialize_entry(json.dumps(wire))
 
         with self.assertRaises(ValueError):
             GraphChangedEvent(

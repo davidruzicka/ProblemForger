@@ -25,6 +25,7 @@ GraphVersion = NewType("GraphVersion", int)
 
 CURRENT_RECORD_SCHEMA_VERSION = 1
 CURRENT_REQUEST_SCHEMA_VERSION = 1
+CURRENT_EVENT_SCHEMA_VERSION = 1
 REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
 _REQUEST_HASH_DOMAIN = b"problemforger.normalized-mutation-request.v1\0"
 
@@ -46,6 +47,10 @@ class VersionConflict:
 def _require_identifier(value: str, name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError(f"{name} must be valid UTF-8") from error
 
 
 def _require_integer(value: int, name: str, *, minimum: int) -> None:
@@ -411,6 +416,10 @@ class GraphChangedEvent:
         _require_integer(self.graph_version, "graph_version", minimum=1)
         _require_identifier(self.event_type, "event_type")
         _require_integer(self.event_schema_version, "event_schema_version", minimum=1)
+        if self.event_schema_version != CURRENT_EVENT_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported graph event schema version: {self.event_schema_version}"
+            )
         if not isinstance(self.payload, JsonDocument):
             raise TypeError("payload must be a JsonDocument")
         _require_object(self.payload.value, "event payload")

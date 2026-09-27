@@ -32,6 +32,7 @@ class SpecificationChecks(unittest.TestCase):
             "normalized-request shape changes increment `request_schema_version`",
             "canonicalization or hash inputs also increments the request-hash version",
             "Graph-event payload changes increment `event_schema_version`",
+            "the P1 journal codec accepts version 1 only and rejects unsupported values",
             "Correlation and causation IDs link related records",
             "they do not determine journal-position assignment or graph-version progression",
         ):

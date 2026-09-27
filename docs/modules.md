@@ -58,13 +58,18 @@ are separate fields with separate meanings.
 Correlation and causation IDs link related records; they do not determine
 journal-position assignment or graph-version progression.
 
-Pre-1.0 readers reject unsupported schema versions and missing or unknown
-fields rather than guessing. A change to a record's wire shape or meaning
-increments `record_schema_version`; normalized-request shape changes increment
+The P1 journal codec rejects unsupported `record_schema_version`,
+`request_schema_version`, `event_schema_version`, and request-hash versions. It
+also rejects missing or unknown envelope fields; operation, evidence, and event
+payload objects remain opaque JSON for their owning schemas. A change to a
+record's wire shape or meaning increments `record_schema_version`;
+normalized-request shape changes increment
 `request_schema_version`, and a change to canonicalization or hash inputs also
 increments the request-hash version. Graph-event payload changes increment
-`event_schema_version`. A version change requires an explicit reader/migration
-decision; positions and graph versions are never repurposed as schema versions.
+`event_schema_version`; the P1 journal codec accepts version 1 only and rejects
+unsupported values. Supporting another version requires an explicit
+reader/migration decision; positions and graph versions are never repurposed as
+schema versions.
 
 The P1 record types are `proposal_receipt` (proposal identity, complete
 normalized request, request hash, and optional C-run recovery context),
