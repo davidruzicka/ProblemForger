@@ -240,6 +240,7 @@ class JournalValueTests(unittest.TestCase):
         envelope = json.loads(serialized)
 
         self.assertEqual(1, envelope["journal_position"])
+        self.assertEqual(1, envelope["record"]["protocol_schema_version"])
         self.assertEqual(1, envelope["record"]["record_schema_version"])
         self.assertEqual(1, envelope["record"]["request"]["request_schema_version"])
         self.assertEqual(0, envelope["record"]["request"]["expected_graph_version"])
@@ -481,6 +482,7 @@ class JournalValueTests(unittest.TestCase):
         for build in (
             lambda: RecordMetadata(" ", "record", RECORDED_AT),
             lambda: RecordMetadata("run", "record", RECORDED_AT, record_schema_version=2),
+            lambda: RecordMetadata("run", "record", RECORDED_AT, protocol_schema_version=2),
             lambda: RecordMetadata("run", "record", "not-a-date"),
             lambda: RecordMetadata("run", "record", RECORDED_AT, correlation_id=" "),
             lambda: RecordMetadata("run", "record", RECORDED_AT, causation_id=" "),
@@ -493,6 +495,10 @@ class JournalValueTests(unittest.TestCase):
             with self.subTest(build=build):
                 with self.assertRaises((TypeError, ValueError)):
                     build()
+
+    def test_record_metadata_rejects_unsupported_protocol_schema_version(self):
+        with self.assertRaisesRegex(ValueError, "unsupported protocol schema version: 2"):
+            RecordMetadata("run", "record", RECORDED_AT, protocol_schema_version=2)
 
     def test_deserializer_rejects_unknown_fields_and_invalid_request_shapes(self):
         entry = json.loads(serialize_entry(JournalEntry(1, receipt())))
@@ -511,6 +517,16 @@ class JournalValueTests(unittest.TestCase):
         unsupported["record"]["record_schema_version"] = 2
         with self.assertRaises(ValueError):
             deserialize_entry(json.dumps(unsupported))
+
+        missing_protocol_version = json.loads(json.dumps(entry))
+        del missing_protocol_version["record"]["protocol_schema_version"]
+        with self.assertRaises(ValueError):
+            deserialize_entry(json.dumps(missing_protocol_version))
+
+        unsupported_protocol_version = json.loads(json.dumps(entry))
+        unsupported_protocol_version["record"]["protocol_schema_version"] = 999
+        with self.assertRaisesRegex(ValueError, "unsupported protocol schema version"):
+            deserialize_entry(json.dumps(unsupported_protocol_version))
 
         bad_timestamp = json.loads(json.dumps(entry))
         bad_timestamp["record"]["recorded_at"] = "not-a-timestamp"

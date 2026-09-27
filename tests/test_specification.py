@@ -32,7 +32,7 @@ class SpecificationChecks(unittest.TestCase):
             "normalized-request shape changes increment `request_schema_version`",
             "canonicalization or hash inputs also increments the request-hash version",
             "Graph-event payload changes increment `event_schema_version`",
-            "the P1 journal codec accepts version 1 only and rejects unsupported values",
+            "P1 supports version 1 only for each schema/hash version and rejects unsupported values",
             "Correlation and causation IDs link related records",
             "they do not determine journal-position assignment or graph-version progression",
         ):
@@ -958,7 +958,7 @@ class SpecificationChecks(unittest.TestCase):
         protocol = " ".join(read("docs/protocol.md").split())
         for phrase in (
             "The first durable record receives `journal_position=1`",
-            "Record schema versions, request schema versions, graph event schema versions, protocol versions, journal positions, and graph versions are separate fields",
+            "`protocol_schema_version` identifies the protocol contract; `record_schema_version` versions the record wire shape; nested requests and graph events carry their own schema versions",
             "`proposal_abandoned` (terminal operational recovery status, not a governance outcome)",
             "every graph event in its ordered batch uses that resulting version",
         ):

@@ -24,6 +24,7 @@ JournalPosition = NewType("JournalPosition", int)
 GraphVersion = NewType("GraphVersion", int)
 
 CURRENT_RECORD_SCHEMA_VERSION = 1
+CURRENT_PROTOCOL_SCHEMA_VERSION = 1
 CURRENT_REQUEST_SCHEMA_VERSION = 1
 CURRENT_EVENT_SCHEMA_VERSION = 1
 REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
@@ -165,6 +166,7 @@ class RecordMetadata:
     record_id: RecordId
     recorded_at: datetime
     record_schema_version: int = CURRENT_RECORD_SCHEMA_VERSION
+    protocol_schema_version: int = CURRENT_PROTOCOL_SCHEMA_VERSION
     correlation_id: CorrelationId | None = None
     causation_id: CausationId | None = None
 
@@ -179,6 +181,15 @@ class RecordMetadata:
         if self.record_schema_version != CURRENT_RECORD_SCHEMA_VERSION:
             raise ValueError(
                 f"unsupported record schema version: {self.record_schema_version}"
+            )
+        _require_integer(
+            self.protocol_schema_version,
+            "protocol_schema_version",
+            minimum=1,
+        )
+        if self.protocol_schema_version != CURRENT_PROTOCOL_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported protocol schema version: {self.protocol_schema_version}"
             )
         if not isinstance(self.recorded_at, datetime):
             raise TypeError("recorded_at must be a datetime")
@@ -482,6 +493,7 @@ def _metadata_to_value(metadata: RecordMetadata) -> dict[str, Any]:
         "run_id": metadata.run_id,
         "record_id": metadata.record_id,
         "record_schema_version": metadata.record_schema_version,
+        "protocol_schema_version": metadata.protocol_schema_version,
         "recorded_at": metadata.recorded_at.isoformat().replace("+00:00", "Z"),
         "correlation_id": metadata.correlation_id,
         "causation_id": metadata.causation_id,
@@ -593,6 +605,7 @@ def _metadata_from_value(value: dict[str, Any]) -> RecordMetadata:
         run_id=RunId(value["run_id"]),
         record_id=RecordId(value["record_id"]),
         record_schema_version=value["record_schema_version"],
+        protocol_schema_version=value["protocol_schema_version"],
         recorded_at=timestamp,
         correlation_id=(
             None if value["correlation_id"] is None else CorrelationId(value["correlation_id"])
@@ -633,6 +646,7 @@ def _record_from_value(value: Any) -> JournalRecord:
         "run_id",
         "record_id",
         "record_schema_version",
+        "protocol_schema_version",
         "recorded_at",
         "correlation_id",
         "causation_id",

@@ -50,24 +50,25 @@ by one. Run registration is metadata, not a journal record. There is no global
 ordering across runs.
 
 Every serialized record has a `record_type`, `run_id`, `record_id`,
-`record_schema_version`, UTC `recorded_at`, and nullable `correlation_id` and
-`causation_id`. Its `JournalEntry` adds the provider-assigned positive
-`journal_position`. Record schema versions, request schema versions, graph
-event schema versions, protocol versions, journal positions, and graph versions
-are separate fields with separate meanings.
+`record_schema_version`, `protocol_schema_version`, UTC `recorded_at`, and
+nullable `correlation_id` and `causation_id`. Its `JournalEntry` adds the
+provider-assigned positive `journal_position`. `protocol_schema_version`
+identifies the protocol contract; `record_schema_version` versions the record
+wire shape; nested requests and graph events carry their own schema versions.
+These schema versions are distinct from `journal_position` and `graph_version`.
 Correlation and causation IDs link related records; they do not determine
 journal-position assignment or graph-version progression.
 
 The P1 journal codec rejects unsupported `record_schema_version`,
-`request_schema_version`, `event_schema_version`, and request-hash versions. It
-also rejects missing or unknown envelope fields; operation, evidence, and event
-payload objects remain opaque JSON for their owning schemas. A change to a
-record's wire shape or meaning increments `record_schema_version`;
-normalized-request shape changes increment
+`protocol_schema_version`, `request_schema_version`, `event_schema_version`, and
+request-hash versions. P1 supports version 1 only for each schema/hash version
+and rejects unsupported values. It also rejects missing or unknown envelope
+fields; operation, evidence, and event payload objects remain opaque JSON for
+their owning schemas. A change to a record's wire shape or meaning increments
+`record_schema_version`; normalized-request shape changes increment
 `request_schema_version`, and a change to canonicalization or hash inputs also
 increments the request-hash version. Graph-event payload changes increment
-`event_schema_version`; the P1 journal codec accepts version 1 only and rejects
-unsupported values. Supporting another version requires an explicit
+`event_schema_version`. Supporting another version requires an explicit
 reader/migration decision; positions and graph versions are never repurposed as
 schema versions.
 
