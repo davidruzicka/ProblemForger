@@ -2,7 +2,7 @@
 
 > Externally governed problem graphs for AI-agent work.
 
-ProblemForger is a research prototype for making long-running AI-agent work more explicit, observable, and locally verifiable.
+ProblemForger is a practical feasibility prototype for making long-running AI-agent work more explicit, observable, and locally verifiable.
 
 The core idea is to keep an **externally governed, versioned problem graph** outside the worker model. The model may propose graph mutations, produce artifacts, and suggest progress, but it does not own authoritative state. A governor combines explicit evidence and policy before changes are committed; learned verification and calibrated routing are later experimental layers.
 
@@ -24,7 +24,7 @@ The same core serves different harnesses; adapters translate the protocol withou
 
 ## Repository status
 
-This repository is in the **specification and PoC stage**. Claims about reliability improvements, calibration quality, routing efficiency, or benchmark gains are hypotheses until supported by controlled experiments.
+This repository is in early P1 implementation. It now has a Python 3.12+ package scaffold and an automated core dependency-boundary check; journal, provider, and service behavior remain to be implemented through the ordered P1 issues. Claims about reliability improvements, calibration quality, routing efficiency, or benchmark gains remain hypotheses until supported by controlled experiments.
 
 ## Documentation
 
@@ -58,9 +58,21 @@ This repository is in the **specification and PoC stage**. Claims about reliabil
 - [P0 specification audit](docs/p0-audit.md)
 - [Methodology audit and decision register](docs/methodology.md)
 
-## Specification checks
+## Development checks
 
-This branch contains specification documents and executable GitHub Actions automation. No production ProblemForger implementation exists yet. Run the reproducible checks described in [Specification ownership and checks](docs/specification-checks.md).
+Python 3.12+ and Node.js are required. From the repository root:
+
+```sh
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e . -r tests/requirements.txt
+python -m scripts.check_architecture
+python -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
+python -m coverage report --fail-under=90
+node --test tests/review-workflow.test.mjs
+```
+
+The Python tests use only the standard library. Coverage tooling is test-only. See [Specification ownership and checks](docs/specification-checks.md) for the P0 contract checks and their limits.
 
 ## License
 

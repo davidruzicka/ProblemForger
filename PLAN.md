@@ -40,15 +40,15 @@ See the [accepted ADRs](docs/adr/).
 
 ## Phase order
 
-- [ ] **P0 — Specification audit and experiment contract**
+- [x] **P0 — Specification audit and experiment contract**
   - [x] audit specifications/ADRs for contradictions and hidden assumptions;
   - [x] verify and expand related work from current primary sources;
   - [x] freeze the first P6-AC practical evaluation protocol;
   - [x] resolve event, lifecycle, evidence, runtime-boundary, and graph-interaction ambiguities;
   - [x] decompose P1 into bounded implementation issues;
-  - [ ] merge/review the P0 specification PR.
+  - [x] merge/review the P0 specification PR (#22, merged 2026-09-25).
 
-P1 may begin only after the P0 specification PR is reviewed/merged.
+P1 was unblocked when PR #22 merged on 2026-09-25.
 
 - [ ] **P1 — Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;

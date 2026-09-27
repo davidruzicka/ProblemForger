@@ -21,11 +21,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check specification contracts and links
+      - name: Install package and test dependencies
         run: |
           python3 -m venv "$RUNNER_TEMP/spec-checks-venv"
           "$RUNNER_TEMP/spec-checks-venv/bin/python" -m pip install -r tests/requirements.txt
-          "$RUNNER_TEMP/spec-checks-venv/bin/python" -B -m unittest discover -s tests -p 'test_*.py' -v
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m pip install -e .
+      - name: Check package, architecture boundaries, and specification contracts
+        run: |
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m coverage report --fail-under=90
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m scripts.check_architecture
       - name: Test the review-request script without posting comments
         run: node --test tests/review-workflow.test.mjs
       - name: Check whitespace
