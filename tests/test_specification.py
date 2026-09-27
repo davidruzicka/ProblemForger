@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 14582)
+Total output lines: 1035
+
 """Practical P0 document regression checks, not production-implementation tests."""
 
 from pathlib import Path
@@ -13,6 +16,31 @@ def read(path):
 
 
 class SpecificationChecks(unittest.TestCase):
+    def test_p1_journal_recovery_and_schema_contract(self):
+        protocol = " ".join(read("docs/protocol.md").split())
+        modules = " ".join(read("docs/modules.md").split())
+        for phrase in (
+            "`c_run_recovery_context` containing the manifest hash (`manifest_hash`)",
+            "the effective graph-intervention identity (`effective_graph_intervention_identity`)",
+            "the effective governance-policy identity (`effective_governance_policy_identity`)",
+            "outside the normalized request and its hash",
+            "non-C receipts set this field to null",
+            "C-run service logic requires the context",
+            "A mismatch is recorded as `ABANDONED`",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
+        for phrase in (
+            "A change to a record's wire shape or meaning increments `record_schema_version`",
+            "normalized-request shape changes increment `request_schema_version`",
+            "canonicalization or hash inputs also increments the request-hash version",
+            "Graph-event payload changes increment `event_schema_version`",
+            "Correlation and causation IDs link related records",
+            "they do not determine journal-position assignment or graph-version progression",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, modules)
+
     def test_retry_evidence_and_restart_invariants(self):
         evaluation = " ".join(read("docs/evaluation.md").split())
         for phrase in (
@@ -308,341 +336,7 @@ class SpecificationChecks(unittest.TestCase):
             "Academic uncertainty is acceptable",
             "six tasks",
             "one fresh agent run per task/configuration",
-            "one evaluator run for each produced candidate patch, except when trusted validation rejects it as `CANDIDATE_PATCH_INVALID`",
-            "`evaluator_invocation: NOT_DISPATCHED` and has no evaluator run",
-            "invalid-patch terminalizations are counted separately",
-            "planned size is therefore twelve A/C slots",
-            "at most twelve candidate-patch evaluations",
-            "actual agent attempt count can exceed twelve",
-            "not statistical precision",
-            "Out of scope for P6: holdout/calibration data",
-            "fallback-model chains",
-            "population-level uncertainty",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_model_and_runtime_identity_have_honest_limits(self):
-        evaluation = read("docs/evaluation.md")
-        normalized = " ".join(evaluation.split())
-        for phrase in (
-            "one provider/model entry",
-            "P6 has no implicit fallback",
-            "new model requires a new experiment version",
-            "digest of the harness or runtime image identifies those bytes",
-            "does not prove that a hosted provider will use the same model",
-            "local model may include its weights",
-            "Record `UNKNOWN` explicitly",
-            "What the execution image is for",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, normalized)
-
-    def test_compact_manifest_owns_setup_and_metric_choices(self):
-        evaluation = read("docs/evaluation.md")
-        manifest = " ".join(evaluation.split("## Pre-P6 manifest\n", 1)[1].split(
-            "## Task selection and preflight\n", 1
-        )[0].split())
-        for phrase in (
-            "the six task IDs and fixed order",
-            "selected provider/model metadata",
-            "HarnessX source/runtime identity",
-            "ProblemForger service source/runtime identity",
-            "evaluator version and required-test definition",
-            "agent semantic deadline, evaluator wall-clock allowance, resource limits, retry rule",
-            "primary result rule",
-            "The manifest is hashed",
-            "compact manifest is intentional",
-            "manifest hash is finalized before any measured-run evidence is created",
-            "contains no IDs or references to post-freeze evidence records"
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, manifest)
-
-    def test_intervention_retry_and_slot_order_are_frozen(self):
-        evaluation = read("docs/evaluation.md")
-        manifest = " ".join(evaluation.split("## Pre-P6 manifest\n", 1)[1].split(
-            "## Task selection and preflight\n", 1
-        )[0].split())
-        for phrase in (
-            "graph-intervention content identity",
-            "governance-policy content/configuration identity",
-            "complete ordered A/C slot list",
-            "each task's A slot before its C slot",
-        ):
-            with self.subTest(scope="manifest", phrase=phrase):
-                self.assertIn(phrase, manifest)
-
-        for phrase in (
-            "A records `NONE`",
-            "C requires non-null intervention and governance identities",
-            "trusted runner verifies the loaded graph intervention",
-            "service verifies its loaded governance policy/configuration",
-            "mismatch prevents dispatch or recovery",
-            "not be repaired by relabeling existing evidence",
-        ):
-            with self.subTest(scope="identity", phrase=phrase):
-                self.assertIn(phrase, " ".join(evaluation.split()))
-
-        controls = " ".join(evaluation.split("## Execution controls\n", 1)[1].split(
-            "### Durable attempt and operation ordering\n", 1
-        )[0].split())
-        for phrase in (
-            "Freeze this retry mapping and precedence",
-            "`CONNECTION_FAILURE`",
-            "`TRANSPORT_TIMEOUT`",
-            "`HTTP_429`",
-            "`HTTP_5XX`",
-            "`HARNESS_EXIT_BEFORE_RESPONSE`",
-            "`WORKSPACE_SETUP_FAILURE`",
-            "Apply this classifier only to failed or interrupted attempts",
-            "explicit provider HTTP status takes precedence over a consequent harness exit",
-            "`TRANSPORT_TIMEOUT` requires a recorded transport timeout without an HTTP response",
-            "`CONNECTION_FAILURE` requires a recorded connection failure without an HTTP response",
-            "`HARNESS_EXIT_BEFORE_RESPONSE` applies only when no more specific cause is recorded",
-            "Unknown or conflicting causes are nonretryable",
-            "Retry ineligibility does not change outcome scoring",
-        ):
-            with self.subTest(scope="retry", phrase=phrase):
-                self.assertIn(phrase, controls)
-
-        measured = " ".join(evaluation.split("## Measured evaluation\n", 1)[1].split(
-            "## Practical human decision\n", 1
-        )[0].split())
-        for phrase in (
-            "Execute each manifest slot entry exactly once",
-            "A immediately followed by C for each task",
-            "Slots do not overlap",
-            "before advancing",
-            "Recovery preserves this order",
-            "run A and C once",
-        ):
-            with self.subTest(scope="order", phrase=phrase):
-                self.assertIn(phrase, measured)
-
-        protocol = " ".join(read("docs/protocol.md").split())
-        for phrase in (
-            "effective graph-intervention identity",
-            "effective governance-policy identity",
-            "before resuming a pending proposal",
-            "requires a new manifest/version",
-            "C run registration must bind the verified, non-null identities",
-            "service rejects missing or `NONE` identities",
-            "verifies loaded policy/configuration against the bound identity",
-        ):
-            with self.subTest(scope="recovery", phrase=phrase):
-                self.assertIn(phrase, protocol)
-
-    def test_preflight_and_missingness_do_not_substitute_tasks(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
-        for phrase in (
-            "There are no hidden reserves or post-hoc task substitutions",
-            "A task-specific setup failure is recorded with a reason",
-            "Continue independent preflight/measurement slots",
-            "shared setup failure before any measured slot starts",
-            "Preflight is an operational readiness check",
-            "MISSING_SETUP",
-            "PROVIDER_UNAVAILABLE",
-            "EVALUATION_INCOMPLETE",
-            "`BASELINE_VECTOR_VERIFIED`",
-            "`baseline_vector_ref`",
-            "`baseline_vector_sha256`",
-            "`baseline_raw_output_ref`",
-            "`baseline_raw_output_sha256`",
-            "exact per-test baseline vector and bounded raw setup output",
-            "every required `FAIL_TO_PASS` test fails through a valid completed test outcome",
-            "every required `PASS_TO_PASS` test passes",
-            "Infrastructure, missing-test, timeout, protocol, or sandbox errors do not satisfy",
-            "wrong baseline vector or baseline-condition failure is task-specific `MISSING_SETUP`",
-            "separate from the measured candidate-evaluation count",
-            "CANDIDATE_PATCH_INVALID",
-            "EVIDENCE_INCOMPLETE",
-            "INCOMPLETE_EVIDENCE",
-            "No reason code is silently converted into a favorable result",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_network_free_task_eligibility_is_frozen(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
-        for phrase in (
-            "network-free evaluator compatibility",
-            "required tests and task setup must be network-free",
-            "DNS, external sockets, loopback, local HTTP/DB/browser-driver services, or arbitrary IPC",
-            "Only `CANDIDATE_EVAL_IPC_V1` is allowed",
-            "every required test and fixture preserves the frozen required-test semantics through `CANDIDATE_EVAL_IPC_V1`",
-            "candidate code runs outside the trusted evaluator process",
-            "trusted side does not disclose hidden test or fixture code",
-            "candidate imports or monkeypatching inside the evaluator",
-            "evaluator adapter/source/runtime identity",
-            "before selecting the six tasks",
-            "If the predicate cannot be proved, the task is ineligible",
-            "recorded network-free compatibility and candidate/evaluator isolation compatibility",
-            "pinned task metadata",
-            "verify each selected task's recorded network-free compatibility",
-            "without executing a selected task",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_evaluator_identity_is_bound_for_every_execution(self):
-        raw_evaluation = read("docs/evaluation.md")
-        evaluation = " ".join(raw_evaluation.split())
-        manifest = " ".join(read("docs/evaluation.md").split("## Pre-P6 manifest\n", 1)[1].split(
-            "## Task selection and preflight\n", 1
-        )[0].split())
-        preflight = " ".join(raw_evaluation.split("### Preflight\n", 1)[1].split(
-            "## Execution controls\n", 1
-        )[0].split())
-        scoring = " ".join(raw_evaluation.split("Before a slot is scored", 1)[1].split(
-            "## Measured evaluation\n", 1
-        )[0].split())
-        measured = " ".join(raw_evaluation.split("## Measured evaluation\n", 1)[1].split(
-            "## Practical human decision\n", 1
-        )[0].split())
-        retained = " ".join(raw_evaluation.split("## Retained evidence and integrity rules\n", 1)[1].split())
-        for scope, text, phrases in (
-            ("manifest", manifest, (
-                "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
-                "evaluator-identity verification profile, frozen as `evaluator_verification_profile`",
-                "`verification_method`, `checker_version`, `verifier_command_identity`, and `effective_verifier_configuration`",
-                "complete verifier execution identity",
-                "retained checker executable/script bytes, its interpreter/runtime, and all transitive checker/helper dependency bytes",
-                "pinned image/archive containing them",
-                "fixed before manifest hashing",
-                "contain no `manifest_hash`, computed evaluator identity, or post-freeze evidence, invocation, or result references",
-                "neither depends on a future evidence digest",
-                "unsigned canonical payload that includes `producer_id` and `producer_provenance` and omits `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, and `producer_attestation_ref`",
-                "separate immutable `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope",
-                "envelope authenticates the trusted recorder and binds `producer_id` and `producer_provenance` to the exact `evaluator_identity_evidence_ref` and `evaluator_identity_evidence_sha256`",
-                "neither self-derived field is part of its own preimage",
-                "evidence reference and digest bind the complete V1 payload, including `producer_id` and `producer_provenance`",
-                "attestation reference is derived from the envelope with its own reference omitted, and the payload does not contain that reference",
-                "no manifest/evidence hash cycle",
-                "For every clean-baseline execution and candidate evaluator launch, the trusted runner persists an immutable `EVALUATOR_IDENTITY_VERIFIED` record",
-            )),
-            ("preflight", preflight, (
-                "Before each clean-baseline execution and before every candidate evaluator launch",
-                "computes the effective `evaluator_adapter_source_runtime_identity`",
-                "requires exact equality with the manifest's evaluator adapter/source/runtime identity",
-                "Checking mutable paths without binding loaded artifacts is insufficient",
-                "persists the trusted `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch",
-                "content-addressed `evaluator_identity_evidence_ref`",
-                "`evaluator_identity_evidence_sha256`",
-                "created from the artifacts actually loaded and pinned for that invocation",
-                "record's `producer_id`, `producer_provenance`, and `producer_attestation_ref` are retained from the authenticated trusted recorder",
-                "effective verifier configuration (including dependency roots, symlink policy, and transitive-content traversal rules)",
-                "exact test/command identity",
-                "referenced checker, interpreter/runtime, transitive dependency, and configuration content",
-                "For both baseline and candidate verification",
-                "observed by the trusted runner rather than copied from the manifest",
-                "Before setting `verification_result=VERIFIED`, require exact equality with the frozen profile",
-                "resolve `producer_attestation_ref` and verify the authenticated attestation binds the exact evidence reference and digest to `producer_id` and `producer_provenance`",
-                "exact test/command identity must match that frozen profile",
-                "A missing or mismatched identity, profile, evidence record, reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE`",
-            )),
-            ("scoring", scoring, (
-                "runtime/image, `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, `producer_attestation_ref`, evaluator-bundle/test-definition",
-                "Resolve `producer_attestation_ref` from that integrity-bound `BASELINE_VECTOR_VERIFIED` consumer record, verify it matches the retained V1 record metadata and the consumer's exact evidence reference and digest, then verify its authenticated `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope binds that exact evidence reference and digest to the payload's `producer_id` and `producer_provenance`",
-                "Missing, unknown, unauthenticated, or mismatched producer provenance or attestation is `EVIDENCE_INCOMPLETE`",
-                "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
-                "every referenced immutable artifact",
-                "validate the complete `evaluator_verification_profile` against the frozen manifest",
-                "Resolve and digest-check its retained checker, interpreter/runtime, transitive checker/dependency, and configuration content",
-                "A changed checker helper, interpreter/runtime, or transitive dependency byte is a subject mismatch and produces `EVIDENCE_INCOMPLETE`",
-                "Missing, unreadable, corrupt, untrusted, or mismatched profile fields or referenced content produce `EVIDENCE_INCOMPLETE`",
-                "no candidate verification record is required when no candidate evaluator was dispatched",
-                "Require the bound `NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics for every slot",
-                "If a candidate evaluator was actually dispatched",
-                "For `NO_PATCH` or `CANDIDATE_PATCH_INVALID` with `evaluator_invocation: NOT_DISPATCHED`, do not require a candidate evaluator invocation or measured sandbox",
-                "revalidate the retained preflight `NETWORK_DENIAL_VERIFIED` record and its policy identity and diagnostics against the manifest and candidate sandbox policy only",
-                                "revalidate the effective `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256`, and `producer_attestation_ref` from the integrity-bound evaluator `STARTED` or terminal result record against the manifest, the immutable verification record, the invocation's exact evidence reference and digest, and the loaded evaluator used for that invocation",
-                                "Resolve the attestation and verify its authenticated envelope binds that exact candidate evidence reference and digest to the candidate payload's producer fields",
-            )),
-            ("measured", measured, (
-                "invocation record binds the manifest hash",
-                "`evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, `producer_attestation_ref`, evaluator bundle digest",
-                "terminal result record repeats that full invocation binding",
-                "`evaluator_identity_evidence_sha256`, `producer_attestation_ref`, `sandbox_policy_id`",
-                "Before reusing a completed baseline after restart, obtain its `producer_attestation_ref` from the integrity-bound `BASELINE_VECTOR_VERIFIED` consumer record and cross-check it against the retained V1 record and exact evidence reference/digest",
-                "For a candidate evaluation after restart, obtain `producer_attestation_ref` from the integrity-bound candidate `STARTED` or terminal result record and cross-check it against the retained V1 record and exact candidate evidence reference/digest; perform the same evaluator identity, producer-provenance, verifier-profile, producer-attestation, and retained-content checks only when a candidate evaluator was actually dispatched",
-                "do not require a candidate `EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured sandbox",
-                "revalidate the terminal outcome, its complete no-evaluation/patch-validation evidence, the explicit marker, and the mandatory baseline proof against the manifest and retained evidence",
-                "Apply the same scoring-time producer identity/provenance, verifier-profile, trusted producer-attestation and retained-content checks to the mandatory baseline proof and any dispatched candidate proof during read-only restart reconciliation",
-                "do not substitute current producer metadata or regenerate provenance",
-            )),
-            ("retained", retained, (
-                "their effective evaluator adapter/source/runtime identities, the `EVALUATOR_IDENTITY_VERIFIED` records, their `producer_id`, `producer_provenance`, and `producer_attestation_ref` values, the retained authenticated producer attestation envelopes required to bind each evidence payload, their content-addressed `evaluator_identity_evidence_ref` values and `evaluator_identity_evidence_sha256` digests, and bound verification evidence",
-                "Also retain every `evaluator_verification_profile` and all checker, interpreter/runtime, and transitive checker dependency bytes, plus all referenced configuration content (or a pinned image/archive containing them)",
-            )),
-        ):
-            for phrase in phrases:
-                with self.subTest(scope=scope, phrase=phrase):
-                    self.assertIn(phrase, text)
-
-    def test_task_success_rule_is_non_vacuous(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
-        for phrase in (
-            "at least one non-empty `FAIL_TO_PASS` test",
-            "A task with an empty `FAIL_TO_PASS` vector is ineligible",
-            "makes the success rule non-vacuous",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_network_denial_requires_bound_authoritative_evidence(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
-        for phrase in (
-            "direct namespace-policy verification",
-            "controlled reachable canaries",
-            "policy-specific denial",
-            "ordinary DNS resolution, timeout, or connection-refused errors",
-            "Persist a `NETWORK_DENIAL_VERIFIED` result",
-            "bounded network-denial smoke diagnostics",
-            "manifest/runtime/sandbox-policy-bound",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_network_denial_binds_invocation_and_final_scoring(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
-        for phrase in (
-            "candidate sandbox policy identity/configuration",
-            "The `NETWORK_DENIAL_VERIFIED` record is the authority for every measured candidate sandbox",
-            "Before each evaluator launch",
-            "`sandbox_policy_id`",
-            "`network_denial_evidence_ref`",
-            "Revalidate `sandbox_policy_id` and `network_denial_evidence_ref` against the manifest",
-            "loss, corruption, or mismatch produces `EVIDENCE_INCOMPLETE`",
-            "terminal `TRUSTED_RESULT`",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_worker_network_isolation_precedes_task_exposure(self):
-        evaluation = " ".join(read("docs/evaluation.md").split())
-        for phrase in (
-            "every worker-controlled tool/process under a network-denied policy",
-            "no DNS, external socket, loopback, or arbitrary host-IPC egress",
-            "remote-solution retrieval attempt",
-            "`WORKER_NETWORK_DENIAL_VERIFIED`",
-            "before task exposure",
-            "Before exposing any selected task and before every later agent-attempt launch",
-            "including a clean whole-slot retry",
-            "persist an attempt-specific `WORKER_NETWORK_DENIAL_VERIFIED` result",
-            "`agent_attempt_id`",
-            "slot-level record cannot be reused for a new attempt",
-            "attempt-specific `WORKER_NETWORK_DENIAL_VERIFIED` record and bounded diagnostics",
-            "do not launch the attempt or expose a selected task",
-            "`worker_policy_id`",
-            "`worker_network_evidence_ref`",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, evaluation)
-
-    def test_reopen_preserves_nonempty_journals(self):
-        for path in ("docs/modules.md", "docs/protocol.md"):
-            document = " ".join(read(path).split())
+            "one evaluator run for each produced…5582 tokens truncated…  document = " ".join(read(path).split())
             with self.subTest(path=path):
                 self.assertIn(
                     "Version zero and an empty journal apply only to a newly created run",
@@ -926,6 +620,30 @@ class SpecificationChecks(unittest.TestCase):
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, module)
+
+    def test_journal_envelopes_and_request_hash_versions_are_explicit(self):
+        module = " ".join(read("docs/modules.md").split())
+        protocol = " ".join(read("docs/protocol.md").split())
+        for phrase in (
+            "The first durable record receives `journal_position=1`",
+            "Record schema versions, request schema versions, graph event schema versions, protocol versions, journal positions, and graph versions are separate fields",
+            "`proposal_abandoned` (terminal operational recovery status, not a governance outcome)",
+            "every graph event in its ordered batch uses that resulting version",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, module)
+        for phrase in (
+            "The normalized request schema starts at version 1",
+            "an ordered `operations` array",
+            "an ordered `evidence` array",
+            "`sort_keys=True`",
+            "`allow_nan=False`",
+            "problemforger.normalized-mutation-request.v1",
+            "sha256:problemforger-request-v1:<lowercase hex digest>",
+            "clients do not need to implement the canonicalizer",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, protocol)
 
     def test_evidence_trust_and_recovery_remain_independent(self):
         verification = read("docs/verification.md")

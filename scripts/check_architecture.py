@@ -31,6 +31,7 @@ PROVIDER_NEUTRAL_ALLOWED_STDLIB_MODULES = frozenset(
         "enum",
         "fractions",
         "functools",
+        "hashlib",
         "heapq",
         "itertools",
         "json",

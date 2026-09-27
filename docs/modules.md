@@ -41,6 +41,57 @@ The EventStore port owns the operation signatures and return statuses. The
 protocol defines the atomic preconditions and recovery semantics that every
 provider must implement.
 
+#### Journal records and version domains
+
+A newly registered run starts with `graph_version=0` and
+`last_journal_position=0`. The first durable record receives
+`journal_position=1`; each subsequent record in that run advances the position
+by one. Run registration is metadata, not a journal record. There is no global
+ordering across runs.
+
+Every serialized record has a `record_type`, `run_id`, `record_id`,
+`record_schema_version`, UTC `recorded_at`, and nullable `correlation_id` and
+`causation_id`. Its `JournalEntry` adds the provider-assigned positive
+`journal_position`. Record schema versions, request schema versions, graph
+event schema versions, protocol versions, journal positions, and graph versions
+are separate fields with separate meanings.
+Correlation and causation IDs link related records; they do not determine
+journal-position assignment or graph-version progression.
+
+Pre-1.0 readers reject unsupported schema versions and missing or unknown
+fields rather than guessing. A change to a record's wire shape or meaning
+increments `record_schema_version`; normalized-request shape changes increment
+`request_schema_version`, and a change to canonicalization or hash inputs also
+increments the request-hash version. Graph-event payload changes increment
+`event_schema_version`. A version change requires an explicit reader/migration
+decision; positions and graph versions are never repurposed as schema versions.
+
+The P1 record types are `proposal_receipt` (proposal identity, complete
+normalized request, request hash, and optional C-run recovery context),
+`mutation_decision` (one final governance outcome and its expected/resulting
+graph versions), `proposal_abandoned` (terminal operational recovery status,
+not a governance outcome), and `graph_changed` (proposal identity, graph
+version, event type/schema version, and opaque JSON payload). Concrete graph
+node/edge payload schemas belong to P2.
+
+The C-run recovery context contains the manifest hash and effective
+graph-intervention and governance-policy identities copied from run metadata.
+It is stored outside the normalized request and request hash. C-run service
+logic must require and verify the context against the registered run before
+resuming governance; non-C receipts encode it as null.
+
+The first successful graph commit advances version zero to one. In general, a
+committed mutation against version `v` produces exactly `v + 1`; every graph
+event in its ordered batch uses that resulting version. Its COMMIT decision and
+all graph events form one atomic append. A proposal receipt and every audit-only
+or non-COMMIT record advance only `journal_position`. A `VersionConflict`
+records the actual current graph version, which may be either above or below
+the proposal's expected version. Providers must not expose a partial event
+prefix from a committed batch.
+
+Canonical proposal request hashing and its versioned JSON rules are defined by
+the [proposal recovery contract](protocol.md#spec-protocol-proposal-recovery).
+
 Conceptual port contract:
 
 ```text
