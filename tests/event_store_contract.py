@@ -303,6 +303,21 @@ class EventStoreContractMixin:
         )
         self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
 
+    def test_unknown_graph_proposal_precedes_batch_validation(self):
+        event = graph_event("missing-proposal", version=1)
+        commit = decision("missing-proposal")
+        for audit_records, graph_events in (
+            ((), ()),
+            ((), (event,)),
+            ((commit,), ()),
+        ):
+            with self.subTest(audit_records=audit_records, graph_events=graph_events):
+                result = self.store.append_graph(
+                    "run-1", "missing-proposal", 0, audit_records, graph_events
+                )
+                self.assertEqual(StoreErrorCode.NOT_FOUND, result.code)
+        self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+
     def test_invalid_utf8_and_reused_record_ids_are_rejected_before_writes(self):
         run_metadata = RunMetadata.from_value({"task": "contract"})
         self.assertEqual(

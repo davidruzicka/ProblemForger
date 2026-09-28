@@ -244,7 +244,10 @@ class SqliteEventStore(EventStoreState):
 
     def _ensure_usable(self) -> None:
         if self._forked or os.getpid() != self._owner_pid:
-            raise ForkedProviderError("open a new SQLite EventStore in the child process")
+            raise ForkedProviderError(
+                "SQLite EventStore is process-bound; use spawn, a clean forkserver, or exec, "
+                "or fork only after closing every provider"
+            )
         if self._closed:
             raise StoreClosedError("EventStore is closed")
         if self._poisoned:
@@ -514,7 +517,8 @@ class SqliteEventStore(EventStoreState):
         self._lock = RLock()
         self._forked = True
         self._closed = True
-        # Do not close here: sqlite3_close() on a parent-opened handle can mutate its journal.
+        # Best-effort invalidation only; the process contract forbids continuing in this child.
+        # Finalizing this inherited connection can mutate a journal used by the parent.
         self._close_descriptor(self._owner_fd)
         self._close_descriptor(self._path_lock_fd)
         self._owner_fd = None

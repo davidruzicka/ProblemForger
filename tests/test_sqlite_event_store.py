@@ -6,12 +6,10 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
-import select
 import sqlite3
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from threading import Event, Thread
 import unittest
 from unittest.mock import patch
 import weakref
@@ -68,11 +66,7 @@ def _contending_open(path: str, start, released, results) -> None:
     store.close()
 
 
-def _forked_use(path: str, inherited_store, results) -> None:
-    try:
-        inherited_store.current_graph_version("run-1")
-    except ForkedProviderError:
-        results.put("inherited_rejected")
+def _spawned_open_after_owner_closes(path: str, open_after_release, results) -> None:
     try:
         store = SqliteEventStore(path)
     except StoreInUseError:
@@ -80,24 +74,14 @@ def _forked_use(path: str, inherited_store, results) -> None:
     else:
         results.put("unexpected_open")
         store.close()
-
-
-def _forked_use_while_parent_lock_is_held(path: str, inherited_store, results, open_after_release) -> None:
-    try:
-        inherited_store.current_graph_version("run-1")
-    except ForkedProviderError:
-        results.put("inherited_rejected")
-    try:
-        SqliteEventStore(path)
-    except StoreInUseError:
-        results.put("owner_still_active")
+        return
     open_after_release.wait(10)
     try:
         store = SqliteEventStore(path)
     except Exception as error:
         results.put(f"reopen_failed:{type(error).__name__}")
     else:
-        results.put("reopened_after_owner_close")
+        results.put(f"reopened:{store.current_graph_version('run-1')}")
         store.close()
 
 
@@ -198,6 +182,13 @@ class SqliteEventStoreTests(unittest.TestCase):
             )
         with SqliteEventStore(path) as reopened:
             self.assertEqual(0, reopened.current_graph_version("run-1"))
+
+    def test_forked_provider_error_explains_supported_child_lifecycle(self):
+        store = self.open_store()
+        with patch.object(store, "_owner_pid", os.getpid() + 1):
+            with self.assertRaisesRegex(ForkedProviderError, "process-bound.*spawn"):
+                store.current_graph_version("run-1")
+        store.close()
 
     def test_reopen_preserves_pending_and_completed_proposal_snapshots(self):
         store = self.open_store()
@@ -617,7 +608,7 @@ class SqliteEventStoreTests(unittest.TestCase):
 
     @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
     def test_competing_process_opens_have_exactly_one_owner(self):
-        context = multiprocessing.get_context("fork")
+        context = multiprocessing.get_context("spawn")
         start = context.Event()
         released = context.Event()
         results = context.Queue()
@@ -639,54 +630,23 @@ class SqliteEventStoreTests(unittest.TestCase):
         reopened.close()
 
     @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
-    def test_forked_child_cannot_use_inherited_provider_and_reopens_after_owner_closes(self):
+    def test_spawned_child_reopens_after_current_owner_closes(self):
         store = self.open_store()
         self._create_run(store)
-        context = multiprocessing.get_context("fork")
+        context = multiprocessing.get_context("spawn")
         results = context.Queue()
-        child = context.Process(target=_forked_use, args=(str(self.path), store, results))
-        child.start()
-        outcomes = [results.get(timeout=10), results.get(timeout=10)]
-        child.join(10)
-        self.assertEqual(0, child.exitcode)
-        self.assertCountEqual(["inherited_rejected", "owner_still_active"], outcomes)
-        store.close()
-        reopened = self.open_store()
-        self.assertEqual(0, reopened.get_run("run-1").graph_version)
-        reopened.close()
-
-    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
-    def test_fork_callback_replaces_inherited_lock_before_rejecting_provider(self):
-        store = self.open_store()
-        self._create_run(store)
-        context = multiprocessing.get_context("fork")
-        results = context.Queue()
-        release_parent_lock = Event()
-        parent_lock_acquired = Event()
-
-        def hold_store_lock() -> None:
-            with store._lock:
-                parent_lock_acquired.set()
-                release_parent_lock.wait(10)
-
-        holder = Thread(target=hold_store_lock)
-        holder.start()
-        self.assertTrue(parent_lock_acquired.wait(5))
-        open_after_release = context.Event()
+        release = context.Event()
         child = context.Process(
-            target=_forked_use_while_parent_lock_is_held,
-            args=(str(self.path), store, results, open_after_release),
+            target=_spawned_open_after_owner_closes,
+            args=(str(self.path), release, results),
         )
         child.start()
         try:
-            outcomes = [results.get(timeout=10), results.get(timeout=10)]
-            self.assertCountEqual(["inherited_rejected", "owner_still_active"], outcomes)
+            self.assertEqual("owner_still_active", results.get(timeout=10))
         finally:
-            release_parent_lock.set()
-            holder.join(5)
-        store.close()
-        open_after_release.set()
-        self.assertEqual("reopened_after_owner_close", results.get(timeout=10))
+            store.close()
+            release.set()
+        self.assertEqual("reopened:0", results.get(timeout=10))
         child.join(10)
         self.assertEqual(0, child.exitcode)
 
@@ -746,184 +706,6 @@ class SqliteEventStoreTests(unittest.TestCase):
                         GovernanceOutcome.COMMIT if committed else ProposalStatus.PENDING,
                         reopened.get_proposal("run-1", "crash").status,
                     )
-
-    @unittest.skipUnless(LINUX, "SQLite owner uses Linux fork callbacks")
-    def test_fork_closes_ownership_while_cyclic_gc_finalizes_provider(self):
-        report_read, report_write = os.pipe()
-        child_release_read, child_release_write = os.pipe()
-        entered = Event()
-        release_gc = Event()
-        original = SqliteEventStore._release_resources
-        store = self.open_store()
-        store._test_cycle = store
-        descriptors = (store._owner_fd, store._path_lock_fd)
-        reference = weakref.ref(store)
-        del store
-
-        def paused(provider):
-            if provider._path == self.path:
-                entered.set()
-                if not release_gc.wait(10):
-                    raise TimeoutError("GC resource release was not resumed")
-            original(provider)
-
-        child = None
-        try:
-            with patch.object(SqliteEventStore, "_release_resources", paused):
-                collector = Thread(target=gc.collect)
-                collector.start()
-                try:
-                    self.assertTrue(entered.wait(5))
-                    self.assertIsNone(reference(), "cyclic GC must have cleared provider weak references")
-                    child = os.fork()
-                    if child == 0:
-                        retained = False
-                        for descriptor in descriptors:
-                            try:
-                                os.fstat(descriptor)
-                            except OSError:
-                                pass
-                            else:
-                                retained = True
-                        os.write(report_write, b"open" if retained else b"closed")
-                        os.read(child_release_read, 1)
-                        os._exit(0)
-                    readable, _, _ = select.select([report_read], [], [], 5)
-                    self.assertTrue(readable, "child did not report ownership cleanup")
-                    child_state = os.read(report_read, 10)
-                finally:
-                    release_gc.set()
-                    collector.join(10)
-            self.assertFalse(collector.is_alive())
-            self.assertEqual((0, 0), os.waitpid(child, os.WNOHANG), "child must remain alive during reopen")
-            with self.open_store():
-                pass
-            self.assertEqual(b"closed", child_state)
-        finally:
-            if child is not None:
-                os.write(child_release_write, b"x")
-                os.waitpid(child, 0)
-            for descriptor in (report_read, report_write, child_release_read, child_release_write):
-                os.close(descriptor)
-
-    @unittest.skipUnless(LINUX, "SQLite owner uses Linux fork callbacks")
-    def test_independent_open_and_fork_can_finish_while_another_store_loads(self):
-        loading = Event()
-        release = Event()
-        independent_finished = Event()
-        paused_providers = []
-        errors = []
-        original = SqliteEventStore._load_state
-
-        def paused(provider):
-            if provider._path == self.path:
-                paused_providers.append(provider)
-                loading.set()
-                if not release.wait(10):
-                    raise TimeoutError("journal load was not released")
-            return original(provider)
-
-        def first_open():
-            try:
-                with self.open_store():
-                    pass
-            except BaseException as error:
-                errors.append(error)
-
-        def independent_open_and_fork():
-            try:
-                with SqliteEventStore(self.path.with_name("independent.db")):
-                    pass
-                child = os.fork()
-                if child == 0:
-                    inherited = paused_providers[0]
-                    clean = inherited._forked and inherited._owner_fd is None and inherited._path_lock_fd is None
-                    os._exit(0 if clean else 1)
-                _, status = os.waitpid(child, 0)
-                if status != 0:
-                    raise AssertionError("child retained ownership during journal loading")
-            except BaseException as error:
-                errors.append(error)
-            finally:
-                independent_finished.set()
-
-        with patch.object(SqliteEventStore, "_load_state", paused):
-            first = Thread(target=first_open)
-            first.start()
-            self.assertTrue(loading.wait(5))
-            independent = Thread(target=independent_open_and_fork)
-            independent.start()
-            try:
-                self.assertTrue(independent_finished.wait(5), "independent store opening or fork waited for journal loading")
-            finally:
-                release.set()
-                first.join(10)
-                independent.join(10)
-        self.assertFalse(first.is_alive())
-        self.assertFalse(independent.is_alive())
-        self.assertEqual([], errors)
-
-    @unittest.skipUnless(LINUX, "SQLite owner uses Linux fork callbacks")
-    def test_fork_waits_for_provider_construction_and_teardown(self):
-        for phase in ("construction", "teardown"):
-            with self.subTest(phase=phase):
-                entered = Event()
-                release = Event()
-                fork_requested = Event()
-                fork_completed = Event()
-                errors = []
-                opened = []
-                method_name = "_acquire_ownership" if phase == "construction" else "_release_ownership"
-                original = getattr(SqliteEventStore, method_name)
-                store = self.open_store() if phase == "teardown" else None
-
-                def paused(provider):
-                    entered.set()
-                    if not release.wait(10):
-                        raise TimeoutError("lifecycle test was not released")
-                    return original(provider)
-
-                def lifecycle():
-                    try:
-                        if store is None:
-                            opened.append(self.open_store())
-                        else:
-                            store.close()
-                    except BaseException as error:
-                        errors.append(error)
-
-                def fork():
-                    try:
-                        fork_requested.set()
-                        child = os.fork()
-                        if child == 0:
-                            os._exit(0)
-                        fork_completed.set()
-                        os.waitpid(child, 0)
-                    except BaseException as error:
-                        errors.append(error)
-
-                with patch.object(SqliteEventStore, method_name, paused):
-                    worker = Thread(target=lifecycle)
-                    worker.start()
-                    self.assertTrue(entered.wait(5))
-                    forker = Thread(target=fork)
-                    forker.start()
-                    try:
-                        self.assertTrue(fork_requested.wait(5))
-                        self.assertFalse(fork_completed.wait(0.2), "fork escaped an active provider lifecycle transition")
-                    finally:
-                        release.set()
-                        worker.join(10)
-                        forker.join(10)
-                        for provider in opened:
-                            provider.close()
-                        if store is not None:
-                            store.close()
-                self.assertFalse(worker.is_alive())
-                self.assertFalse(forker.is_alive())
-                self.assertTrue(fork_completed.is_set())
-                self.assertEqual([], errors)
 
     def test_store_path_and_provider_lifecycle_errors_are_explicit(self):
         for unsupported in (":memory:", "file:events.db?mode=memory"):

@@ -341,11 +341,10 @@ journal reads. The implementation supports Linux local filesystems that honor
 identities and the database link count before operations, then fails closed if
 an identity changes or a hard link appears. These checks detect out-of-band
 filesystem changes; ownership assumes cooperating providers do not unlink or
-replace the live files. A forked child cannot use an inherited provider; its
-inherited thread lock is reset, inherited ownership descriptors are closed,
-and the child must open the store normally after the old owner closes. The
-lock file remains present after close; the OS releases its lock on graceful
-close or process crash.
+replace the live files. SQLite providers are process-bound; a child must not
+inherit or clean up a live provider. See [STORE-OWNER](protocol.md#spec-protocol-store-owner)
+for the supported process-creation methods. The lock file remains present
+after close; the OS releases its lock on graceful close or process crash.
 
 If a write reports an error or is interrupted around commit, SQLite reloads
 the journal before allowing another operation, so its in-process cache agrees

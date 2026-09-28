@@ -385,6 +385,11 @@ class EventStoreState:
             run = self._runs.get(run_id)
             if run is None:
                 return self._error(StoreErrorCode.NOT_FOUND, "run does not exist")
+            if not _valid_identifier(proposal_id):
+                return self._error(StoreErrorCode.INVALID_GRAPH_BATCH, "proposal_id is required")
+            parts = self._proposal_parts(run, proposal_id)
+            if parts is None:
+                return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")
             try:
                 decisions = tuple(audit_records)
                 events = tuple(graph_events)
@@ -410,9 +415,6 @@ class EventStoreState:
             ):
                 return self._error(StoreErrorCode.INVALID_GRAPH_BATCH, "graph event identity mismatch")
             candidate = run.copy_for_write()
-            parts = self._proposal_parts(candidate, proposal_id)
-            if parts is None:
-                return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")
             receipt = parts.receipt
             terminal = parts.terminal
             terminal_position = parts.terminal_position

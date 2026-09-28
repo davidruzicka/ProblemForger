@@ -887,9 +887,11 @@ class SpecificationChecks(unittest.TestCase):
 
     def test_store_owner_and_recovery_are_the_initial_scope(self):
         protocol = read("docs/protocol.md")
-        owner = protocol.split("#### STORE-OWNER\n", 1)[1].split(
-            "#### Deferred parallel proposal claims\n", 1
-        )[0]
+        owner = " ".join(
+            protocol.split("#### STORE-OWNER\n", 1)[1]
+            .split("#### Deferred parallel proposal claims\n", 1)[0]
+            .split()
+        )
         for phrase in (
             "exactly one live EventStore provider instance",
             "before loading journal state",
@@ -898,9 +900,15 @@ class SpecificationChecks(unittest.TestCase):
             "crash",
             "serialized by the owning service",
             "incomplete receipt",
+            "must be constructed, used, and closed only in their owning process",
+            "Do not continue Python execution after a raw `fork()`",
+            "a clean `forkserver`",
+            "without Python pre-execution callbacks such as `preexec_fn`",
+            "close every SQLite provider before raw `fork()`",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, owner)
+        self.assertNotIn("must open the store normally after the old owner closes", owner)
         self.assertIn("does not expose `claim_ttl`", " ".join(protocol.split()))
         self.assertIn("Parallel claims are a deferred extension", protocol)
 
