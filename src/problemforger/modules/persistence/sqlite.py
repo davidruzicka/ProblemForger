@@ -275,11 +275,67 @@ class SqliteEventStore(EventStoreState):
                     selected = (len(mountpoint), filesystem)
         if selected is None:
             raise UnsupportedStoreError("cannot identify the store filesystem")
-        filesystem = selected[1].casefold()
+        self._assert_supported_filesystem_type(selected[1])
+
+    def _assert_supported_filesystem_type(self, filesystem: str) -> None:
+        filesystem = filesystem.casefold()
         if filesystem not in self._SUPPORTED_FILESYSTEMS:
             raise UnsupportedStoreError(
                 f"SQLite EventStore does not support filesystem type {filesystem}"
             )
+
+    def _assert_supported_filesystem_descriptor(
+        self, file_descriptor: int, name: str
+    ) -> None:
+        try:
+            fdinfo = Path(f"/proc/self/fdinfo/{file_descriptor}").read_text(
+                encoding="utf-8"
+            )
+        except OSError as error:
+            raise UnsupportedStoreError(
+                f"cannot verify filesystem for {name} descriptor"
+            ) from error
+
+        mount_id: int | None = None
+        for row in fdinfo.splitlines():
+            key, separator, value = row.partition(":")
+            if key != "mnt_id" or not separator:
+                continue
+            try:
+                mount_id = int(value.strip())
+            except ValueError as error:
+                raise UnsupportedStoreError(
+                    f"cannot identify filesystem for {name} descriptor"
+                ) from error
+            break
+        if mount_id is None:
+            raise UnsupportedStoreError(
+                f"cannot identify filesystem for {name} descriptor"
+            )
+
+        try:
+            mount_rows = Path("/proc/self/mountinfo").read_text(
+                encoding="utf-8"
+            ).splitlines()
+        except OSError as error:
+            raise UnsupportedStoreError("cannot verify local filesystem type") from error
+
+        filesystem: str | None = None
+        for row in mount_rows:
+            fields = row.split()
+            try:
+                if int(fields[0]) != mount_id:
+                    continue
+                separator_index = fields.index("-")
+                filesystem = fields[separator_index + 1]
+                break
+            except (ValueError, IndexError):
+                continue
+        if filesystem is None:
+            raise UnsupportedStoreError(
+                f"cannot identify filesystem for {name} descriptor"
+            )
+        self._assert_supported_filesystem_type(filesystem)
 
     def _acquire_ownership(self) -> None:
         assert fcntl is not None
@@ -293,12 +349,16 @@ class SqliteEventStore(EventStoreState):
             )
             _OWNERSHIP_DESCRIPTORS.add(self._path_lock_fd)
             self._assert_regular_file(self._path_lock_fd, "ownership lock")
+            self._assert_supported_filesystem_descriptor(
+                self._path_lock_fd, "ownership lock"
+            )
             self._take_lock(self._path_lock_fd)
             self._path_lock_identity = self._file_identity(os.fstat(self._path_lock_fd))
 
             self._owner_fd = os.open(self._path, flags | no_follow, 0o600)
             _OWNERSHIP_DESCRIPTORS.add(self._owner_fd)
             self._assert_regular_file(self._owner_fd, "database")
+            self._assert_supported_filesystem_descriptor(self._owner_fd, "database")
             self._take_lock(self._owner_fd)
             owner_stat = os.fstat(self._owner_fd)
             if owner_stat.st_nlink != 1:

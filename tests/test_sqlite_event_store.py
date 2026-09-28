@@ -802,6 +802,40 @@ class SqliteEventStoreTests(unittest.TestCase):
         with patch("pathlib.Path.read_text", return_value=rows):
             store._assert_supported_filesystem()
 
+    @unittest.skipUnless(LINUX, "uses Linux descriptor mount information")
+    def test_opened_store_descriptors_reject_unsupported_filesystems(self):
+        mount_point = str(self.path.parent)
+        path_mount = f"31 22 0:44 / {mount_point} rw,relatime - overlay local rw\n"
+        cases = (
+            (
+                "ownership lock",
+                (
+                    path_mount,
+                    "mnt_id:\t101\n",
+                    "101 22 0:45 / / rw,relatime - nfs4 remote rw\n",
+                ),
+            ),
+            (
+                "database",
+                (
+                    path_mount,
+                    "mnt_id:\t101\n",
+                    "101 22 0:45 / / rw,relatime - overlay local rw\n",
+                    "mnt_id:\t202\n",
+                    "202 22 0:46 / / rw,relatime - coda remote rw\n",
+                ),
+            ),
+        )
+        for name, mount_reads in cases:
+            with self.subTest(name=name):
+                with patch("pathlib.Path.read_text", side_effect=mount_reads), patch(
+                    "problemforger.modules.persistence.sqlite.sqlite3.connect",
+                    wraps=sqlite3.connect,
+                ) as connect:
+                    with self.assertRaisesRegex(UnsupportedStoreError, "filesystem type"):
+                        self.open_store()
+                connect.assert_not_called()
+
     def test_memory_provider_is_ephemeral_and_normal_profile_rejects_it(self):
         memory = build_event_store(MemoryEventStoreConfig(), profile=ServiceProfile.EPHEMERAL_TEST)
         self.assertIsInstance(memory, MemoryEventStore)
