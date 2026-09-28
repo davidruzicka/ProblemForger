@@ -1,1 +1,5 @@
-"""Provider-neutral interfaces consumed by the core and application."""
+"""Provider-neutral capability interfaces."""
+
+from .event_store import EventStore
+
+__all__ = ["EventStore"]

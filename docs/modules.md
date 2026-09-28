@@ -98,6 +98,15 @@ prefix from a committed batch.
 Canonical proposal request hashing and its versioned JSON rules are defined by
 the [proposal recovery contract](protocol.md#spec-protocol-proposal-recovery).
 
+Run metadata schema v1 is `RunMetadata(metadata_schema_version=1, data=<JSON
+object>)`. Its hash input is the canonical JSON object
+`{"metadata_schema_version":1,"data":<object>}`, using the same UTF-8 JSON
+canonicalization rules as normalized requests. The SHA-256 input is the domain
+bytes `problemforger.run-metadata.v1\0` followed by that canonical JSON, and
+the stored value is
+`sha256:problemforger-run-metadata-v1:<lowercase hex digest>`. A metadata
+schema or hash-input change requires an explicit new version.
+
 Conceptual port contract:
 
 ```text
@@ -123,7 +132,7 @@ record_proposal(run_id, proposal_id, request_hash, normalized_request, receipt_r
     | NOT_FOUND
 
 append_audit(run_id, records[], proposal_id?)
-    -> last_journal_position
+    -> {last_journal_position, persisted_records}
     | INVALID_AUDIT_BATCH
     | NOT_FOUND
 
@@ -152,6 +161,8 @@ Requirements:
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;
 - obey [STORE-OWNER](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
 - `append_audit` requires `run_id`; terminal records require the matching `proposal_id`, while non-terminal run records may omit it. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
+- P1 defines no generic run-level audit record. Proposal receipts enter through `record_proposal`, which owns atomic proposal-ID registration. P1 `append_audit` records one terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED` record; it does not accept receipts or graph events;
+- finalizing a non-commit candidate rechecks the stored expected graph version against the current run version in the same write transaction. If stale, persist a `CONFLICT` record with the observed graph version instead of the candidate policy outcome. Return the effective persisted record so the service can return the outcome that actually committed;
 - `get_proposal` returns one consistent read snapshot of the durable normalized request, lifecycle status, and terminal outcome (nullable until terminal). Resulting graph version and last journal position belong to the recorded terminal response when final, not the run's subsequently advanced head. Before finalization, return the proposal's latest recorded position and no terminal resulting version. Recovery reads grant no mutation authority. Bound stored request/response sizes under the service payload limits and use immutable references for larger evidence. Internal recovery data is not automatically exposed by worker-facing queries;
 - reject malformed `append_graph` batches with `INVALID_GRAPH_BATCH` under [graph append binding](protocol.md#graph-append-binding), without partial writes;
 - atomically require `append_graph`'s supplied `expected_graph_version` to equal both the proposal receipt's recorded `expected_graph_version` and the current run `graph_version`; a receipt-binding mismatch returns `INVALID_GRAPH_BATCH`, while a bound value stale against the current run returns `VersionConflict`, with no writes in either case;
@@ -310,5 +321,34 @@ Durable providers additionally run a durability contract suite covering close/re
 `MemoryEventStore` runs the common in-process semantic suite only; it does **not** claim the durability or process-restart recovery contract and must be clearly marked `ephemeral`. SQLite must pass both semantic and durability suites.
 Restart recovery of an incomplete receipt applies only to durable providers;
 `MemoryEventStore` cannot claim process-restart recovery.
+
+The initial providers cap run metadata and each serialized journal record at
+1 MiB, an atomic append batch at 4 MiB, and each journal page at 4 MiB and 100
+records by default. A page stops before either limit and exposes continuation
+through its cursor. Larger evidence belongs in immutable versioned references,
+not inline payloads. The typed provider configuration may lower the positive
+record-count limit.
+
+SQLite uses a canonical resolved path, a persistent adjacent path lock, and an
+exclusive OS `flock` on both that lock file and the database inode. The
+canonical path lock covers relative and symlink aliases. A live hard-link alias
+cannot acquire the inode lock; SQLite also rejects a database with multiple
+hard links, because SQLite rollback journals are path-specific and could be
+missed through an alias after a crash. Ownership is acquired before schema or
+journal reads. The implementation supports Linux local filesystems that honor
+`flock`; it rejects known remote and FUSE mounts. It checks both live path
+identities and the database link count before operations, then fails closed if
+an identity changes or a hard link appears. These checks detect out-of-band
+filesystem changes; ownership assumes cooperating providers do not unlink or
+replace the live files. A forked child cannot use an inherited provider; its
+inherited thread lock is reset, inherited ownership descriptors are closed,
+and the child must open the store normally after the old owner closes. The
+lock file remains present after close; the OS releases its lock on graceful
+close or process crash.
+
+If a write reports an error or is interrupted around commit, SQLite reloads
+the journal before allowing another operation, so its in-process cache agrees
+with the durable transaction outcome. If reload fails, the provider rejects
+further operations until it is closed and reopened.
 
 Provider-specific tests may add performance/error cases but cannot replace the applicable common suites.

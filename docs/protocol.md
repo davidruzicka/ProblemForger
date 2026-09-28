@@ -157,7 +157,7 @@ optional configuration-C policy rule.
 
 P1 permits exactly one live EventStore provider instance per durable store. The provider must acquire exclusive ownership **before loading journal state or accepting operations**. A competing open fails explicitly with `STORE_IN_USE`; this is a service startup error, not a governance decision or a proposal claim.
 
-Ownership must cover same-process duplicate instances as well as separate processes and path aliases for the same store. Hold it for the provider lifetime and release it only after in-flight operations/connections are closed. A process crash releases ownership automatically; a persisted boolean or PID file alone is not an ownership lock. The SQLite implementation must document its canonical store/lock identity and supported local-filesystem assumptions, reject unsupported storage, and prevent replacing/unlinking its live store or lock identity. Internal connections are allowed only under the owning provider. A forked child cannot operate an inherited provider; it must open normally and obtain ownership after the old owner closes.
+Ownership must cover same-process duplicate instances as well as separate processes and path aliases for the same store. Hold it for the provider lifetime and release it only after in-flight operations/connections are closed. A process crash releases ownership automatically; a persisted boolean or PID file alone is not an ownership lock. The SQLite implementation resolves relative and symlink paths to one canonical path, uses a persistent adjacent path lock plus an OS lock on the database inode, and supports local Linux filesystems honoring `flock`. A competing hard-link alias fails to acquire the inode lock while an owner is live; SQLite rejects multiply-linked database files after the owner closes because rollback journals are path-specific. The provider rejects unsupported storage and checks live path/lock identities before operations, failing closed when an out-of-band replacement or unlink is detected. Providers sharing a store must cooperate with these locks and leave its live files in place. Internal connections are allowed only under the owning provider. A forked child cannot operate an inherited provider; it must open normally and obtain ownership after the old owner closes.
 
 Proposal evaluation and finalization are serialized by the owning service. Multiple live providers for one store are out of scope under ADR 0006; independent stores may be opened concurrently. Required P1 tests include racing process opens, same-process duplicate opens, path aliases, graceful close, crash release, and reopening with an incomplete receipt.
 
@@ -210,6 +210,14 @@ decision and graph events are persisted exclusively through `append_graph`, with
 the same proposal binding and single-terminal checks plus the graph-version
 check. Non-terminal-only audit batches require no proposal and never advance
 `graph_version`; non-commit terminal appends also leave it unchanged.
+
+For P1, proposal receipts use `record_proposal`; `append_audit` accepts one
+terminal record per call because no generic non-terminal run-level record type
+is defined. Before persisting a candidate `REJECT`, `RETRY`, or `ESCALATE`, the
+store atomically compares the receipt's expected version with the current run
+version. If stale, it persists `CONFLICT` with the current version and returns
+that effective record to the owning service. This prevents a policy result
+prepared against an obsolete graph from becoming final.
 
 The serialized owning service rechecks this version precondition before any
 terminal append under the same finalization operation. A mismatch
