@@ -383,6 +383,47 @@ class EventStoreContractMixin:
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, missing_identity.status)
         self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
 
+    def test_existing_proposal_identity_precedes_unused_receipt_size(self):
+        normalized, original_receipt = self.submit()
+        before = self.store.get_proposal("run-1", "proposal-1")
+        oversized_request = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(
+                JsonDocument.from_value({"payload": "x" * MAX_JOURNAL_RECORD_BYTES}),
+            ),
+            evidence=(),
+        )
+        oversized_receipt = ProposalReceipt(
+            metadata("changed-receipt"), "proposal-1", oversized_request
+        )
+        conflict = self.store.record_proposal(
+            "run-1",
+            "proposal-1",
+            proposal_request_hash(oversized_request),
+            oversized_request,
+            oversized_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.IDEMPOTENCY_CONFLICT, conflict.status)
+        self.assertEqual(original_receipt.request_hash, conflict.stored_request_hash)
+        self.assertEqual(oversized_receipt.request_hash, conflict.supplied_request_hash)
+        self.assertEqual(before, conflict.proposal)
+
+        unused_oversized_receipt = ProposalReceipt(
+            metadata("x" * MAX_JOURNAL_RECORD_BYTES), "proposal-1", normalized
+        )
+        existing = self.store.record_proposal(
+            "run-1",
+            "proposal-1",
+            original_receipt.request_hash,
+            normalized,
+            unused_oversized_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.EXISTING, existing.status)
+        self.assertEqual(before, existing.proposal)
+        self.assertEqual(before, self.store.get_proposal("run-1", "proposal-1"))
+        self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
+
     def test_pending_receipt_round_trips_complete_normalized_request(self):
         normalized, _ = self.submit()
         pending = self.store.get_proposal("run-1", "proposal-1")

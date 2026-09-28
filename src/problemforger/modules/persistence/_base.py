@@ -240,6 +240,22 @@ class EventStoreState:
                     RecordProposalStatus.INVALID_PROPOSAL,
                     supplied_request_hash=_as_hash(request_hash),
                 )
+            parts = self._proposal_parts(run, proposal_id)
+            if parts is not None:
+                receipt = parts.receipt
+                if receipt.request_hash != request_hash:
+                    return RecordProposalResult(
+                        RecordProposalStatus.IDEMPOTENCY_CONFLICT,
+                        proposal=self._snapshot_proposal(run_id, run, proposal_id, parts),
+                        stored_request_hash=receipt.request_hash,
+                        supplied_request_hash=RequestHash(request_hash),
+                    )
+                return RecordProposalResult(
+                    RecordProposalStatus.EXISTING,
+                    proposal=self._snapshot_proposal(run_id, run, proposal_id, parts),
+                    stored_request_hash=receipt.request_hash,
+                    supplied_request_hash=RequestHash(request_hash),
+                )
             if not self._records_within_bounds(
                 (receipt_record,), first_position=run.last_journal_position + 1
             ):
@@ -248,22 +264,6 @@ class EventStoreState:
                     supplied_request_hash=RequestHash(request_hash),
                 )
             candidate = run.copy_for_write()
-            parts = self._proposal_parts(candidate, proposal_id)
-            if parts is not None:
-                receipt = parts.receipt
-                if receipt.request_hash != request_hash:
-                    return RecordProposalResult(
-                        RecordProposalStatus.IDEMPOTENCY_CONFLICT,
-                        proposal=self._snapshot_proposal(run_id, candidate, proposal_id, parts),
-                        stored_request_hash=receipt.request_hash,
-                        supplied_request_hash=RequestHash(request_hash),
-                    )
-                return RecordProposalResult(
-                    RecordProposalStatus.EXISTING,
-                    proposal=self._snapshot_proposal(run_id, candidate, proposal_id, parts),
-                    stored_request_hash=receipt.request_hash,
-                    supplied_request_hash=RequestHash(request_hash),
-                )
             if self._has_record_id(candidate, receipt_record.metadata.record_id):
                 return RecordProposalResult(
                     RecordProposalStatus.INVALID_PROPOSAL,

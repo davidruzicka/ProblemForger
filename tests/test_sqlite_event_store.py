@@ -189,6 +189,16 @@ class SqliteEventStoreTests(unittest.TestCase):
             AppendResult,
         )
 
+    def test_connection_uri_preserves_reserved_characters_in_path(self):
+        path = Path(self.temporary.name) / "events #+%?.db"
+        with SqliteEventStore(path) as store:
+            self.assertEqual(
+                CreateRunStatus.CREATED,
+                store.create_run("run-1", RunMetadata.from_value({"source": "uri-test"})).status,
+            )
+        with SqliteEventStore(path) as reopened:
+            self.assertEqual(0, reopened.current_graph_version("run-1"))
+
     def test_reopen_preserves_pending_and_completed_proposal_snapshots(self):
         store = self.open_store()
         self._create_run(store)
@@ -470,6 +480,69 @@ class SqliteEventStoreTests(unittest.TestCase):
         with self.assertRaises(StoreClosedError):
             store.current_graph_version("run-1")
         store.close()
+
+    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
+    def test_construction_rejects_replaced_path_before_mutating_replacement(self):
+        replacement = self.path.with_name("replacement.db")
+        original = self.path.with_name("original.db")
+        replacement_connection = sqlite3.connect(replacement)
+        self.assertEqual(
+            "wal",
+            replacement_connection.execute("PRAGMA journal_mode=WAL").fetchone()[0],
+        )
+        replacement_connection.close()
+
+        real_connect = sqlite3.connect
+        replaced = False
+
+        def replace_before_connect(database, *args, **kwargs):
+            nonlocal replaced
+            os.replace(self.path, original)
+            os.replace(replacement, self.path)
+            replaced = True
+            return real_connect(database, *args, **kwargs)
+
+        try:
+            with patch(
+                "problemforger.modules.persistence.sqlite.sqlite3.connect",
+                side_effect=replace_before_connect,
+            ):
+                with self.assertRaises(StoreIdentityChangedError):
+                    self.open_store()
+            self.assertTrue(replaced)
+            connection = real_connect(self.path)
+            try:
+                self.assertEqual("wal", connection.execute("PRAGMA journal_mode").fetchone()[0])
+                user_objects = {
+                    (row[0], row[1])
+                    for row in connection.execute(
+                        "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+                    )
+                }
+                self.assertEqual(set(), user_objects)
+            finally:
+                connection.close()
+        finally:
+            if replaced and original.exists():
+                if self.path.exists():
+                    os.replace(self.path, replacement)
+                os.replace(original, self.path)
+
+    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
+    def test_construction_does_not_recreate_path_unlinked_before_connect(self):
+        real_connect = sqlite3.connect
+
+        def unlink_before_connect(database, *args, **kwargs):
+            self.path.unlink()
+            return real_connect(database, *args, **kwargs)
+
+        with patch(
+            "problemforger.modules.persistence.sqlite.sqlite3.connect",
+            side_effect=unlink_before_connect,
+        ):
+            with self.assertRaises((sqlite3.OperationalError, StoreIdentityChangedError)):
+                self.open_store()
+        self.assertFalse(self.path.exists())
 
     @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
     def test_write_time_identity_failures_poison_even_if_lock_is_restored(self):

@@ -204,11 +204,14 @@ class SqliteEventStore(EventStoreState):
                 _OPEN_PROVIDERS.add(self)
                 self._acquire_ownership()
             self._connection = sqlite3.connect(
-                str(self._path),
+                f"{self._path.as_uri()}?mode=rw",
+                uri=True,
                 timeout=self._timeout_seconds,
                 isolation_level=None,
                 check_same_thread=False,
             )
+            # SQLite opens by path; reject a replacement before any schema or PRAGMA writes.
+            self._verify_identity()
             self._connection.row_factory = sqlite3.Row
             self._connection.execute("PRAGMA foreign_keys=ON")
             self._initialize_schema()
@@ -493,6 +496,7 @@ class SqliteEventStore(EventStoreState):
         self._lock = RLock()
         self._forked = True
         self._closed = True
+        # Do not close here: sqlite3_close() on a parent-opened handle can mutate its journal.
         self._close_descriptor(self._owner_fd)
         self._close_descriptor(self._path_lock_fd)
         self._owner_fd = None
