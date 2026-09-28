@@ -336,8 +336,10 @@ canonical path lock covers relative and symlink aliases. A live hard-link alias
 cannot acquire the inode lock; SQLite also rejects a database with multiple
 hard links, because SQLite rollback journals are path-specific and could be
 missed through an alias after a crash. Ownership is acquired before schema or
-journal reads. The implementation supports Linux local filesystems that honor
-`flock`; it rejects known remote and FUSE mounts. It checks both live path
+journal reads. The implementation supports the explicitly verified Linux local
+filesystem types `btrfs`, `ext2`, `ext3`, `ext4`, `f2fs`, `overlay`, and `xfs`.
+All other or unidentified filesystem types, including remote and FUSE mounts,
+are rejected. It checks both live path
 identities and the database link count before operations, then fails closed if
 an identity changes or a hard link appears. These checks detect out-of-band
 filesystem changes; ownership assumes cooperating providers do not unlink or

@@ -167,22 +167,20 @@ if hasattr(os, "register_at_fork"):
 
 
 class SqliteEventStore(EventStoreState):
-    """SQLite-backed journal. Supports Linux local filesystems honoring ``flock``."""
+    """SQLite-backed journal on explicitly verified Linux local filesystems."""
 
-    _REMOTE_FILESYSTEMS = frozenset(
+    # Keep this explicit rather than maintaining a denylist.  A denylist would
+    # silently accept a newly encountered network, FUSE, or otherwise unknown
+    # filesystem whose flock/durability semantics have not been verified.
+    _SUPPORTED_FILESYSTEMS = frozenset(
         {
-            "9p",
-            "cifs",
-            "ceph",
-            "davfs",
-            "fuse",
-            "fuseblk",
-            "fuse.sshfs",
-            "glusterfs",
-            "lustre",
-            "nfs",
-            "nfs4",
-            "smb3",
+            "btrfs",
+            "ext2",
+            "ext3",
+            "ext4",
+            "f2fs",
+            "overlay",
+            "xfs",
         }
     )
 
@@ -278,7 +276,7 @@ class SqliteEventStore(EventStoreState):
         if selected is None:
             raise UnsupportedStoreError("cannot identify the store filesystem")
         filesystem = selected[1].casefold()
-        if filesystem in self._REMOTE_FILESYSTEMS or filesystem.startswith("fuse."):
+        if filesystem not in self._SUPPORTED_FILESYSTEMS:
             raise UnsupportedStoreError(
                 f"SQLite EventStore does not support filesystem type {filesystem}"
             )

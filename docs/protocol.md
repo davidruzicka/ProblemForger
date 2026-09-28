@@ -165,14 +165,18 @@ or PID file alone is not an ownership lock.
 
 The SQLite implementation resolves relative and symlink paths to one canonical
 path, uses a persistent adjacent path lock plus an OS lock on the database
-inode, and supports local Linux filesystems honoring `flock`. A competing
-hard-link alias fails to acquire the inode lock while an owner is live; SQLite
-rejects multiply-linked database files after the owner closes because rollback
-journals are path-specific. The provider rejects unsupported storage and checks
-live path/lock identities before operations, failing closed when an out-of-band
-replacement or unlink is detected. Providers sharing a store must cooperate
-with these locks and leave its live files in place. Internal connections are
-allowed only under the owning provider.
+inode, and supports only an explicit set of local Linux filesystems honoring
+`flock`. A competing hard-link alias fails to acquire the inode lock while an
+owner is live; SQLite rejects multiply-linked database files after the owner
+closes because rollback
+journals are path-specific. The initial provider accepts only the explicitly
+verified local filesystem types `btrfs`, `ext2`, `ext3`, `ext4`, `f2fs`,
+`overlay`, and `xfs`; all other or unidentified types are unsupported until
+their locking and durability semantics are verified. It checks live path/lock
+identities before operations, failing closed when an out-of-band replacement or
+unlink is detected. Providers sharing a store must cooperate with these locks
+and leave its live files in place. Internal connections are allowed only under
+the owning provider.
 
 SQLite providers are process-bound and must be constructed, used, and closed
 only in their owning process. Do not continue Python execution after a raw

@@ -752,15 +752,27 @@ class SqliteEventStoreTests(unittest.TestCase):
             store.__enter__()
 
     @unittest.skipUnless(LINUX, "uses Linux mountinfo")
-    def test_known_remote_and_unidentifiable_filesystems_are_rejected(self):
+    def test_only_explicitly_supported_filesystems_are_accepted(self):
         store = object.__new__(SqliteEventStore)
         store._path = self.path
         mount_point = str(self.path.parent)
-        remote = f"31 22 0:44 / {mount_point} rw,relatime - nfs4 server:/share rw\n"
-        with patch("pathlib.Path.read_text", return_value=remote):
-            with self.assertRaises(UnsupportedStoreError):
-                store._assert_supported_filesystem()
-        for filesystem in ("fuse", "fuseblk", "fuse.sshfs"):
+        supported = ("btrfs", "ext2", "ext3", "ext4", "f2fs", "overlay", "xfs")
+        for filesystem in supported:
+            with self.subTest(filesystem=filesystem):
+                mount = f"31 22 0:44 / {mount_point} rw,relatime - {filesystem} local rw\n"
+                with patch("pathlib.Path.read_text", return_value=mount):
+                    store._assert_supported_filesystem()
+        for filesystem in (
+            "9p",
+            "afs",
+            "cifs",
+            "coda",
+            "fuse",
+            "fuseblk",
+            "fuse.sshfs",
+            "nfs4",
+            "unknownfs",
+        ):
             with self.subTest(filesystem=filesystem):
                 mount = f"31 22 0:44 / {mount_point} rw,relatime - {filesystem} source rw\n"
                 with patch("pathlib.Path.read_text", return_value=mount):
@@ -769,6 +781,26 @@ class SqliteEventStoreTests(unittest.TestCase):
         with patch("pathlib.Path.read_text", return_value="malformed mount row\n"):
             with self.assertRaises(UnsupportedStoreError):
                 store._assert_supported_filesystem()
+
+    @unittest.skipUnless(LINUX, "uses Linux mountinfo")
+    def test_more_specific_mount_type_controls_filesystem_decision(self):
+        store = object.__new__(SqliteEventStore)
+        store._path = self.path
+        mount_point = str(self.path.parent)
+        rows = (
+            f"31 22 0:44 / / rw,relatime - overlay overlay rw\n"
+            f"32 31 0:45 / {mount_point} rw,relatime - afs remote rw\n"
+        )
+        with patch("pathlib.Path.read_text", return_value=rows):
+            with self.assertRaises(UnsupportedStoreError):
+                store._assert_supported_filesystem()
+
+        rows = (
+            f"31 22 0:44 / / rw,relatime - afs remote rw\n"
+            f"32 31 0:45 / {mount_point} rw,relatime - ext4 local rw\n"
+        )
+        with patch("pathlib.Path.read_text", return_value=rows):
+            store._assert_supported_filesystem()
 
     def test_memory_provider_is_ephemeral_and_normal_profile_rejects_it(self):
         memory = build_event_store(MemoryEventStoreConfig(), profile=ServiceProfile.EPHEMERAL_TEST)
