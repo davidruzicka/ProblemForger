@@ -292,6 +292,11 @@ class EventStoreState:
             run = self._runs.get(run_id)
             if run is None:
                 return self._error(StoreErrorCode.NOT_FOUND, "run does not exist")
+            if not _valid_identifier(proposal_id):
+                return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "terminal proposal_id is required")
+            parts = self._proposal_parts(run, proposal_id)
+            if parts is None:
+                return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")
             try:
                 batch = tuple(records)
             except TypeError:
@@ -300,8 +305,6 @@ class EventStoreState:
                 not isinstance(record, (MutationDecision, ProposalAbandoned)) for record in batch
             ):
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "unsupported or empty audit batch")
-            if not _valid_identifier(proposal_id):
-                return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "terminal proposal_id is required")
             if len(batch) != 1:
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "P1 allows one terminal record per batch")
             record = batch[0]
@@ -310,9 +313,6 @@ class EventStoreState:
             if isinstance(record, MutationDecision) and record.outcome is GovernanceOutcome.COMMIT:
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "COMMIT must use append_graph")
             candidate = run.copy_for_write()
-            parts = self._proposal_parts(candidate, proposal_id)
-            if parts is None:
-                return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")
             receipt = parts.receipt
             terminal = parts.terminal
             terminal_position = parts.terminal_position

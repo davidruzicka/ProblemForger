@@ -606,6 +606,16 @@ class EventStoreContractMixin:
         )
         self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
 
+    def test_unknown_proposal_precedes_audit_batch_validation(self):
+        self.submit("known-proposal", 0)
+        for records in (None, ()):
+            with self.subTest(records=records):
+                result = self.store.append_audit("run-1", records, "missing-proposal")
+                self.assertEqual(StoreErrorCode.NOT_FOUND, result.code)
+
+        invalid_existing = self.store.append_audit("run-1", None, "known-proposal")
+        self.assertEqual(StoreErrorCode.INVALID_AUDIT_BATCH, invalid_existing.code)
+
     def test_journal_reads_are_ordered_bounded_and_use_an_exclusive_cursor(self):
         for proposal_id in ("one", "two", "three"):
             self.submit(proposal_id, 0)
