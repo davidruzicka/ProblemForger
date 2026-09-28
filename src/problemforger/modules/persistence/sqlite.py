@@ -20,6 +20,7 @@ from problemforger.core.journal import JsonDocument, deserialize_entry, serializ
 from problemforger.ports.event_store import RunMetadata, StoreDurability
 
 from ._base import (
+    DEFAULT_MAX_JOURNAL_PAGE_SIZE,
     MAX_JOURNAL_RECORD_BYTES,
     MAX_RUN_METADATA_BYTES,
     EventStoreState,
@@ -164,7 +165,7 @@ class SqliteEventStore(EventStoreState):
         self,
         path: str | os.PathLike[str],
         *,
-        max_journal_page_size: int = 100,
+        max_journal_page_size: int = DEFAULT_MAX_JOURNAL_PAGE_SIZE,
         timeout_seconds: float = 5.0,
     ) -> None:
         super().__init__(

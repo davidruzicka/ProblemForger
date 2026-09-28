@@ -107,8 +107,14 @@ class EventStoreState:
         durability: StoreDurability,
         max_journal_page_size: int = DEFAULT_MAX_JOURNAL_PAGE_SIZE,
     ) -> None:
-        if not _valid_integer(max_journal_page_size, minimum=1):
-            raise ValueError("max_journal_page_size must be a positive integer")
+        if (
+            not _valid_integer(max_journal_page_size, minimum=1)
+            or max_journal_page_size > DEFAULT_MAX_JOURNAL_PAGE_SIZE
+        ):
+            raise ValueError(
+                "max_journal_page_size must be a positive integer no greater than "
+                f"{DEFAULT_MAX_JOURNAL_PAGE_SIZE}"
+            )
         self._durability = durability
         self._max_journal_page_size = max_journal_page_size
         self._runs: dict[str, _RunState] = {}

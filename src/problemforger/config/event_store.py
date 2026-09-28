@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
+from problemforger.modules.persistence._base import DEFAULT_MAX_JOURNAL_PAGE_SIZE
 from problemforger.ports.event_store import EventStore
 
 
@@ -19,21 +20,25 @@ class ServiceProfile(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class MemoryEventStoreConfig:
-    max_journal_page_size: int = 100
+    max_journal_page_size: int = DEFAULT_MAX_JOURNAL_PAGE_SIZE
 
     def __post_init__(self) -> None:
         if (
             isinstance(self.max_journal_page_size, bool)
             or not isinstance(self.max_journal_page_size, int)
             or self.max_journal_page_size <= 0
+            or self.max_journal_page_size > DEFAULT_MAX_JOURNAL_PAGE_SIZE
         ):
-            raise ValueError("max_journal_page_size must be a positive integer")
+            raise ValueError(
+                "max_journal_page_size must be a positive integer no greater than "
+                f"{DEFAULT_MAX_JOURNAL_PAGE_SIZE}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class SqliteEventStoreConfig:
     path: str | os.PathLike[str]
-    max_journal_page_size: int = 100
+    max_journal_page_size: int = DEFAULT_MAX_JOURNAL_PAGE_SIZE
     timeout_seconds: float = 5.0
 
     def __post_init__(self) -> None:
@@ -43,8 +48,12 @@ class SqliteEventStoreConfig:
             isinstance(self.max_journal_page_size, bool)
             or not isinstance(self.max_journal_page_size, int)
             or self.max_journal_page_size <= 0
+            or self.max_journal_page_size > DEFAULT_MAX_JOURNAL_PAGE_SIZE
         ):
-            raise ValueError("max_journal_page_size must be a positive integer")
+            raise ValueError(
+                "max_journal_page_size must be a positive integer no greater than "
+                f"{DEFAULT_MAX_JOURNAL_PAGE_SIZE}"
+            )
         if (
             isinstance(self.timeout_seconds, bool)
             or not isinstance(self.timeout_seconds, (int, float))

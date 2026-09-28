@@ -6,13 +6,14 @@ import unittest
 
 from problemforger.config.event_store import (
     MemoryEventStoreConfig,
+    ServiceProfile,
     SqliteEventStoreConfig,
     build_event_store,
 )
 from problemforger.core.journal import JsonDocument
 from event_store_contract import EventStoreContractMixin
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
-from problemforger.ports.event_store import RunMetadata
+from problemforger.ports.event_store import CreateRunStatus, RunMetadata, StoreErrorCode
 
 
 class MemoryEventStoreContractTests(EventStoreContractMixin, unittest.TestCase):
@@ -57,10 +58,14 @@ class EventStoreConfigurationTests(unittest.TestCase):
         )
 
     def test_provider_configurations_reject_invalid_limits_paths_and_timeouts(self):
-        for limit in (0, True, 1.5):
+        for limit in (0, True, 1.5, 101):
             with self.subTest(limit=limit), self.assertRaises(ValueError):
                 MemoryEventStoreConfig(max_journal_page_size=limit)
             with self.subTest(sqlite_limit=limit), self.assertRaises(ValueError):
+                SqliteEventStoreConfig("events.db", max_journal_page_size=limit)
+        for limit in (1, 100):
+            with self.subTest(valid_limit=limit):
+                MemoryEventStoreConfig(max_journal_page_size=limit)
                 SqliteEventStoreConfig("events.db", max_journal_page_size=limit)
         with self.assertRaises(ValueError):
             SqliteEventStoreConfig("")
@@ -69,6 +74,43 @@ class EventStoreConfigurationTests(unittest.TestCase):
                 SqliteEventStoreConfig("events.db", timeout_seconds=timeout)
         with self.assertRaises(TypeError):
             build_event_store(object())
+
+    def test_provider_page_count_cap_and_lowered_configuration_are_enforced(self):
+        with self.assertRaises(ValueError):
+            MemoryEventStore(max_journal_page_size=101)
+        with TemporaryDirectory() as temporary:
+            with self.assertRaises(ValueError):
+                SqliteEventStore(
+                    Path(temporary) / "too-large.db", max_journal_page_size=101
+                )
+
+            configs = (
+                (
+                    MemoryEventStoreConfig(max_journal_page_size=2),
+                    ServiceProfile.EPHEMERAL_TEST,
+                ),
+                (
+                    SqliteEventStoreConfig(
+                        Path(temporary) / "lowered.db", max_journal_page_size=2
+                    ),
+                    ServiceProfile.NORMAL,
+                ),
+            )
+            for config, profile in configs:
+                with self.subTest(config=type(config).__name__):
+                    store = build_event_store(config, profile=profile)
+                    try:
+                        self.assertEqual(
+                            CreateRunStatus.CREATED,
+                            store.create_run("run-1", RunMetadata.from_value({})).status,
+                        )
+                        self.assertEqual((), store.read_journal("run-1", limit=2).records)
+                        self.assertEqual(
+                            StoreErrorCode.INVALID_LIMIT,
+                            store.read_journal("run-1", limit=3).code,
+                        )
+                    finally:
+                        store.close()
 
 
 if __name__ == "__main__":
