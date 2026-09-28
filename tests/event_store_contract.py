@@ -627,6 +627,38 @@ class EventStoreContractMixin:
         self.assertEqual(1, stale.actual_graph_version)
         self.assertEqual(ProposalStatus.PENDING, self.store.get_proposal("run-1", "proposal-1").status)
 
+    def test_stale_graph_batches_are_fully_validated_before_version_conflicts(self):
+        _, proposal_receipt = self.submit("proposal-1", 0)
+        self.submit("winner", 0)
+        self.append_commit("winner", 0)
+
+        proposal = self.store.get_proposal("run-1", "proposal-1")
+        commit = decision(
+            "proposal-1",
+            expected_version=0,
+            record_id="stale-candidate-commit",
+            request_hash=proposal.request_hash,
+        )
+        reused_record_id = graph_event(
+            "proposal-1", version=1, record_id=proposal_receipt.metadata.record_id
+        )
+        oversized_event = graph_event(
+            "proposal-1",
+            version=1,
+            record_id="oversized-stale-candidate-event",
+            payload={"payload": "x" * (MAX_JOURNAL_RECORD_BYTES + 1)},
+        )
+
+        for event in (reused_record_id, oversized_event):
+            result = self.store.append_graph("run-1", "proposal-1", 0, (commit,), (event,))
+            self.assertIsInstance(result, StoreError)
+            self.assertEqual(StoreErrorCode.INVALID_GRAPH_BATCH, result.code)
+
+        run = self.store.get_run("run-1")
+        self.assertEqual(1, run.graph_version)
+        self.assertEqual(4, run.last_journal_position)
+        self.assertEqual(ProposalStatus.PENDING, self.store.get_proposal("run-1", "proposal-1").status)
+
     def test_audit_batch_requires_terminal_identity_and_never_accepts_commit(self):
         self.submit("proposal-1", 0)
         reject = decision("proposal-1", outcome=GovernanceOutcome.REJECT, record_id="reject")

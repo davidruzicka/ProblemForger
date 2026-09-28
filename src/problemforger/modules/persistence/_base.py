@@ -441,8 +441,6 @@ class EventStoreState:
                         new_graph_version=terminal.resulting_graph_version,
                     )
                 return self._error(StoreErrorCode.INVALID_GRAPH_BATCH, "proposal already has another terminal record")
-            if expected_graph_version != run.graph_version:
-                return VersionConflict(expected_graph_version, run.graph_version)
             all_records = (decision, *events)
             record_ids = [_record_id(record) for record in all_records]
             if any(not _valid_identifier(record_id) for record_id in record_ids):
@@ -455,6 +453,8 @@ class EventStoreState:
                 all_records, first_position=candidate.last_journal_position + 1
             ):
                 return self._error(StoreErrorCode.INVALID_GRAPH_BATCH, "graph batch exceeds the storage size limit")
+            if expected_graph_version != run.graph_version:
+                return VersionConflict(expected_graph_version, run.graph_version)
             entries = tuple(self._append(candidate, record) for record in all_records)
             candidate.graph_version = decision.resulting_graph_version
             self._save(run_id, candidate)
