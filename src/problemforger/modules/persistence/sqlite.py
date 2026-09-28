@@ -175,6 +175,8 @@ class SqliteEventStore(EventStoreState):
             "cifs",
             "ceph",
             "davfs",
+            "fuse",
+            "fuseblk",
             "fuse.sshfs",
             "glusterfs",
             "lustre",

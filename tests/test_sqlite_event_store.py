@@ -257,6 +257,7 @@ class SqliteEventStoreTests(unittest.TestCase):
         stored_record = reopened.read_journal("run-1", limit=10).records[0].record
         self.assertEqual(normalized, recovered.normalized_request)
         self.assertEqual(expected_hash, recovered.request_hash)
+        self.assertEqual(context, recovered.c_run_recovery_context)
         self.assertEqual(context, stored_record.c_run_recovery_context)
         reopened.close()
 
@@ -759,6 +760,12 @@ class SqliteEventStoreTests(unittest.TestCase):
         with patch("pathlib.Path.read_text", return_value=remote):
             with self.assertRaises(UnsupportedStoreError):
                 store._assert_supported_filesystem()
+        for filesystem in ("fuse", "fuseblk", "fuse.sshfs"):
+            with self.subTest(filesystem=filesystem):
+                mount = f"31 22 0:44 / {mount_point} rw,relatime - {filesystem} source rw\n"
+                with patch("pathlib.Path.read_text", return_value=mount):
+                    with self.assertRaises(UnsupportedStoreError):
+                        store._assert_supported_filesystem()
         with patch("pathlib.Path.read_text", return_value="malformed mount row\n"):
             with self.assertRaises(UnsupportedStoreError):
                 store._assert_supported_filesystem()

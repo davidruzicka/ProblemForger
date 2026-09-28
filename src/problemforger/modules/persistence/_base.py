@@ -596,6 +596,7 @@ class EventStoreState:
             terminal_record=terminal,
             resulting_graph_version=result_version,
             last_journal_position=last_position,
+            c_run_recovery_context=receipt.c_run_recovery_context,
         )
 
     @staticmethod

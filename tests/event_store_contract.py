@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import unittest
 
 from problemforger.core.journal import (
+    CRunRecoveryContext,
     GovernanceOutcome,
     GraphChangedEvent,
     JsonDocument,
@@ -144,6 +145,41 @@ class EventStoreContractMixin:
         )
         self.assertEqual(RecordProposalStatus.CREATED, result.status)
         return normalized, proposal_receipt
+
+    def test_proposal_snapshot_preserves_c_run_recovery_context(self):
+        context = CRunRecoveryContext(
+            manifest_hash="sha256:manifest",
+            effective_graph_intervention_identity="sha256:graph-intervention",
+            effective_governance_policy_identity="sha256:governance-policy",
+        )
+        normalized = request(0, "c-proposal")
+        proposal_receipt = ProposalReceipt(
+            metadata("c-proposal-receipt"),
+            "c-proposal",
+            normalized,
+            c_run_recovery_context=context,
+        )
+        result = self.store.record_proposal(
+            "run-1",
+            "c-proposal",
+            proposal_request_hash(normalized),
+            normalized,
+            proposal_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.CREATED, result.status)
+        self.assertIsNotNone(result.proposal)
+        self.assertEqual(context, result.proposal.c_run_recovery_context)
+        snapshot = self.store.get_proposal("run-1", "c-proposal")
+        self.assertEqual(context, snapshot.c_run_recovery_context)
+        existing = self.store.record_proposal(
+            "run-1",
+            "c-proposal",
+            proposal_request_hash(normalized),
+            normalized,
+            ProposalReceipt(metadata("ignored-receipt"), "c-proposal", normalized),
+        )
+        self.assertEqual(RecordProposalStatus.EXISTING, existing.status)
+        self.assertEqual(context, existing.proposal.c_run_recovery_context)
 
     def append_commit(
         self,

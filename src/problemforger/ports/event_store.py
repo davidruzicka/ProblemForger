@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Protocol, TypeAlias
 
 from problemforger.core.journal import (
+    CRunRecoveryContext,
     GovernanceOutcome,
     GraphChangedEvent,
     JournalEntry,
@@ -121,6 +122,7 @@ class ProposalSnapshot:
     terminal_record: MutationDecision | ProposalAbandoned | None
     resulting_graph_version: int | None
     last_journal_position: int
+    c_run_recovery_context: CRunRecoveryContext | None = None
 
     @property
     def terminal_outcome(self) -> GovernanceOutcome | None:
