@@ -282,6 +282,10 @@ class EventStoreContractMixin:
             self.store.read_journal("missing", limit=1).code,
         )
         self.assertEqual(
+            StoreErrorCode.NOT_FOUND,
+            self.store.read_journal("missing", limit=0).code,
+        )
+        self.assertEqual(
             RecordProposalStatus.NOT_FOUND,
             self.store.record_proposal(
                 "missing", "p", proposal_request_hash(normalized), normalized, proposal_receipt

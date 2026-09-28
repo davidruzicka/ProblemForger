@@ -236,6 +236,7 @@ class SqliteEventStore(EventStoreState):
             self._connection.execute("PRAGMA synchronous=FULL")
             self._verify_identity()
             self._runs = self._load_state()
+            self._verify_identity()
         except BaseException:
             self._release_resources()
             self._closed = True

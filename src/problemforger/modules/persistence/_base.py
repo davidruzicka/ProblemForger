@@ -471,17 +471,17 @@ class EventStoreState:
     ) -> JournalPage | StoreError:
         with self._lock:
             self._ensure_usable()
+            if not _valid_identifier(run_id):
+                return self._error(StoreErrorCode.INVALID_REQUEST, "run_id is required")
+            run = self._runs.get(run_id)
+            if run is None:
+                return self._error(StoreErrorCode.NOT_FOUND, "run does not exist")
             if (
                 not _valid_integer(limit, minimum=1)
                 or limit > self._max_journal_page_size
                 or (after_journal_position is not None and not _valid_integer(after_journal_position, minimum=0))
             ):
                 return self._error(StoreErrorCode.INVALID_LIMIT, "limit or cursor is outside the configured bounds")
-            if not _valid_identifier(run_id):
-                return self._error(StoreErrorCode.INVALID_REQUEST, "run_id is required")
-            run = self._runs.get(run_id)
-            if run is None:
-                return self._error(StoreErrorCode.NOT_FOUND, "run does not exist")
             cursor = 0 if after_journal_position is None else after_journal_position
             page_entries: list[JournalEntry] = []
             page_bytes = 0

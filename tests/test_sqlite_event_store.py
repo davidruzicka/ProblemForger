@@ -545,6 +545,36 @@ class SqliteEventStoreTests(unittest.TestCase):
         self.assertFalse(self.path.exists())
 
     @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
+    def test_construction_rechecks_identity_after_loading_state(self):
+        original_load_state = SqliteEventStore._load_state
+        captured_providers = []
+
+        def load_then_unlink_lock(provider):
+            runs = original_load_state(provider)
+            captured_providers.append(provider)
+            provider._lock_path.unlink()
+            return runs
+
+        try:
+            with patch.object(SqliteEventStore, "_load_state", new=load_then_unlink_lock):
+                with self.assertRaises(StoreIdentityChangedError):
+                    SqliteEventStore(self.path)
+        finally:
+            for provider in captured_providers:
+                provider.close()
+
+        self.assertEqual(1, len(captured_providers))
+        failed_provider = captured_providers[0]
+        self.assertTrue(failed_provider._closed)
+        self.assertTrue(failed_provider._poisoned)
+        self.assertIsNone(failed_provider._connection)
+        self.assertIsNone(failed_provider._owner_fd)
+        self.assertIsNone(failed_provider._path_lock_fd)
+
+        with self.open_store():
+            pass
+
+    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
     def test_write_time_identity_failures_poison_even_if_lock_is_restored(self):
         for failing_check in (2, 3):
             with self.subTest(failing_check=failing_check):
