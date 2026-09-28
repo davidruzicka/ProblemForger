@@ -69,9 +69,27 @@ class EventStoreConfigurationTests(unittest.TestCase):
                 SqliteEventStoreConfig("events.db", max_journal_page_size=limit)
         with self.assertRaises(ValueError):
             SqliteEventStoreConfig("")
-        for timeout in (0, True, -1, float("nan"), float("inf")):
-            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+        invalid_timeouts = (
+            ("zero", 0),
+            ("bool", True),
+            ("negative", -1),
+            ("nan", float("nan")),
+            ("infinity", float("inf")),
+            ("millisecond_overflow", 2_147_483.648),
+            ("large_seconds", 2_147_484),
+            ("large_float", 1e20),
+            ("huge_positive_integer", 10**1000),
+            ("huge_negative_integer", -(10**1000)),
+        )
+        for name, timeout in invalid_timeouts:
+            with self.subTest(timeout=name), self.assertRaises(ValueError):
                 SqliteEventStoreConfig("events.db", timeout_seconds=timeout)
+        self.assertEqual(
+            2_147_483.647,
+            SqliteEventStoreConfig(
+                "events.db", timeout_seconds=2_147_483.647
+            ).timeout_seconds,
+        )
         with self.assertRaises(TypeError):
             build_event_store(object())
 

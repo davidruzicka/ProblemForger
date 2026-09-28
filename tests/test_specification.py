@@ -787,7 +787,7 @@ class SpecificationChecks(unittest.TestCase):
             "```\n\nRequirements:", 1
         )[0]
         self.assertIn("record_proposal(run_id, proposal_id", contract)
-        self.assertIn("append_audit(run_id, records[], proposal_id?)", contract)
+        self.assertIn("append_audit(run_id, records[], proposal_id)", contract)
         self.assertIn("append_graph(run_id, proposal_id, expected_graph_version", contract)
         self.assertNotIn("claim_proposal(", contract)
         self.assertNotIn("renew_claim(", contract)
@@ -814,7 +814,9 @@ class SpecificationChecks(unittest.TestCase):
         )[0].split())
         for phrase in (
             "non-null `run_id` and `proposal_id`",
-            "more than one terminal record",
+            "exactly one non-`COMMIT` terminal record",
+            "does not support non-terminal run-level audit records",
+            "empty/multiple-record batches",
             "no existing terminal outcome",
             "`COMMIT` is forbidden in `append_audit`",
             "never advance `graph_version`",
@@ -825,6 +827,7 @@ class SpecificationChecks(unittest.TestCase):
             "expected graph version",
             "exactly one `COMMIT`",
             "`INVALID_GRAPH_BATCH`",
+            "No additional audit records accompany the `COMMIT`",
             "proposal receipt's recorded `expected_graph_version`",
             "current run `graph_version`",
             "increments graph version exactly once",
@@ -836,6 +839,13 @@ class SpecificationChecks(unittest.TestCase):
         self.assertNotIn("expected_owner_id", protocol)
         self.assertNotIn("expected_claim_epoch", protocol)
         self.assertNotIn("spec-protocol-lease-clock", protocol)
+
+    def test_eventstore_p1_docs_do_not_promise_generic_nonterminal_audit_records(self):
+        protocol = read("docs/protocol.md")
+        modules = read("docs/modules.md")
+        self.assertNotIn("Non-terminal-only audit batches", protocol)
+        self.assertNotIn("Accompanying non-terminal audit records", protocol)
+        self.assertNotIn("non-terminal run records may omit it", modules)
 
     def test_stale_proposals_conflict_before_policy_and_terminal_append(self):
         protocol = " ".join(read("docs/protocol.md").split())

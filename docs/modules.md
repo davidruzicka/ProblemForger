@@ -131,7 +131,7 @@ record_proposal(run_id, proposal_id, request_hash, normalized_request, receipt_r
                             last_journal_position}
     | NOT_FOUND
 
-append_audit(run_id, records[], proposal_id?)
+append_audit(run_id, records[], proposal_id)
     -> {last_journal_position, persisted_records}
     | INVALID_AUDIT_BATCH
     | NOT_FOUND
@@ -160,8 +160,8 @@ Requirements:
 - `record_proposal` returns `IDEMPOTENCY_CONFLICT` with the stored and supplied canonical request hashes when an existing `(run_id, proposal_id)` has a different request hash; it does not evaluate or mutate the proposal;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;
 - obey [STORE-OWNER](protocol.md#spec-protocol-store-owner); service startup refuses a second owner before state access;
-- `append_audit` requires `run_id`; terminal records require the matching `proposal_id`, while non-terminal run records may omit it. `INVALID_AUDIT_BATCH` reports invalid arguments/record binding, multiple terminal records, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically. `COMMIT` is exclusive to `append_graph`;
-- P1 defines no generic run-level audit record. Proposal receipts enter through `record_proposal`, which owns atomic proposal-ID registration. P1 `append_audit` records one terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED` record; it does not accept receipts or graph events;
+- P1 `append_audit` accepts exactly one non-`COMMIT` terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED` record and requires its matching `run_id` and `proposal_id`. It does not support generic non-terminal run-level audit records; proposal receipts enter through `record_proposal`, which owns atomic proposal-ID registration. `INVALID_AUDIT_BATCH` reports invalid arguments, identity/request binding, storage bounds, or a forbidden `COMMIT`; enforce [terminal append binding](protocol.md#terminal-append-binding) atomically;
+- `append_graph` accepts exactly one `COMMIT` audit record and one or more graph events; P1 does not allow additional accompanying audit records. It does not accept proposal receipts;
 - finalizing a non-commit candidate rechecks the stored expected graph version against the current run version in the same write transaction. If stale, persist a `CONFLICT` record with the observed graph version instead of the candidate policy outcome. Return the effective persisted record so the service can return the outcome that actually committed;
 - `get_proposal` returns one consistent read snapshot of the durable normalized request, lifecycle status, and terminal outcome (nullable until terminal). Resulting graph version and last journal position belong to the recorded terminal response when final, not the run's subsequently advanced head. Before finalization, return the proposal's latest recorded position and no terminal resulting version. Recovery reads grant no mutation authority. Bound stored request/response sizes under the service payload limits and use immutable references for larger evidence. Internal recovery data is not automatically exposed by worker-facing queries;
 - reject malformed `append_graph` batches with `INVALID_GRAPH_BATCH` under [graph append binding](protocol.md#graph-append-binding), without partial writes;
@@ -273,6 +273,7 @@ Rules:
 - provider configuration is validated before construction;
 - a provider receives only its own typed config;
 - provider-specific settings do not appear in domain types;
+- `SqliteEventStoreConfig.timeout_seconds` is positive and no greater than `2_147_483.647` seconds, the signed 32-bit millisecond limit used by SQLite's busy-timeout API;
 - secrets are never serialized into graph/domain events;
 - effective experiment configuration can be exported with secrets redacted;
 - provider creation is centralized in the composition root;

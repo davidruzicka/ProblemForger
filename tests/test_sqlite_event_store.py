@@ -910,6 +910,25 @@ class SqliteEventStoreTests(unittest.TestCase):
         for timeout in (float("nan"), float("inf")):
             with self.subTest(timeout=timeout), self.assertRaises(ValueError):
                 SqliteEventStore(self.path, timeout_seconds=timeout)
+        invalid_timeouts = (
+            ("millisecond_overflow", 2_147_483.648),
+            ("large_seconds", 2_147_484),
+            ("large_float", 1e20),
+            ("huge_positive_integer", 10**1000),
+            ("huge_negative_integer", -(10**1000)),
+        )
+        for name, timeout in invalid_timeouts:
+            with self.subTest(timeout=name), self.assertRaises(ValueError):
+                SqliteEventStore(self.path, timeout_seconds=timeout)
+        self.assertFalse(self.path.exists())
+        self.assertFalse(
+            self.path.with_name(f".{self.path.name}.problemforger.lock").exists()
+        )
+        with SqliteEventStore(self.path, timeout_seconds=2_147_483.647) as store:
+            busy_timeout_ms = store._connection.execute(
+                "PRAGMA busy_timeout"
+            ).fetchone()[0]
+            self.assertEqual(2_147_483_647, busy_timeout_ms)
         with self.open_store() as entered:
             self.assertIsInstance(entered, SqliteEventStore)
         store = self.open_store()

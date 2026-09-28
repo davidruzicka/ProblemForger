@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-import math
 import os
 from pathlib import Path
 
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
 from problemforger.modules.persistence._base import DEFAULT_MAX_JOURNAL_PAGE_SIZE
+from problemforger.modules.persistence.sqlite import (
+    _normalize_timeout_seconds,
+)
 from problemforger.ports.event_store import EventStore
 
 
@@ -54,13 +56,9 @@ class SqliteEventStoreConfig:
                 "max_journal_page_size must be a positive integer no greater than "
                 f"{DEFAULT_MAX_JOURNAL_PAGE_SIZE}"
             )
-        if (
-            isinstance(self.timeout_seconds, bool)
-            or not isinstance(self.timeout_seconds, (int, float))
-            or not math.isfinite(self.timeout_seconds)
-            or self.timeout_seconds <= 0
-        ):
-            raise ValueError("timeout_seconds must be positive")
+        object.__setattr__(
+            self, "timeout_seconds", _normalize_timeout_seconds(self.timeout_seconds)
+        )
 
 
 EventStoreConfig = MemoryEventStoreConfig | SqliteEventStoreConfig

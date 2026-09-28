@@ -27,6 +27,29 @@ from ._base import (
     _RunState,
 )
 
+SQLITE_BUSY_TIMEOUT_MAX_MS = (1 << 31) - 1
+MAX_SQLITE_TIMEOUT_SECONDS = SQLITE_BUSY_TIMEOUT_MAX_MS / 1000
+
+
+def _normalize_timeout_seconds(timeout_seconds: object) -> float:
+    error_message = (
+        "timeout_seconds must be finite, positive, and no greater than "
+        f"{MAX_SQLITE_TIMEOUT_SECONDS}"
+    )
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+        raise ValueError(error_message)
+    try:
+        normalized = float(timeout_seconds)
+    except OverflowError as error:
+        raise ValueError(error_message) from error
+    if (
+        not math.isfinite(normalized)
+        or normalized <= 0
+        or normalized > MAX_SQLITE_TIMEOUT_SECONDS
+    ):
+        raise ValueError(error_message)
+    return normalized
+
 
 _SCHEMA_DEFINITIONS = (
     (
@@ -168,17 +191,11 @@ class SqliteEventStore(EventStoreState):
         max_journal_page_size: int = DEFAULT_MAX_JOURNAL_PAGE_SIZE,
         timeout_seconds: float = 5.0,
     ) -> None:
+        timeout_seconds = _normalize_timeout_seconds(timeout_seconds)
         super().__init__(
             durability=StoreDurability.DURABLE,
             max_journal_page_size=max_journal_page_size,
         )
-        if (
-            isinstance(timeout_seconds, bool)
-            or not isinstance(timeout_seconds, (int, float))
-            or not math.isfinite(timeout_seconds)
-            or timeout_seconds <= 0
-        ):
-            raise ValueError("timeout_seconds must be positive")
         raw_path = os.fspath(path)
         if raw_path == ":memory:" or raw_path.startswith("file:"):
             raise UnsupportedStoreError("SQLite EventStore requires a filesystem path")

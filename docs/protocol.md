@@ -186,17 +186,13 @@ provider summaries must not invent a claim API before that extension exists.
 
 #### Terminal append binding
 
-`run_id` is required for every audit batch, including non-terminal-only batches.
-
-A batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or
-`ABANDONED` requires non-null `run_id` and `proposal_id`. The terminal record
-must explicitly reference the supplied `(run_id, proposal_id)`. Reject
-missing/null arguments, mismatched terminal record identity, or more than one
-terminal record (including duplicates for the same proposal) with
-`INVALID_AUDIT_BATCH` before writing any record.
-Non-terminal records may accompany one terminal record, but validation applies
-to the complete batch: rejection of the entire batch leaves the journal and
-proposal state unchanged.
+In P1, `append_audit` accepts exactly one non-`COMMIT` terminal record:
+`REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`. It requires non-null
+`run_id` and `proposal_id`, and the record must explicitly reference that same
+`(run_id, proposal_id)`. P1 does not support non-terminal run-level audit
+records or accompanying records in `append_audit`. Reject missing/null
+arguments, mismatched terminal identity, or empty/multiple-record batches with
+`INVALID_AUDIT_BATCH` before writing.
 
 Resolve authority from the owning service and the stored receipt for the
 supplied `(run_id, proposal_id)`, not from caller-supplied worker metadata. In
@@ -208,8 +204,8 @@ success, atomically append the records and finalize the proposal state.
 `COMMIT` is forbidden in `append_audit` and returns `INVALID_AUDIT_BATCH`; its
 decision and graph events are persisted exclusively through `append_graph`, with
 the same proposal binding and single-terminal checks plus the graph-version
-check. Non-terminal-only audit batches require no proposal and never advance
-`graph_version`; non-commit terminal appends also leave it unchanged.
+check. Audit appends never advance `graph_version`; non-commit terminal appends
+leave it unchanged.
 
 For P1, proposal receipts use `record_proposal`; `append_audit` accepts one
 terminal record per call because no generic non-terminal run-level record type
@@ -238,11 +234,8 @@ instead, as required by ADR 0006.
 version. Its audit records contain exactly one `COMMIT`
 bound to the supplied `(run_id, proposal_id)` and no other terminal outcome,
 including `ABANDONED`. Its graph events contain at least one event, all bound
-to that same run/proposal. An empty mutation is not a graph-version advance.
-Accompanying non-terminal audit records must reference the supplied run;
-if proposal-scoped, they must reference the same proposal. Run-level audit
-records may omit proposal identity. The same accompanying-record binding
-applies to terminal `append_audit` batches.
+to that same run/proposal. No additional audit records accompany the `COMMIT`
+in P1. An empty mutation is not a graph-version advance.
 
 Validate the whole graph batch before any write. Missing/null required fields,
 invalid structure, mismatched identities, absent/duplicate `COMMIT`, another
