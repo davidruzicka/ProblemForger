@@ -443,6 +443,8 @@ class SqliteEventStoreTests(unittest.TestCase):
         store = self.open_store()
         self._create_run(store)
         replacement = self.path.with_name("replacement.db")
+        original = self.path.with_name("original.db")
+        os.replace(self.path, original)
         connection = sqlite3.connect(replacement)
         connection.close()
         os.replace(replacement, self.path)
@@ -450,16 +452,65 @@ class SqliteEventStoreTests(unittest.TestCase):
             store.current_graph_version("run-1")
         with self.assertRaises(StoreInUseError):
             SqliteEventStore(self.path)
+        os.replace(original, self.path)
+        with self.assertRaises(StoreClosedError):
+            store.current_graph_version("run-1")
         store.close()
 
         store = SqliteEventStore(self.path)
         lock_path = self.path.with_name(f".{self.path.name}.problemforger.lock")
         lock_replacement = lock_path.with_suffix(".replacement")
+        original_lock = lock_path.with_suffix(".original")
+        os.replace(lock_path, original_lock)
         lock_replacement.write_text("replacement", encoding="utf-8")
         os.replace(lock_replacement, lock_path)
         with self.assertRaises(StoreIdentityChangedError):
             store.current_graph_version("run-1")
+        os.replace(original_lock, lock_path)
+        with self.assertRaises(StoreClosedError):
+            store.current_graph_version("run-1")
         store.close()
+
+    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
+    def test_write_time_identity_failures_poison_even_if_lock_is_restored(self):
+        for failing_check in (2, 3):
+            with self.subTest(failing_check=failing_check):
+                path = Path(self.temporary.name) / f"write-identity-{failing_check}.db"
+                lock_path = path.with_name(f".{path.name}.problemforger.lock")
+                store = SqliteEventStore(path)
+                self._create_run(store)
+                next_run_metadata = RunMetadata.from_value({"source": "identity-test"})
+                original_verify = store._verify_identity
+                check_count = 0
+
+                def replace_lock_during_check():
+                    nonlocal check_count
+                    check_count += 1
+                    if check_count != failing_check:
+                        return original_verify()
+                    backup = lock_path.with_suffix(".during-check")
+                    os.replace(lock_path, backup)
+                    try:
+                        original_verify()
+                    finally:
+                        os.replace(backup, lock_path)
+
+                with patch.object(store, "_verify_identity", new=replace_lock_during_check):
+                    try:
+                        with self.assertRaises(StoreIdentityChangedError):
+                            store.create_run("write-after-replacement", next_run_metadata)
+                        with self.assertRaises(StoreClosedError):
+                            store.get_run("run-1")
+                        with self.assertRaises(StoreClosedError):
+                            store.create_run("write-after-replacement", next_run_metadata)
+                    finally:
+                        store.close()
+                reopened = SqliteEventStore(path)
+                self.assertEqual(
+                    StoreErrorCode.NOT_FOUND,
+                    reopened.get_run("write-after-replacement").code,
+                )
+                reopened.close()
 
     @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
     def test_competing_process_opens_have_exactly_one_owner(self):
@@ -829,8 +880,12 @@ class SqliteEventStoreTests(unittest.TestCase):
         self._submit(store, "corrupt")
         store.close()
         connection = sqlite3.connect(self.path)
+        trigger_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'journal_reject_update'"
+        ).fetchone()[0]
         connection.execute("DROP TRIGGER journal_reject_update")
         connection.execute("UPDATE journal SET record_json = '{}' WHERE journal_position = 1")
+        connection.execute(trigger_sql)
         connection.commit()
         connection.close()
         with self.assertRaises(ValueError):
@@ -860,6 +915,49 @@ class SqliteEventStoreTests(unittest.TestCase):
         }
         connection.close()
         self.assertEqual({"store_info"}, names)
+
+    def test_incomplete_schema_is_rejected_without_repair_or_journal_mode_change(self):
+        schema_damage = {
+            "runs": ("DROP TABLE runs",),
+            "journal": ("DROP TABLE journal",),
+            "both_tables": ("DROP TABLE journal", "DROP TABLE runs"),
+            "update_trigger": ("DROP TRIGGER journal_reject_update",),
+            "delete_trigger": ("DROP TRIGGER journal_reject_delete",),
+            "mismatched_update_trigger": (
+                "DROP TRIGGER journal_reject_update",
+                "CREATE TRIGGER journal_reject_update BEFORE UPDATE ON journal BEGIN SELECT 1; END",
+            ),
+        }
+        for corruption, statements in schema_damage.items():
+            with self.subTest(corruption=corruption):
+                path = Path(self.temporary.name) / f"incomplete-{corruption}.db"
+                store = SqliteEventStore(path)
+                store.create_run("run-1", RunMetadata.from_value({"source": "schema-test"}))
+                self._submit(store, f"schema-{corruption}")
+                store.close()
+
+                connection = sqlite3.connect(path)
+                self.assertEqual("wal", connection.execute("PRAGMA journal_mode=WAL").fetchone()[0])
+                for statement in statements:
+                    connection.execute(statement)
+                connection.commit()
+                before = connection.execute(
+                    "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                    "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+                ).fetchall()
+                connection.close()
+
+                with self.assertRaises(UnsupportedStoreError):
+                    SqliteEventStore(path)
+
+                connection = sqlite3.connect(path)
+                self.assertEqual("wal", connection.execute("PRAGMA journal_mode").fetchone()[0])
+                after = connection.execute(
+                    "SELECT type, name, tbl_name, sql FROM sqlite_master "
+                    "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+                ).fetchall()
+                connection.close()
+                self.assertEqual(before, after)
 
     def test_corrupt_run_metadata_headers_and_orphan_journal_rows_are_rejected(self):
         corruptions = (

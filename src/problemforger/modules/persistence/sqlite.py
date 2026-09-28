@@ -27,6 +27,66 @@ from ._base import (
 )
 
 
+_SCHEMA_DEFINITIONS = (
+    (
+        "table",
+        "store_info",
+        "store_info",
+        """CREATE TABLE store_info (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                schema_version INTEGER NOT NULL
+            )""",
+    ),
+    (
+        "table",
+        "runs",
+        "runs",
+        """CREATE TABLE runs (
+                run_id TEXT PRIMARY KEY,
+                metadata_json TEXT NOT NULL,
+                metadata_hash TEXT NOT NULL,
+                graph_version INTEGER NOT NULL CHECK (graph_version >= 0),
+                last_journal_position INTEGER NOT NULL CHECK (last_journal_position >= 0)
+            )""",
+    ),
+    (
+        "table",
+        "journal",
+        "journal",
+        """CREATE TABLE journal (
+                run_id TEXT NOT NULL REFERENCES runs(run_id),
+                journal_position INTEGER NOT NULL CHECK (journal_position > 0),
+                record_id TEXT NOT NULL,
+                record_json TEXT NOT NULL,
+                PRIMARY KEY (run_id, journal_position),
+                UNIQUE (run_id, record_id)
+            )""",
+    ),
+    (
+        "trigger",
+        "journal_reject_update",
+        "journal",
+        """CREATE TRIGGER journal_reject_update
+            BEFORE UPDATE ON journal BEGIN
+                SELECT RAISE(ABORT, 'journal is append-only');
+            END""",
+    ),
+    (
+        "trigger",
+        "journal_reject_delete",
+        "journal",
+        """CREATE TRIGGER journal_reject_delete
+            BEFORE DELETE ON journal BEGIN
+                SELECT RAISE(ABORT, 'journal is append-only');
+            END""",
+    ),
+)
+
+
+def _normalized_schema_sql(sql: str) -> str:
+    return " ".join(sql.split()).rstrip(";")
+
+
 class StoreInUseError(RuntimeError):
     """Another live provider owns this store."""
 
@@ -242,6 +302,13 @@ class SqliteEventStore(EventStoreState):
             raise StoreInUseError("SQLite EventStore already has a live owner") from error
 
     def _verify_identity(self) -> None:
+        try:
+            self._check_identity()
+        except StoreIdentityChangedError:
+            self._poisoned = True
+            raise
+
+    def _check_identity(self) -> None:
         if self._owner_fd is None or self._path_lock_fd is None:
             if self._closed or self._forked:
                 return
@@ -268,9 +335,12 @@ class SqliteEventStore(EventStoreState):
     def _initialize_schema(self) -> None:
         connection = self._connection
         assert connection is not None
-        store_info = connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'store_info'"
-        ).fetchone()
+        objects = connection.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master "
+            "WHERE name NOT GLOB 'sqlite_*'"
+        ).fetchall()
+        object_map = {(row["type"], row["name"]): row for row in objects}
+        store_info = object_map.get(("table", "store_info"))
         if store_info is not None:
             try:
                 row = connection.execute(
@@ -280,52 +350,32 @@ class SqliteEventStore(EventStoreState):
                 raise UnsupportedStoreError("invalid SQLite EventStore schema metadata") from error
             if row is None or row["schema_version"] != 1:
                 raise UnsupportedStoreError("unsupported SQLite EventStore schema version")
-        else:
-            existing_objects = connection.execute(
-                "SELECT name FROM sqlite_master WHERE type IN ('table', 'view', 'trigger', 'index') "
-                "AND name NOT LIKE 'sqlite_%'"
-            ).fetchall()
-            if existing_objects:
-                raise UnsupportedStoreError("database does not contain recognized EventStore schema metadata")
+
+            expected_objects = {
+                (kind, name): (table_name, _normalized_schema_sql(sql))
+                for kind, name, table_name, sql in _SCHEMA_DEFINITIONS
+            }
+            if object_map.keys() != expected_objects.keys():
+                raise UnsupportedStoreError("incomplete or unrecognized SQLite EventStore schema")
+            for key, (table_name, expected_sql) in expected_objects.items():
+                actual = object_map[key]
+                if (
+                    actual["tbl_name"] != table_name
+                    or actual["sql"] is None
+                    or _normalized_schema_sql(actual["sql"]) != expected_sql
+                ):
+                    raise UnsupportedStoreError("incomplete or unrecognized SQLite EventStore schema")
+            return
+        if objects:
+            raise UnsupportedStoreError("database does not contain recognized EventStore schema metadata")
+
+        schema_sql = ";\n".join(sql for _, _, _, sql in _SCHEMA_DEFINITIONS)
         connection.executescript(
-            """
-            BEGIN IMMEDIATE;
-            CREATE TABLE IF NOT EXISTS store_info (
-                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-                schema_version INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS runs (
-                run_id TEXT PRIMARY KEY,
-                metadata_json TEXT NOT NULL,
-                metadata_hash TEXT NOT NULL,
-                graph_version INTEGER NOT NULL CHECK (graph_version >= 0),
-                last_journal_position INTEGER NOT NULL CHECK (last_journal_position >= 0)
-            );
-            CREATE TABLE IF NOT EXISTS journal (
-                run_id TEXT NOT NULL REFERENCES runs(run_id),
-                journal_position INTEGER NOT NULL CHECK (journal_position > 0),
-                record_id TEXT NOT NULL,
-                record_json TEXT NOT NULL,
-                PRIMARY KEY (run_id, journal_position),
-                UNIQUE (run_id, record_id)
-            );
-            CREATE TRIGGER IF NOT EXISTS journal_reject_update
-            BEFORE UPDATE ON journal BEGIN
-                SELECT RAISE(ABORT, 'journal is append-only');
-            END;
-            CREATE TRIGGER IF NOT EXISTS journal_reject_delete
-            BEFORE DELETE ON journal BEGIN
-                SELECT RAISE(ABORT, 'journal is append-only');
-            END;
-            INSERT OR IGNORE INTO store_info(singleton, schema_version) VALUES (1, 1);
-            COMMIT;
-            """
+            "BEGIN IMMEDIATE;\n"
+            f"{schema_sql};\n"
+            "INSERT INTO store_info(singleton, schema_version) VALUES (1, 1);\n"
+            "COMMIT;"
         )
-        row = connection.execute(
-            "SELECT schema_version FROM store_info WHERE singleton = 1"
-        ).fetchone()
-        if row is None or row["schema_version"] != 1:
-            raise UnsupportedStoreError("unsupported SQLite EventStore schema version")
 
     def _recover_after_persist_error(self, run_id: str) -> None:
         try:
