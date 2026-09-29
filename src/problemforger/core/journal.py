@@ -382,6 +382,26 @@ class ProposalAbandoned:
         _require_identifier(self.reason_code, "reason_code")
 
 
+@dataclass(frozen=True, slots=True)
+class NonTerminalAuditRecord:
+    """An opaque audit observation that does not finalize a proposal or graph."""
+
+    metadata: RecordMetadata
+    audit_type: str
+    payload: JsonDocument
+    proposal_id: ProposalId | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.metadata, RecordMetadata):
+            raise TypeError("metadata must be RecordMetadata")
+        _require_identifier(self.audit_type, "audit_type")
+        if self.proposal_id is not None:
+            _require_identifier(self.proposal_id, "proposal_id")
+        if not isinstance(self.payload, JsonDocument):
+            raise TypeError("payload must be a JsonDocument")
+        _require_object(self.payload.value, "audit payload")
+
+
 def proposal_status(
     receipt: ProposalReceipt,
     terminal_record: MutationDecision | ProposalAbandoned | None = None,
@@ -437,7 +457,11 @@ class GraphChangedEvent:
 
 
 JournalRecord: TypeAlias = (
-    ProposalReceipt | MutationDecision | ProposalAbandoned | GraphChangedEvent
+    ProposalReceipt
+    | MutationDecision
+    | ProposalAbandoned
+    | NonTerminalAuditRecord
+    | GraphChangedEvent
 )
 
 
@@ -483,7 +507,13 @@ class JournalEntry:
         _require_integer(self.journal_position, "journal_position", minimum=1)
         if not isinstance(
             self.record,
-            (ProposalReceipt, MutationDecision, ProposalAbandoned, GraphChangedEvent),
+            (
+                ProposalReceipt,
+                MutationDecision,
+                ProposalAbandoned,
+                NonTerminalAuditRecord,
+                GraphChangedEvent,
+            ),
         ):
             raise TypeError("record must be a supported JournalRecord")
 
@@ -568,6 +598,14 @@ def _record_to_value(record: JournalRecord) -> dict[str, Any]:
             "proposal_id": record.proposal_id,
             "request_hash": record.request_hash,
             "reason_code": record.reason_code,
+        }
+    if isinstance(record, NonTerminalAuditRecord):
+        return {
+            "record_type": "non_terminal_audit",
+            **base,
+            "proposal_id": record.proposal_id,
+            "audit_type": record.audit_type,
+            "payload": record.payload.value,
         }
     if isinstance(record, GraphChangedEvent):
         return {
@@ -668,6 +706,7 @@ def _record_from_value(value: Any) -> JournalRecord:
             "details",
         },
         "proposal_abandoned": {"proposal_id", "request_hash", "reason_code"},
+        "non_terminal_audit": {"proposal_id", "audit_type", "payload"},
         "graph_changed": {
             "proposal_id",
             "graph_version",
@@ -712,6 +751,16 @@ def _record_from_value(value: Any) -> JournalRecord:
             proposal_id=ProposalId(data["proposal_id"]),
             request_hash=RequestHash(data["request_hash"]),
             reason_code=data["reason_code"],
+        )
+
+    if record_type == "non_terminal_audit":
+        return NonTerminalAuditRecord(
+            metadata=metadata,
+            audit_type=data["audit_type"],
+            payload=JsonDocument.from_value(data["payload"]),
+            proposal_id=(
+                None if data["proposal_id"] is None else ProposalId(data["proposal_id"])
+            ),
         )
 
     return GraphChangedEvent(

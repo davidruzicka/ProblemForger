@@ -13,6 +13,7 @@ from problemforger.core.journal import (
     JournalEntry,
     JsonDocument,
     MutationDecision,
+    NonTerminalAuditRecord,
     NormalizedMutationRequest,
     ProposalAbandoned,
     ProposalId,
@@ -22,6 +23,9 @@ from problemforger.core.journal import (
     RunId,
     VersionConflict,
 )
+
+
+AuditRecord: TypeAlias = NonTerminalAuditRecord | MutationDecision | ProposalAbandoned
 
 
 class StoreDurability(str, Enum):
@@ -199,7 +203,7 @@ class EventStore(Protocol):
     def append_audit(
         self,
         run_id: str,
-        records: tuple[MutationDecision | ProposalAbandoned, ...],
+        records: tuple[AuditRecord, ...],
         proposal_id: str | None = None,
     ) -> AppendResult | StoreError: ...
 

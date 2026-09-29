@@ -13,6 +13,7 @@ from problemforger.core.journal import (
     JournalEntry,
     JsonDocument,
     MutationDecision,
+    NonTerminalAuditRecord,
     NormalizedMutationRequest,
     ProposalAbandoned,
     ProposalReceipt,
@@ -95,6 +96,15 @@ def graph_event(*, record_id="event-1", proposal_id="proposal-1", version=1):
         event_type="node.added",
         event_schema_version=1,
         payload=JsonDocument.from_value({"node_id": "node-1"}),
+    )
+
+
+def audit_record(*, record_id="audit-1", proposal_id=None, payload=None):
+    return NonTerminalAuditRecord(
+        metadata=metadata(record_id),
+        proposal_id=proposal_id,
+        audit_type="policy.observation",
+        payload=JsonDocument.from_value(payload or {"source": "journal-test"}),
     )
 
 
@@ -664,6 +674,16 @@ class JournalValueTests(unittest.TestCase):
                 event_schema_version=1,
                 payload=JsonDocument.from_value({}),
             )
+
+    def test_nonterminal_audit_record_round_trips_with_nullable_proposal_scope(self):
+        for record in (audit_record(), audit_record(record_id="scoped-audit", proposal_id="proposal-1")):
+            with self.subTest(proposal_id=record.proposal_id):
+                entry = JournalEntry(1, record)
+                self.assertEqual(entry, deserialize_entry(serialize_entry(entry)))
+
+        wire = json.loads(serialize_entry(JournalEntry(1, audit_record())))
+        self.assertEqual("non_terminal_audit", wire["record"]["record_type"])
+        self.assertIsNone(wire["record"]["proposal_id"])
 
 
 if __name__ == "__main__":

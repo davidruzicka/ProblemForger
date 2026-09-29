@@ -9,6 +9,7 @@ from problemforger.core.journal import (
     GraphChangedEvent,
     JsonDocument,
     MutationDecision,
+    NonTerminalAuditRecord,
     NormalizedMutationRequest,
     ProposalAbandoned,
     ProposalReceipt,
@@ -114,6 +115,22 @@ def graph_event(
         event_type="node.added",
         event_schema_version=1,
         payload=JsonDocument.from_value(payload or {"node_id": proposal_id}),
+    )
+
+
+def audit_record(
+    record_id: str,
+    *,
+    run_id: str = "run-1",
+    proposal_id: str | None = None,
+    audit_type: str = "policy.observation",
+    payload: dict[str, object] | None = None,
+) -> NonTerminalAuditRecord:
+    return NonTerminalAuditRecord(
+        metadata=metadata(record_id, run_id),
+        proposal_id=proposal_id,
+        audit_type=audit_type,
+        payload=JsonDocument.from_value(payload or {"source": "contract"}),
     )
 
 
@@ -693,6 +710,88 @@ class EventStoreContractMixin:
             StoreErrorCode.INVALID_AUDIT_BATCH,
             self.store.append_audit("run-1", (duplicate_record_id,), "proposal-1").code,
         )
+        self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
+
+    def test_nonterminal_audits_append_independently_without_advancing_graph_version(self):
+        first = audit_record("audit-1", payload={"step": 1})
+        second = audit_record("audit-2", payload={"step": 2})
+
+        result = self.store.append_audit("run-1", (first, second))
+
+        self.assertIsInstance(result, AppendResult)
+        self.assertEqual((1, 2), tuple(entry.journal_position for entry in result.entries))
+        self.assertEqual((first, second), tuple(entry.record for entry in result.entries))
+        self.assertIsNone(result.terminal_record)
+        self.assertFalse(result.replayed)
+        self.assertEqual(0, result.new_graph_version)
+        self.assertEqual(0, self.store.current_graph_version("run-1"))
+        self.assertEqual(2, self.store.get_run("run-1").last_journal_position)
+        page = self.store.read_journal("run-1", limit=10)
+        self.assertEqual((first, second), tuple(entry.record for entry in page.records))
+
+    def test_scoped_nonterminal_audits_bind_without_finalizing_and_are_atomic(self):
+        self.submit("scoped", 0)
+        first = audit_record("scoped-audit-1", proposal_id="scoped", payload={"step": 1})
+        second = audit_record("scoped-audit-2", proposal_id="scoped", payload={"step": 2})
+
+        result = self.store.append_audit("run-1", (first, second), "scoped")
+
+        self.assertIsInstance(result, AppendResult)
+        self.assertEqual((2, 3), tuple(entry.journal_position for entry in result.entries))
+        self.assertEqual(0, result.new_graph_version)
+        pending = self.store.get_proposal("run-1", "scoped")
+        self.assertEqual(ProposalStatus.PENDING, pending.status)
+        self.assertEqual(3, pending.last_journal_position)
+
+        invalid_scope = self.store.append_audit(
+            "run-1",
+            (audit_record("wrong-scope", proposal_id="other"),),
+            "scoped",
+        )
+        self.assertEqual(StoreErrorCode.INVALID_AUDIT_BATCH, invalid_scope.code)
+        self.assertEqual(3, self.store.get_run("run-1").last_journal_position)
+
+        rejected = decision(
+            "scoped",
+            outcome=GovernanceOutcome.REJECT,
+            expected_version=0,
+            record_id="scoped-reject",
+        )
+        self.assertIsInstance(self.store.append_audit("run-1", (rejected,), "scoped"), AppendResult)
+        after_terminal = self.store.append_audit(
+            "run-1",
+            (audit_record("scoped-audit-after-terminal", proposal_id="scoped"),),
+            "scoped",
+        )
+        self.assertIsInstance(after_terminal, AppendResult)
+        self.assertEqual(5, self.store.get_run("run-1").last_journal_position)
+        finalized = self.store.get_proposal("run-1", "scoped")
+        self.assertEqual(4, finalized.last_journal_position)
+
+    def test_nonterminal_audit_batches_reject_mixed_scope_and_terminal_records_without_writes(self):
+        self.submit("scoped", 0)
+        run_level = audit_record("run-level")
+        scoped = audit_record("scoped-audit", proposal_id="scoped")
+        terminal = decision(
+            "scoped",
+            outcome=GovernanceOutcome.REJECT,
+            expected_version=0,
+            record_id="scoped-reject",
+        )
+        invalid = (
+            self.store.append_audit("run-1", (run_level,), "scoped"),
+            self.store.append_audit("run-1", (scoped,)),
+            self.store.append_audit("run-1", (scoped, terminal), "scoped"),
+            self.store.append_audit("run-1", (audit_record("duplicate-a"), audit_record("duplicate-a"))),
+            self.store.append_audit("run-1", (audit_record("scoped-receipt"),)),
+            self.store.append_audit("run-1", (audit_record("wrong-run", run_id="other"),)),
+            self.store.append_audit(
+                "run-1",
+                (audit_record("oversized", payload={"payload": "x" * (MAX_JOURNAL_RECORD_BYTES + 1)}),),
+            ),
+        )
+        for result in invalid:
+            self.assertEqual(StoreErrorCode.INVALID_AUDIT_BATCH, result.code)
         self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
 
     def test_unknown_proposal_precedes_audit_batch_validation(self):

@@ -23,7 +23,7 @@ Initial operations should cover:
 - attach/reference evidence through a governed mutation for explicit `run_id`;
 - query a mutation proposal by explicit `(run_id, proposal_id)`;
 - retrieve/replay the resulting governor decision;
-- read a bounded durable governance/audit timeline for a run, ordered by `journal_position`, so observers can inspect proposal receipts and non-commit outcomes without relying on optional telemetry.
+- read a bounded durable governance/audit timeline for a run, ordered by `journal_position`, so observers can inspect proposal receipts, independent audit records, and non-commit outcomes without relying on optional telemetry.
 
 All run-scoped v1 commands and queries carry `run_id` explicitly. There is no ambient/session-selected run context in the domain/application protocol; a transport may maintain connections or sessions, but it must not infer or override the target run. Missing/unknown/mismatched `run_id` is an explicit protocol error.
 
@@ -214,22 +214,36 @@ protocol/ADR decision, and dedicated concurrency tests. The operation
 signatures remain owned by the [EventStore port](modules.md#spec-modules-eventstore-port);
 provider summaries must not invent a claim API before that extension exists.
 
-#### Terminal append binding
+#### Terminal and independent audit append binding
 
-In P1, `append_audit` accepts exactly one non-`COMMIT` terminal record:
-`REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`. It requires non-null
-`run_id` and `proposal_id`, and the record must explicitly reference that same
-`(run_id, proposal_id)`. P1 does not support non-terminal run-level audit
-records or accompanying records in `append_audit`. Reject missing/null
-arguments, mismatched terminal identity, or empty/multiple-record batches with
-`INVALID_AUDIT_BATCH` before writing.
+In P1, `append_audit` accepts two disjoint batch shapes. A non-terminal batch
+contains one or more `non_terminal_audit` records. A run-scoped batch omits
+`proposal_id` and every record omits proposal scope. A proposal-scoped batch
+supplies an existing `proposal_id` and every record references that same stored
+receipt; the association does not finalize the proposal or compare graph
+versions. Non-terminal records may be appended before or after a proposal's
+terminal outcome.
 
-Resolve authority from the owning service and the stored receipt for the
-supplied `(run_id, proposal_id)`, not from caller-supplied worker metadata. In
-one transaction, validate the complete batch and require that the proposal has
-no existing terminal outcome. An unknown run/proposal returns `NOT_FOUND`; an
-already-finalized proposal is replayed or rejected without a second write. On
-success, atomically append the records and finalize the proposal state.
+The second shape contains exactly one non-`COMMIT` terminal record: `REJECT`,
+`RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`. It requires non-null `run_id`
+and `proposal_id`, and the record must explicitly reference that same
+`(run_id, proposal_id)`. P1 rejects empty or mixed terminal/non-terminal
+batches, proposal receipts, graph events, and `COMMIT` through `append_audit`.
+Reject missing/null arguments, mismatched identity, duplicate record IDs, or
+storage-limit violations with `INVALID_AUDIT_BATCH` before writing.
+
+Validate a complete non-terminal batch before any write, preserve its input
+order, and assign consecutive journal positions atomically. Independent audit
+appends never advance `graph_version`, even when a scoped proposal is stale;
+`AppendResult.new_graph_version` reports the unchanged current version.
+
+For the terminal shape, resolve authority from the owning service and the
+stored receipt for the supplied `(run_id, proposal_id)`, not from
+caller-supplied worker metadata. In one transaction, validate the complete
+batch and require that the proposal has no existing terminal outcome. An
+unknown run/proposal returns `NOT_FOUND`; an already-finalized proposal is
+replayed or rejected without a second write. On success, atomically append the
+record and finalize the proposal state.
 
 `COMMIT` is forbidden in `append_audit` and returns `INVALID_AUDIT_BATCH`; its
 decision and graph events are persisted exclusively through `append_graph`, with
@@ -237,10 +251,9 @@ the same proposal binding and single-terminal checks plus the graph-version
 check. Audit appends never advance `graph_version`; non-commit terminal appends
 leave it unchanged.
 
-For P1, proposal receipts use `record_proposal`; `append_audit` accepts one
-terminal record per call because no generic non-terminal run-level record type
-is defined. Before persisting a candidate `REJECT`, `RETRY`, or `ESCALATE`, the
-store atomically compares the receipt's expected version with the current run
+Proposal receipts use `record_proposal`; they cannot enter an audit batch.
+Before persisting a candidate `REJECT`, `RETRY`, or `ESCALATE`, the store
+atomically compares the receipt's expected version with the current run
 version. If stale, it persists `CONFLICT` with the current version and returns
 that effective record to the owning service. This prevents a policy result
 prepared against an obsolete graph from becoming final.

@@ -11,6 +11,7 @@ from problemforger.core.journal import (
     JournalEntry,
     JsonDocument,
     MutationDecision,
+    NonTerminalAuditRecord,
     NormalizedMutationRequest,
     ProposalAbandoned,
     ProposalId,
@@ -76,6 +77,7 @@ class _ProposalParts:
     terminal: MutationDecision | ProposalAbandoned | None
     terminal_position: int
     terminal_last_position: int
+    latest_scoped_audit_position: int
 
 
 def _valid_identifier(value: object) -> bool:
@@ -284,7 +286,7 @@ class EventStoreState:
     def append_audit(
         self,
         run_id: str,
-        records: tuple[MutationDecision | ProposalAbandoned, ...],
+        records: tuple[NonTerminalAuditRecord | MutationDecision | ProposalAbandoned, ...],
         proposal_id: str | None = None,
     ) -> AppendResult | StoreError:
         with self._lock:
@@ -294,22 +296,80 @@ class EventStoreState:
             run = self._runs.get(run_id)
             if run is None:
                 return self._error(StoreErrorCode.NOT_FOUND, "run does not exist")
-            if not _valid_identifier(proposal_id):
-                return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "terminal proposal_id is required")
-            parts = self._proposal_parts(run, proposal_id)
-            if parts is None:
-                return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")
+            if proposal_id is not None and not _valid_identifier(proposal_id):
+                return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "proposal_id is invalid")
+            parts = None
+            if proposal_id is not None:
+                parts = self._proposal_parts(run, proposal_id)
+                if parts is None:
+                    return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")
             try:
                 batch = tuple(records)
             except TypeError:
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "records must be a sequence")
-            if not batch or any(
-                not isinstance(record, (MutationDecision, ProposalAbandoned)) for record in batch
-            ):
+            supported_types = (NonTerminalAuditRecord, MutationDecision, ProposalAbandoned)
+            if not batch or any(not isinstance(record, supported_types) for record in batch):
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "unsupported or empty audit batch")
-            if len(batch) != 1:
-                return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "P1 allows one terminal record per batch")
-            record = batch[0]
+            nonterminal_records = tuple(
+                record for record in batch if isinstance(record, NonTerminalAuditRecord)
+            )
+            terminal_records = tuple(
+                record
+                for record in batch
+                if isinstance(record, (MutationDecision, ProposalAbandoned))
+            )
+            if nonterminal_records and terminal_records:
+                return self._error(
+                    StoreErrorCode.INVALID_AUDIT_BATCH,
+                    "non-terminal and terminal records cannot share a batch",
+                )
+
+            if not terminal_records:
+                if proposal_id is None:
+                    if any(record.proposal_id is not None for record in nonterminal_records):
+                        return self._error(
+                            StoreErrorCode.INVALID_AUDIT_BATCH,
+                            "scoped non-terminal records require proposal_id",
+                        )
+                elif any(record.proposal_id != proposal_id for record in nonterminal_records):
+                    return self._error(
+                        StoreErrorCode.INVALID_AUDIT_BATCH,
+                        "non-terminal record proposal_id does not match the supplied proposal",
+                    )
+                if any(record.metadata.run_id != run_id for record in nonterminal_records):
+                    return self._error(
+                        StoreErrorCode.INVALID_AUDIT_BATCH,
+                        "non-terminal record run_id does not match the supplied run",
+                    )
+                record_ids = [_record_id(record) for record in nonterminal_records]
+                if any(not _valid_identifier(record_id) for record_id in record_ids):
+                    return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "record_id is required")
+                if len(set(record_ids)) != len(record_ids) or any(
+                    self._has_record_id(run, record_id) for record_id in record_ids
+                ):
+                    return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "record_id already exists")
+                if not self._records_within_bounds(
+                    nonterminal_records, first_position=run.last_journal_position + 1
+                ):
+                    return self._error(
+                        StoreErrorCode.INVALID_AUDIT_BATCH,
+                        "audit batch exceeds the storage size limit",
+                    )
+                candidate = run.copy_for_write()
+                entries = tuple(self._append(candidate, record) for record in nonterminal_records)
+                self._save(run_id, candidate)
+                return AppendResult(
+                    entries[-1].journal_position,
+                    entries,
+                    new_graph_version=candidate.graph_version,
+                )
+
+            if len(terminal_records) != 1 or proposal_id is None or parts is None:
+                return self._error(
+                    StoreErrorCode.INVALID_AUDIT_BATCH,
+                    "P1 allows one terminal record per batch",
+                )
+            record = terminal_records[0]
             if record.metadata.run_id != run_id or record.proposal_id != proposal_id:
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "terminal record identity mismatch")
             if isinstance(record, MutationDecision) and record.outcome is GovernanceOutcome.COMMIT:
@@ -549,14 +609,18 @@ class EventStoreState:
         receipt_position = 0
         terminal: MutationDecision | ProposalAbandoned | None = None
         terminal_position = 0
+        latest_scoped_audit_position = 0
         for entry in run.entries:
             record = entry.record
             if isinstance(record, ProposalReceipt) and record.proposal_id == proposal_id:
                 receipt, receipt_position = record, entry.journal_position
+            elif isinstance(record, NonTerminalAuditRecord) and record.proposal_id == proposal_id:
+                latest_scoped_audit_position = entry.journal_position
             elif isinstance(record, (MutationDecision, ProposalAbandoned)) and record.proposal_id == proposal_id:
                 terminal, terminal_position = record, entry.journal_position
         if receipt is None:
             return None
+        latest_scoped_audit_position = max(receipt_position, latest_scoped_audit_position)
         terminal_last_position = terminal_position
         if isinstance(terminal, MutationDecision) and terminal.outcome is GovernanceOutcome.COMMIT:
             committed = EventStoreState._committed_entries(run, terminal_position, proposal_id)
@@ -567,6 +631,7 @@ class EventStoreState:
             terminal,
             terminal_position,
             terminal_last_position,
+            latest_scoped_audit_position,
         )
 
     @classmethod
@@ -589,6 +654,8 @@ class EventStoreState:
                 else cls._graph_version_at(run, terminal_position - 1)
             )
             last_position = parts.terminal_last_position
+        else:
+            last_position = parts.latest_scoped_audit_position
         return ProposalSnapshot(
             run_id=RunId(run_id),
             proposal_id=ProposalId(proposal_id),
@@ -689,6 +756,13 @@ class EventStoreState:
                 if record.proposal_id in receipts:
                     raise ValueError(f"duplicate proposal receipt in run {run_id}")
                 receipts[record.proposal_id] = record
+                index += 1
+                continue
+            if isinstance(record, NonTerminalAuditRecord):
+                if record.proposal_id is not None and record.proposal_id not in receipts:
+                    raise ValueError(
+                        f"non-terminal audit references a proposal without a receipt in run {run_id}"
+                    )
                 index += 1
                 continue
             if isinstance(record, GraphChangedEvent):

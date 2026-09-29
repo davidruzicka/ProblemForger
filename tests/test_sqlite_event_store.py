@@ -14,11 +14,13 @@ import unittest
 from unittest.mock import patch
 import weakref
 
-from event_store_contract import decision, graph_event, metadata, receipt, request
+from event_store_contract import audit_record, decision, graph_event, metadata, receipt, request
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
+    JournalEntry,
     JsonDocument,
+    NonTerminalAuditRecord,
     ProposalAbandoned,
     ProposalReceipt,
     ProposalStatus,
@@ -224,6 +226,21 @@ class SqliteEventStoreTests(unittest.TestCase):
         self.assertEqual(ProposalStatus.PENDING, reopened.get_proposal("run-1", "pending").status)
         pending_position = reopened.get_proposal("run-1", "pending").last_journal_position
         self.assertEqual(len(before), pending_position)
+        reopened.close()
+
+    def test_reopen_preserves_independent_nonterminal_audit_records(self):
+        store = self.open_store()
+        self._create_run(store)
+        record = audit_record("independent-audit", payload={"phase": "recovery"})
+        appended = store.append_audit("run-1", (record,))
+        self.assertIsInstance(appended, AppendResult)
+        store.close()
+
+        reopened = self.open_store()
+        page = reopened.read_journal("run-1", limit=10)
+        self.assertEqual((record,), tuple(entry.record for entry in page.records))
+        self.assertEqual(0, reopened.current_graph_version("run-1"))
+        self.assertEqual(1, reopened.get_run("run-1").last_journal_position)
         reopened.close()
 
     def test_reopen_preserves_c_run_recovery_context_outside_request_hash(self):
@@ -944,6 +961,7 @@ class SqliteEventStoreTests(unittest.TestCase):
             "run_head",
             "unknown_run",
             "oversized_record",
+            "orphan_scoped_audit",
         )
         for corruption in corruptions:
             with self.subTest(corruption=corruption):
@@ -965,6 +983,26 @@ class SqliteEventStoreTests(unittest.TestCase):
                     connection.execute(
                         "INSERT INTO journal(run_id, journal_position, record_id, record_json) VALUES (?, ?, ?, ?)",
                         ("run-1", 1, "oversized-record", " " * (MAX_JOURNAL_RECORD_BYTES + 1)),
+                    )
+                    connection.execute(
+                        "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"
+                    )
+                elif corruption == "orphan_scoped_audit":
+                    orphan = NonTerminalAuditRecord(
+                        metadata=metadata("orphan-audit"),
+                        audit_type="corrupt.reference",
+                        payload=JsonDocument.from_value({"source": "corruption-test"}),
+                        proposal_id="missing-proposal",
+                    )
+                    connection.execute(
+                        "INSERT INTO journal(run_id, journal_position, record_id, record_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "run-1",
+                            1,
+                            "orphan-audit",
+                            serialize_entry(JournalEntry(1, orphan)),
+                        ),
                     )
                     connection.execute(
                         "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"

@@ -787,7 +787,7 @@ class SpecificationChecks(unittest.TestCase):
             "```\n\nRequirements:", 1
         )[0]
         self.assertIn("record_proposal(run_id, proposal_id", contract)
-        self.assertIn("append_audit(run_id, records[], proposal_id)", contract)
+        self.assertIn("append_audit(run_id, records[], proposal_id?)", contract)
         self.assertIn("append_graph(run_id, proposal_id, expected_graph_version", contract)
         self.assertNotIn("claim_proposal(", contract)
         self.assertNotIn("renew_claim(", contract)
@@ -806,7 +806,7 @@ class SpecificationChecks(unittest.TestCase):
 
     def test_protocol_preserves_terminal_and_graph_integrity(self):
         protocol = read("docs/protocol.md")
-        terminal = " ".join(protocol.split("#### Terminal append binding\n", 1)[1].split(
+        terminal = " ".join(protocol.split("#### Terminal and independent audit append binding\n", 1)[1].split(
             "#### Graph append binding\n", 1
         )[0].split())
         graph = " ".join(protocol.split("#### Graph append binding\n", 1)[1].split(
@@ -815,8 +815,8 @@ class SpecificationChecks(unittest.TestCase):
         for phrase in (
             "non-null `run_id` and `proposal_id`",
             "exactly one non-`COMMIT` terminal record",
-            "does not support non-terminal run-level audit records",
-            "empty/multiple-record batches",
+            "one or more `non_terminal_audit` records",
+            "empty or mixed terminal/non-terminal batches",
             "no existing terminal outcome",
             "`COMMIT` is forbidden in `append_audit`",
             "never advance `graph_version`",
@@ -840,12 +840,12 @@ class SpecificationChecks(unittest.TestCase):
         self.assertNotIn("expected_claim_epoch", protocol)
         self.assertNotIn("spec-protocol-lease-clock", protocol)
 
-    def test_eventstore_p1_docs_do_not_promise_generic_nonterminal_audit_records(self):
+    def test_eventstore_p1_docs_define_independent_nonterminal_audit_records(self):
         protocol = read("docs/protocol.md")
         modules = read("docs/modules.md")
-        self.assertNotIn("Non-terminal-only audit batches", protocol)
-        self.assertNotIn("Accompanying non-terminal audit records", protocol)
-        self.assertNotIn("non-terminal run records may omit it", modules)
+        self.assertIn("non-terminal batch", protocol)
+        self.assertIn("non_terminal_audit", modules)
+        self.assertIn("Run-scoped non-terminal batches omit `proposal_id`", modules)
 
     def test_stale_proposals_conflict_before_policy_and_terminal_append(self):
         protocol = " ".join(read("docs/protocol.md").split())
