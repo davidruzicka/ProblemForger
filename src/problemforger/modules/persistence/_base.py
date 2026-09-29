@@ -205,11 +205,13 @@ class EventStoreState:
     ) -> ProposalSnapshot | StoreError:
         with self._lock:
             self._ensure_usable()
-            if not _valid_identifier(run_id) or not _valid_identifier(proposal_id):
-                return self._error(StoreErrorCode.INVALID_REQUEST, "run_id and proposal_id are required")
+            if not _valid_identifier(run_id):
+                return self._error(StoreErrorCode.INVALID_REQUEST, "run_id is required")
             run = self._runs.get(run_id)
             if run is None:
                 return self._error(StoreErrorCode.NOT_FOUND, "run does not exist")
+            if not _valid_identifier(proposal_id):
+                return self._error(StoreErrorCode.INVALID_REQUEST, "proposal_id is required")
             parts = self._proposal_parts(run, proposal_id)
             if parts is None:
                 return self._error(StoreErrorCode.NOT_FOUND, "proposal does not exist")

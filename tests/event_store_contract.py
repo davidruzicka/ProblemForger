@@ -312,6 +312,12 @@ class EventStoreContractMixin:
         self.assertEqual(StoreErrorCode.NOT_FOUND, missing_run.code)
         self.assertEqual("NOT_FOUND", missing_run.status)
         self.assertEqual(StoreErrorCode.NOT_FOUND, self.store.get_proposal("missing", "p").code)
+        for proposal_id in ("", "\ud800"):
+            with self.subTest(proposal_id=proposal_id):
+                self.assertEqual(
+                    StoreErrorCode.NOT_FOUND,
+                    self.store.get_proposal("missing", proposal_id).code,
+                )
         self.assertEqual(StoreErrorCode.NOT_FOUND, self.store.current_graph_version("missing").code)
         self.assertEqual(
             StoreErrorCode.NOT_FOUND,
