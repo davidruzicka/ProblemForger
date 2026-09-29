@@ -215,7 +215,7 @@ class SqliteEventStore(EventStoreState):
         self._timeout_seconds = float(timeout_seconds)
 
         try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._create_secure_parent_directories()
             self._assert_supported_filesystem()
             with _PROVIDER_LIFECYCLE_LOCK:
                 _OPEN_PROVIDERS.add(self)
@@ -241,6 +241,71 @@ class SqliteEventStore(EventStoreState):
             self._release_resources()
             self._closed = True
             raise
+
+    def _create_secure_parent_directories(self) -> None:
+        # O_PATH keeps traversal working through execute-only existing ancestors;
+        # O_DIRECTORY|O_NOFOLLOW still rejects symlink components.
+        flags = (
+            getattr(os, "O_PATH", os.O_RDONLY)
+            | os.O_DIRECTORY
+            | os.O_NOFOLLOW
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        directory_fd = os.open(self._path.anchor, flags)
+        try:
+            for component in self._path.parent.parts[1:]:
+                self._assert_safe_parent_ancestor(os.fstat(directory_fd))
+                validate_permissions = False
+                try:
+                    child_fd = os.open(component, flags, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(component, mode=0o700, dir_fd=directory_fd)
+                    except FileExistsError:
+                        # A racing creator's directory must satisfy the same policy.
+                        pass
+                    child_fd = os.open(component, flags, dir_fd=directory_fd)
+                    validate_permissions = True
+                try:
+                    if validate_permissions:
+                        self._assert_secure_parent_directory(os.fstat(child_fd))
+                except BaseException:
+                    os.close(child_fd)
+                    raise
+                os.close(directory_fd)
+                directory_fd = child_fd
+            self._assert_safe_parent_ancestor(os.fstat(directory_fd))
+            # Later SQLite operations use the canonical path, so reject a rename
+            # that redirected it while the descriptor walk stayed on the old inode.
+            if self._file_identity(os.fstat(directory_fd)) != self._file_identity(
+                os.stat(self._path.parent, follow_symlinks=False)
+            ):
+                raise StoreIdentityChangedError("store parent directory was replaced during creation")
+        except OSError as error:
+            raise UnsupportedStoreError("cannot safely create or open store parent directories") from error
+        finally:
+            os.close(directory_fd)
+
+    @staticmethod
+    def _assert_secure_parent_directory(directory_stat: os.stat_result) -> None:
+        if not stat.S_ISDIR(directory_stat.st_mode):
+            raise UnsupportedStoreError("store parent directory must be a directory, not a symlink")
+        if directory_stat.st_uid != os.geteuid():
+            raise UnsupportedStoreError("store parent directory is not owned by the current process user")
+        if directory_stat.st_mode & 0o077:
+            raise UnsupportedStoreError("store parent directory has insecure permissions")
+
+    @staticmethod
+    def _assert_safe_parent_ancestor(directory_stat: os.stat_result) -> None:
+        mode = directory_stat.st_mode
+        if not stat.S_ISDIR(mode):
+            raise UnsupportedStoreError("store parent ancestor must be a directory")
+        owner_is_trusted = directory_stat.st_uid in (os.geteuid(), 0)
+        if not owner_is_trusted:
+            raise UnsupportedStoreError("store parent ancestor is not owned by current user or root")
+        sticky_directory = bool(mode & stat.S_ISVTX)
+        if mode & 0o022 and not (sticky_directory and owner_is_trusted):
+            raise UnsupportedStoreError("store parent ancestor is writable by other users")
 
     def _ensure_usable(self) -> None:
         if self._forked or os.getpid() != self._owner_pid:
@@ -339,6 +404,8 @@ class SqliteEventStore(EventStoreState):
 
     def _acquire_ownership(self) -> None:
         assert fcntl is not None
+        self._assert_secure_parent_directory(self._path.parent.lstat())
+
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
         no_follow = getattr(os, "O_NOFOLLOW", 0)
         try:
@@ -364,15 +431,39 @@ class SqliteEventStore(EventStoreState):
             if owner_stat.st_nlink != 1:
                 raise UnsupportedStoreError("SQLite EventStore does not support hard-linked database files")
             self._owner_identity = self._file_identity(owner_stat)
+            self._verify_sidecar_permissions()
             self._verify_identity()
         except FileExistsError as error:
             raise UnsupportedStoreError("store path is not a regular file") from error
+
+    def _verify_sidecar_permissions(self) -> None:
+        parent = self._path.parent
+        db_name = self._path.name
+        euid = os.geteuid()
+        for suffix in ("-journal", "-wal", "-shm"):
+            sidecar = parent / f"{db_name}{suffix}"
+            try:
+                file_stat = sidecar.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise UnsupportedStoreError(f"sidecar file {sidecar.name} cannot be verified") from error
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise UnsupportedStoreError(f"sidecar file {sidecar.name} must be a regular file")
+            if file_stat.st_uid != euid:
+                raise UnsupportedStoreError(f"sidecar file {sidecar.name} is not owned by the current process user")
+            if file_stat.st_mode & 0o077:
+                raise UnsupportedStoreError(f"sidecar file {sidecar.name} has insecure file permissions")
 
     @staticmethod
     def _assert_regular_file(file_descriptor: int, name: str) -> None:
         file_stat = os.fstat(file_descriptor)
         if not stat.S_ISREG(file_stat.st_mode):
             raise UnsupportedStoreError(f"{name} must be a regular file")
+        if file_stat.st_uid != os.geteuid():
+            raise UnsupportedStoreError(f"{name} is not owned by the current process user")
+        if file_stat.st_mode & 0o077:
+            raise UnsupportedStoreError(f"{name} has insecure file permissions")
 
     @staticmethod
     def _file_identity(file_stat: os.stat_result) -> tuple[int, int]:
