@@ -491,6 +491,25 @@ class SqliteEventStoreTests(unittest.TestCase):
         store.close()
 
     @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
+    def test_symlink_substitution_of_live_database_path_fails_closed(self):
+        store = self.open_store()
+        self._create_run(store)
+        original = self.path.with_name("original.db")
+        os.replace(self.path, original)
+        self.path.symlink_to(original)
+        try:
+            self.assertEqual(original.stat().st_ino, self.path.stat().st_ino)
+            self.assertEqual(1, self.path.stat().st_nlink)
+            with self.assertRaises(StoreIdentityChangedError):
+                store.current_graph_version("run-1")
+        finally:
+            self.path.unlink()
+            os.replace(original, self.path)
+            with self.assertRaises(StoreClosedError):
+                store.current_graph_version("run-1")
+            store.close()
+
+    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
     def test_construction_rejects_replaced_path_before_mutating_replacement(self):
         replacement = self.path.with_name("replacement.db")
         original = self.path.with_name("original.db")

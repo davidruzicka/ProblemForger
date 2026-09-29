@@ -1,5 +1,6 @@
 """Shared semantic contract for all EventStore providers."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import unittest
 
@@ -605,6 +606,29 @@ class EventStoreContractMixin:
         snapshot = self.store.get_proposal("run-1", "stale")
         self.assertEqual(GovernanceOutcome.CONFLICT, snapshot.status)
         self.assertEqual(1, snapshot.resulting_graph_version)
+
+    def test_oversized_stale_terminal_candidate_is_rejected_before_conflict_conversion(self):
+        self.submit("stale", 0)
+        self.submit("winner", 0)
+        self.append_commit("winner", 0)
+        candidate = replace(
+            decision(
+                "stale",
+                outcome=GovernanceOutcome.REJECT,
+                record_id="oversized-stale-candidate",
+            ),
+            details=JsonDocument.from_value({"payload": "x" * MAX_JOURNAL_RECORD_BYTES}),
+        )
+
+        result = self.store.append_audit("run-1", (candidate,), "stale")
+
+        self.assertIsInstance(result, StoreError)
+        self.assertEqual(StoreErrorCode.INVALID_AUDIT_BATCH, result.code)
+        self.assertEqual(4, self.store.get_run("run-1").last_journal_position)
+        self.assertEqual(
+            ProposalStatus.PENDING,
+            self.store.get_proposal("run-1", "stale").status,
+        )
 
     def test_graph_batch_rejects_bad_bindings_versions_and_empty_commits_without_writes(self):
         self.submit("proposal-1", 0)

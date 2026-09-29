@@ -399,8 +399,8 @@ class SqliteEventStore(EventStoreState):
                 return
             raise StoreIdentityChangedError("SQLite ownership descriptors are unavailable")
         try:
-            path_stat = self._path.stat()
-            lock_identity = self._file_identity(self._lock_path.stat())
+            path_stat = self._path.lstat()
+            lock_identity = self._file_identity(self._lock_path.lstat())
             owner_stat = os.fstat(self._owner_fd)
             owner_identity = self._file_identity(owner_stat)
             path_lock_identity = self._file_identity(os.fstat(self._path_lock_fd))

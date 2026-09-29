@@ -404,6 +404,10 @@ class EventStoreState:
                         new_graph_version=result_version,
                     )
                 return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "proposal already has another terminal record")
+            if not self._records_within_bounds(
+                (record,), first_position=candidate.last_journal_position + 1
+            ):
+                return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "audit record exceeds the storage size limit")
             if isinstance(record, MutationDecision):
                 if record.expected_graph_version != receipt.request.expected_graph_version:
                     return self._error(StoreErrorCode.INVALID_AUDIT_BATCH, "expected_graph_version does not match receipt")
