@@ -23,7 +23,7 @@ Initial operations should cover:
 - attach/reference evidence through a governed mutation for explicit `run_id`;
 - query a mutation proposal by explicit `(run_id, proposal_id)`;
 - retrieve/replay the resulting governor decision;
-- read a bounded durable governance/audit timeline for a run, ordered by `journal_position`, so observers can inspect proposal receipts and non-commit outcomes without relying on optional telemetry.
+- read a bounded durable governance/audit timeline for a run, ordered by `journal_position`, so observers can inspect proposal receipts, independent audit records, and non-commit outcomes without relying on optional telemetry.
 
 All run-scoped v1 commands and queries carry `run_id` explicitly. There is no ambient/session-selected run context in the domain/application protocol; a transport may maintain connections or sessions, but it must not infer or override the target run. Missing/unknown/mismatched `run_id` is an explicit protocol error.
 
@@ -157,7 +157,37 @@ optional configuration-C policy rule.
 
 P1 permits exactly one live EventStore provider instance per durable store. The provider must acquire exclusive ownership **before loading journal state or accepting operations**. A competing open fails explicitly with `STORE_IN_USE`; this is a service startup error, not a governance decision or a proposal claim.
 
-Ownership must cover same-process duplicate instances as well as separate processes and path aliases for the same store. Hold it for the provider lifetime and release it only after in-flight operations/connections are closed. A process crash releases ownership automatically; a persisted boolean or PID file alone is not an ownership lock. The SQLite implementation must document its canonical store/lock identity and supported local-filesystem assumptions, reject unsupported storage, and prevent replacing/unlinking its live store or lock identity. Internal connections are allowed only under the owning provider. A forked child cannot operate an inherited provider; it must open normally and obtain ownership after the old owner closes.
+Ownership must cover same-process duplicate instances as well as separate
+processes and path aliases for the same store. Hold ownership for the provider
+lifetime and release it only after in-flight operations and connections are
+closed. A process crash releases ownership automatically; a persisted boolean
+or PID file alone is not an ownership lock.
+
+The SQLite implementation resolves relative and symlink paths to one canonical
+path, uses a persistent adjacent path lock plus an OS lock on the database
+inode, and supports only an explicit set of local Linux filesystems honoring
+`flock`. A competing hard-link alias fails to acquire the inode lock while an
+owner is live; SQLite rejects multiply-linked database files after the owner
+closes because rollback
+journals are path-specific. The initial provider accepts only the explicitly
+verified local filesystem types `btrfs`, `ext2`, `ext3`, `ext4`, `f2fs`,
+`overlay`, and `xfs`; all other or unidentified types are unsupported until
+their locking and durability semantics are verified. It checks live path/lock
+identities before operations, failing closed when an out-of-band replacement or
+unlink is detected. Providers sharing a store must cooperate with these locks
+and leave its live files in place. Internal connections are allowed only under
+the owning provider.
+
+SQLite providers are process-bound and must be constructed, used, and closed
+only in their owning process. Do not continue Python execution after a raw
+`fork()` while any provider is constructing, open, or closing: finalizing an
+inherited `sqlite3.Connection` in the child can alter the parent's live rollback
+journal. Child workers must use `spawn`, a clean `forkserver` with no provider
+created during preload/import, or a subprocess that immediately `exec`s without
+Python pre-execution callbacks such as `preexec_fn`; pass store
+paths/configuration, never provider instances. Alternatively, close every
+SQLite provider before raw `fork()`. An inherited provider cannot be safely
+used, closed, garbage-collected, or reopened in the child.
 
 Proposal evaluation and finalization are serialized by the owning service. Multiple live providers for one store are out of scope under ADR 0006; independent stores may be opened concurrently. Required P1 tests include racing process opens, same-process duplicate opens, path aliases, graceful close, crash release, and reopening with an incomplete receipt.
 
@@ -184,32 +214,49 @@ protocol/ADR decision, and dedicated concurrency tests. The operation
 signatures remain owned by the [EventStore port](modules.md#spec-modules-eventstore-port);
 provider summaries must not invent a claim API before that extension exists.
 
-#### Terminal append binding
+#### Terminal and independent audit append binding
 
-`run_id` is required for every audit batch, including non-terminal-only batches.
+In P1, `append_audit` accepts two disjoint batch shapes. A non-terminal batch
+contains one or more `non_terminal_audit` records. A run-scoped batch omits
+`proposal_id` and every record omits proposal scope. A proposal-scoped batch
+supplies an existing `proposal_id` and every record references that same stored
+receipt; the association does not finalize the proposal or compare graph
+versions. Non-terminal records may be appended before or after a proposal's
+terminal outcome.
 
-A batch containing terminal `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or
-`ABANDONED` requires non-null `run_id` and `proposal_id`. The terminal record
-must explicitly reference the supplied `(run_id, proposal_id)`. Reject
-missing/null arguments, mismatched terminal record identity, or more than one
-terminal record (including duplicates for the same proposal) with
-`INVALID_AUDIT_BATCH` before writing any record.
-Non-terminal records may accompany one terminal record, but validation applies
-to the complete batch: rejection of the entire batch leaves the journal and
-proposal state unchanged.
+The second shape contains exactly one non-`COMMIT` terminal record: `REJECT`,
+`RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`. It requires non-null `run_id`
+and `proposal_id`, and the record must explicitly reference that same
+`(run_id, proposal_id)`. P1 rejects empty or mixed terminal/non-terminal
+batches, proposal receipts, graph events, and `COMMIT` through `append_audit`.
+Reject missing/null arguments, mismatched identity, duplicate record IDs, or
+storage-limit violations with `INVALID_AUDIT_BATCH` before writing.
 
-Resolve authority from the owning service and the stored receipt for the
-supplied `(run_id, proposal_id)`, not from caller-supplied worker metadata. In
-one transaction, validate the complete batch and require that the proposal has
-no existing terminal outcome. An unknown run/proposal returns `NOT_FOUND`; an
-already-finalized proposal is replayed or rejected without a second write. On
-success, atomically append the records and finalize the proposal state.
+Validate a complete non-terminal batch before any write, preserve its input
+order, and assign consecutive journal positions atomically. Independent audit
+appends never advance `graph_version`, even when a scoped proposal is stale;
+`AppendResult.new_graph_version` reports the unchanged current version.
+
+For the terminal shape, resolve authority from the owning service and the
+stored receipt for the supplied `(run_id, proposal_id)`, not from
+caller-supplied worker metadata. In one transaction, validate the complete
+batch and require that the proposal has no existing terminal outcome. An
+unknown run/proposal returns `NOT_FOUND`; an already-finalized proposal is
+replayed or rejected without a second write. On success, atomically append the
+record and finalize the proposal state.
 
 `COMMIT` is forbidden in `append_audit` and returns `INVALID_AUDIT_BATCH`; its
 decision and graph events are persisted exclusively through `append_graph`, with
 the same proposal binding and single-terminal checks plus the graph-version
-check. Non-terminal-only audit batches require no proposal and never advance
-`graph_version`; non-commit terminal appends also leave it unchanged.
+check. Audit appends never advance `graph_version`; non-commit terminal appends
+leave it unchanged.
+
+Proposal receipts use `record_proposal`; they cannot enter an audit batch.
+Before persisting a candidate `REJECT`, `RETRY`, or `ESCALATE`, the store
+atomically compares the receipt's expected version with the current run
+version. If stale, it persists `CONFLICT` with the current version and returns
+that effective record to the owning service. This prevents a policy result
+prepared against an obsolete graph from becoming final.
 
 The serialized owning service rechecks this version precondition before any
 terminal append under the same finalization operation. A mismatch
@@ -230,11 +277,8 @@ instead, as required by ADR 0006.
 version. Its audit records contain exactly one `COMMIT`
 bound to the supplied `(run_id, proposal_id)` and no other terminal outcome,
 including `ABANDONED`. Its graph events contain at least one event, all bound
-to that same run/proposal. An empty mutation is not a graph-version advance.
-Accompanying non-terminal audit records must reference the supplied run;
-if proposal-scoped, they must reference the same proposal. Run-level audit
-records may omit proposal identity. The same accompanying-record binding
-applies to terminal `append_audit` batches.
+to that same run/proposal. No additional audit records accompany the `COMMIT`
+in P1. An empty mutation is not a graph-version advance.
 
 Validate the whole graph batch before any write. Missing/null required fields,
 invalid structure, mismatched identities, absent/duplicate `COMMIT`, another

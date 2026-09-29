@@ -806,7 +806,7 @@ class SpecificationChecks(unittest.TestCase):
 
     def test_protocol_preserves_terminal_and_graph_integrity(self):
         protocol = read("docs/protocol.md")
-        terminal = " ".join(protocol.split("#### Terminal append binding\n", 1)[1].split(
+        terminal = " ".join(protocol.split("#### Terminal and independent audit append binding\n", 1)[1].split(
             "#### Graph append binding\n", 1
         )[0].split())
         graph = " ".join(protocol.split("#### Graph append binding\n", 1)[1].split(
@@ -814,7 +814,9 @@ class SpecificationChecks(unittest.TestCase):
         )[0].split())
         for phrase in (
             "non-null `run_id` and `proposal_id`",
-            "more than one terminal record",
+            "exactly one non-`COMMIT` terminal record",
+            "one or more `non_terminal_audit` records",
+            "empty or mixed terminal/non-terminal batches",
             "no existing terminal outcome",
             "`COMMIT` is forbidden in `append_audit`",
             "never advance `graph_version`",
@@ -825,6 +827,7 @@ class SpecificationChecks(unittest.TestCase):
             "expected graph version",
             "exactly one `COMMIT`",
             "`INVALID_GRAPH_BATCH`",
+            "No additional audit records accompany the `COMMIT`",
             "proposal receipt's recorded `expected_graph_version`",
             "current run `graph_version`",
             "increments graph version exactly once",
@@ -836,6 +839,13 @@ class SpecificationChecks(unittest.TestCase):
         self.assertNotIn("expected_owner_id", protocol)
         self.assertNotIn("expected_claim_epoch", protocol)
         self.assertNotIn("spec-protocol-lease-clock", protocol)
+
+    def test_eventstore_p1_docs_define_independent_nonterminal_audit_records(self):
+        protocol = read("docs/protocol.md")
+        modules = read("docs/modules.md")
+        self.assertIn("non-terminal batch", protocol)
+        self.assertIn("non_terminal_audit", modules)
+        self.assertIn("Run-scoped non-terminal batches omit `proposal_id`", modules)
 
     def test_stale_proposals_conflict_before_policy_and_terminal_append(self):
         protocol = " ".join(read("docs/protocol.md").split())
@@ -877,9 +887,11 @@ class SpecificationChecks(unittest.TestCase):
 
     def test_store_owner_and_recovery_are_the_initial_scope(self):
         protocol = read("docs/protocol.md")
-        owner = protocol.split("#### STORE-OWNER\n", 1)[1].split(
-            "#### Deferred parallel proposal claims\n", 1
-        )[0]
+        owner = " ".join(
+            protocol.split("#### STORE-OWNER\n", 1)[1]
+            .split("#### Deferred parallel proposal claims\n", 1)[0]
+            .split()
+        )
         for phrase in (
             "exactly one live EventStore provider instance",
             "before loading journal state",
@@ -888,9 +900,15 @@ class SpecificationChecks(unittest.TestCase):
             "crash",
             "serialized by the owning service",
             "incomplete receipt",
+            "must be constructed, used, and closed only in their owning process",
+            "Do not continue Python execution after a raw `fork()`",
+            "a clean `forkserver`",
+            "without Python pre-execution callbacks such as `preexec_fn`",
+            "close every SQLite provider before raw `fork()`",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, owner)
+        self.assertNotIn("must open the store normally after the old owner closes", owner)
         self.assertIn("does not expose `claim_ttl`", " ".join(protocol.split()))
         self.assertIn("Parallel claims are a deferred extension", protocol)
 

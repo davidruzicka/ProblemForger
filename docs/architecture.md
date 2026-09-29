@@ -32,7 +32,7 @@ Every run has one append-only journal persisted through `EventStore`.
 
 The journal contains two classes of durable records:
 
-- **governance audit records** — proposal receipt plus final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
+- **governance audit records** — proposal receipts, non-terminal audit observations, and final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
 - **graph-changing domain events** — committed node/edge/evidence/lifecycle changes that reconstruct the ProblemGraph.
 
 Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
