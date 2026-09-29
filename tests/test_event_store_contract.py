@@ -8,12 +8,17 @@ from problemforger.config.event_store import (
     MemoryEventStoreConfig,
     ServiceProfile,
     SqliteEventStoreConfig,
-    build_event_store,
 )
+from problemforger.config.registry import default_registry
 from problemforger.core.journal import JsonDocument
 from event_store_contract import EventStoreContractMixin
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
 from problemforger.ports.event_store import CreateRunStatus, RunMetadata, StoreErrorCode
+
+
+def build_configured_event_store(config, *, profile=ServiceProfile.NORMAL):
+    provider = "memory" if isinstance(config, MemoryEventStoreConfig) else "sqlite"
+    return default_registry().build("event_store", provider, config, profile=profile)
 
 
 class MemoryEventStoreContractTests(EventStoreContractMixin, unittest.TestCase):
@@ -91,7 +96,7 @@ class EventStoreConfigurationTests(unittest.TestCase):
             ).timeout_seconds,
         )
         with self.assertRaises(TypeError):
-            build_event_store(object())
+            build_configured_event_store(object())
 
     def test_provider_page_count_cap_and_lowered_configuration_are_enforced(self):
         with self.assertRaises(ValueError):
@@ -116,7 +121,7 @@ class EventStoreConfigurationTests(unittest.TestCase):
             )
             for config, profile in configs:
                 with self.subTest(config=type(config).__name__):
-                    store = build_event_store(config, profile=profile)
+                    store = build_configured_event_store(config, profile=profile)
                     try:
                         self.assertEqual(
                             CreateRunStatus.CREATED,

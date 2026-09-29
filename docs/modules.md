@@ -190,7 +190,9 @@ Telemetry:
 - is not required to reconstruct graph state or governance decisions;
 - can be disabled without changing domain correctness or auditability.
 
-A recording/in-memory or JSONL sink may be used initially.
+A null sink and bounded recording/in-memory sink may be used initially. The
+versioned observation envelope and richer telemetry semantics are defined by
+the follow-up telemetry issue.
 
 ### Service clock / ID source
 
@@ -235,11 +237,11 @@ src/problemforger/
       memory/            # ephemeral/test-only
       sqlite/            # first durable provider, P1
       postgres/          # later
-    telemetry/
+    telemetry.py         # null and bounded recording sinks
   config/
-    models.py
-    registry.py
-    loader.py
+    models.py             # versioned top-level configuration
+    registry.py           # explicit provider registry
+    composition.py        # single composition root
   service/
     ...
 ```
@@ -264,9 +266,9 @@ modules:
       path: .problemforger/events.db
 
   telemetry:
-    provider: jsonl
+    provider: recording
     config:
-      path: .problemforger/telemetry.jsonl
+      max_observations: 10000
 ```
 
 Rules:
@@ -281,6 +283,12 @@ Rules:
 - provider creation is centralized in the composition root;
 - core modules receive constructed port implementations via explicit dependency injection.
 
+The current Python implementation exposes `ModuleConfig.from_value(...)`,
+`default_registry()`, `compose(...)`, and `export_effective_config(...)` from
+`problemforger.config`. Missing telemetry configuration selects the explicit
+`null` provider. Configuration contains provider names only from the finite
+registry; it cannot name import paths or arbitrary classes.
+
 ## Provider registry
 
 Prefer a small explicit registry, conceptually:
@@ -289,9 +297,14 @@ Prefer a small explicit registry, conceptually:
 (event_store, memory) -> MemoryEventStoreConfig -> factory
 (event_store, sqlite) -> SqliteEventStoreConfig -> factory
 (telemetry, null)     -> NullTelemetryConfig -> factory
+(telemetry, recording) -> RecordingTelemetryConfig -> factory
 ```
 
-The registry itself belongs to application/configuration wiring, not domain code.
+Each EventStore registration exposes `ephemeral` or `durable` capability
+metadata. Normal composition rejects `ephemeral`; explicit test composition
+may select memory. The registry itself belongs to application/configuration
+wiring, not domain code, and its entries are inspectable without constructing
+providers.
 
 ## Contract testing
 
