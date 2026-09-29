@@ -787,6 +787,248 @@ class SqliteEventStoreTests(unittest.TestCase):
         with self.assertRaises(StoreClosedError):
             store.__enter__()
 
+    def test_insecure_file_permissions_are_rejected(self):
+        # Test existing database file with group/world read permissions (0o644)
+        insecure_db_path = Path(self.temporary.name) / "insecure.db"
+        insecure_db_path.touch(mode=0o644)
+        insecure_db_path.chmod(0o644)
+        with self.assertRaises(UnsupportedStoreError) as cm:
+            SqliteEventStore(insecure_db_path)
+        self.assertIn("insecure file permissions", str(cm.exception))
+
+        # Test existing lock file with group/world read permissions (0o666)
+        secure_db_path = Path(self.temporary.name) / "secure.db"
+        lock_path = secure_db_path.with_name(f".{secure_db_path.name}.problemforger.lock")
+        lock_path.touch(mode=0o666)
+        lock_path.chmod(0o666)
+        with self.assertRaises(UnsupportedStoreError) as cm:
+            SqliteEventStore(secure_db_path)
+        self.assertIn("insecure file permissions", str(cm.exception))
+
+        # Test pre-existing SQLite sidecar files (-journal, -wal, -shm)
+        lock_path.chmod(0o600)
+        for suffix in ("-journal", "-wal", "-shm"):
+            sidecar_db_path = Path(self.temporary.name) / f"sidecar_{suffix.lstrip('-')}.db"
+            sidecar_file = sidecar_db_path.with_name(f"{sidecar_db_path.name}{suffix}")
+            sidecar_file.touch(mode=0o644)
+            sidecar_file.chmod(0o644)
+            with self.assertRaises(UnsupportedStoreError) as cm:
+                SqliteEventStore(sidecar_db_path)
+            self.assertIn("insecure file permissions", str(cm.exception))
+
+    def test_sidecar_symlinks_are_rejected(self):
+        for suffix in ("-journal", "-wal", "-shm"):
+            for target_exists in (False, True):
+                with self.subTest(suffix=suffix, target_exists=target_exists):
+                    db_path = Path(self.temporary.name) / (
+                        f"symlink_{suffix.lstrip('-')}_{target_exists}.db"
+                    )
+                    sidecar = db_path.with_name(f"{db_path.name}{suffix}")
+                    target = Path(self.temporary.name) / (
+                        f"sidecar_target_{suffix.lstrip('-')}_{target_exists}"
+                    )
+                    if target_exists:
+                        target.touch(mode=0o600)
+                        target.chmod(0o600)
+                    sidecar.symlink_to(target)
+                    store = None
+                    try:
+                        with self.assertRaises(UnsupportedStoreError) as cm:
+                            store = SqliteEventStore(db_path)
+                        self.assertIn("sidecar file", str(cm.exception))
+                    finally:
+                        if store is not None:
+                            store.close()
+                        for path in (
+                            sidecar,
+                            target,
+                            db_path,
+                            db_path.with_name(f".{db_path.name}.problemforger.lock"),
+                        ):
+                            if path.is_symlink() or path.exists():
+                                path.unlink()
+
+    def test_unowned_files_are_rejected(self):
+        other_uid = os.geteuid() + 1
+        fake_stat = os.stat_result((0o100600, 12345, 1, 1, other_uid, 1000, 0, 0, 0, 0))
+
+        # Test database file owned by different UID
+        with patch("os.fstat", return_value=fake_stat):
+            with self.assertRaises(UnsupportedStoreError) as cm:
+                SqliteEventStore._assert_regular_file(0, "database")
+            self.assertIn("is not owned by the current process user", str(cm.exception))
+
+        # Test sidecar file owned by different UID
+        store = object.__new__(SqliteEventStore)
+        store._path = self.path
+        sidecar = self.path.parent / f"{self.path.name}-journal"
+        sidecar.touch(mode=0o600)
+        try:
+            with patch.object(Path, "lstat", return_value=fake_stat):
+                with self.assertRaises(UnsupportedStoreError) as cm:
+                    store._verify_sidecar_permissions()
+                self.assertIn("is not owned by the current process user", str(cm.exception))
+        finally:
+            if sidecar.exists():
+                sidecar.unlink()
+
+    def test_insecure_parent_directory_is_rejected(self):
+        # Test parent directory with group/world permissions
+        insecure_dir = Path(self.temporary.name) / "insecure_dir"
+        insecure_dir.mkdir(mode=0o755)
+        insecure_dir.chmod(0o755)
+        db_path = insecure_dir / "test.db"
+        with self.assertRaises(UnsupportedStoreError) as cm:
+            SqliteEventStore(db_path)
+        self.assertIn("store parent directory has insecure permissions", str(cm.exception))
+
+        # Test parent directory owned by another UID
+        secure_dir = Path(self.temporary.name) / "secure_dir"
+        secure_dir.mkdir(mode=0o700)
+        secure_dir.chmod(0o700)
+        other_uid = os.geteuid() + 1
+        fake_dir_stat = os.stat_result((0o040700, 12345, 1, 1, other_uid, 1000, 0, 0, 0, 0))
+        db_path = secure_dir / "test.db"
+        with patch.object(Path, "lstat", return_value=fake_dir_stat):
+            with self.assertRaises(UnsupportedStoreError) as cm:
+                SqliteEventStore(db_path)
+            self.assertIn("store parent directory is not owned by the current process user", str(cm.exception))
+
+    def test_fresh_nonexistent_parent_directory_created_with_secure_permissions(self):
+        new_parent = Path(self.temporary.name) / "nested" / "fresh_dir"
+        db_path = new_parent / "events.db"
+        created_modes = {}
+        original_mkdir = os.mkdir
+
+        def observe_mkdir(path, mode=0o777, *, dir_fd=None):
+            original_mkdir(path, mode, dir_fd=dir_fd)
+            created_modes[Path(path).name] = os.stat(path, dir_fd=dir_fd).st_mode & 0o777
+
+        previous_umask = os.umask(0)
+        try:
+            with patch("os.mkdir", side_effect=observe_mkdir):
+                with SqliteEventStore(db_path):
+                    pass
+        finally:
+            os.umask(previous_umask)
+        self.assertEqual({"nested": 0o700, "fresh_dir": 0o700}, created_modes)
+
+    def test_parent_creation_does_not_change_existing_ancestor_permissions(self):
+        existing = Path(self.temporary.name) / "existing"
+        existing.mkdir()
+        existing.chmod(0o755)
+        with SqliteEventStore(existing / "new" / "events.db"):
+            self.assertEqual(0o755, existing.stat().st_mode & 0o777)
+
+    def test_parent_creation_traverses_execute_only_existing_ancestors(self):
+        existing = Path(self.temporary.name) / "execute-only"
+        existing.mkdir(mode=0o700)
+        existing.chmod(0o711)
+        try:
+            with SqliteEventStore(existing / "new" / "events.db"):
+                pass
+        finally:
+            existing.chmod(0o700)
+
+    def test_writable_parent_ancestor_is_rejected_before_store_creation(self):
+        writable_ancestor = Path(self.temporary.name) / "writable-ancestor"
+        writable_ancestor.mkdir(mode=0o700)
+        writable_ancestor.chmod(0o777)
+        store_parent = writable_ancestor / "store"
+        store_parent.mkdir(mode=0o700)
+        with self.assertRaisesRegex(UnsupportedStoreError, "parent ancestor"):
+            SqliteEventStore(store_parent / "events.db")
+        self.assertFalse((store_parent / "events.db").exists())
+        self.assertFalse((store_parent / ".events.db.problemforger.lock").exists())
+
+    def test_foreign_owned_read_only_parent_ancestor_is_rejected(self):
+        foreign = os.stat_result((0o040555, 12345, 1, 1, os.geteuid() + 1, 1000, 0, 0, 0, 0))
+        with self.assertRaisesRegex(UnsupportedStoreError, "not owned by current user or root"):
+            SqliteEventStore._assert_safe_parent_ancestor(foreign)
+
+    def test_racing_unsafe_parent_creation_is_rejected_without_chmod(self):
+        original_mkdir = os.mkdir
+        target = Path(self.temporary.name) / "symlink-target"
+        target.mkdir()
+        target.chmod(0o755)
+        for kind in ("directory", "symlink", "file"):
+            with self.subTest(kind=kind):
+                raced_parent = Path(self.temporary.name) / f"raced-{kind}"
+                db_path = raced_parent / "nested" / "events.db"
+                injected = False
+
+                def race_mkdir(path, mode=0o777, *, dir_fd=None):
+                    nonlocal injected
+                    if Path(path).name == raced_parent.name and not injected:
+                        injected = True
+                        if kind == "directory":
+                            original_mkdir(path, dir_fd=dir_fd)
+                            raced_parent.chmod(0o755)
+                        elif kind == "symlink":
+                            raced_parent.symlink_to(target, target_is_directory=True)
+                        else:
+                            raced_parent.touch(mode=0o600)
+                    return original_mkdir(path, mode=mode, dir_fd=dir_fd)
+
+                with patch("os.mkdir", side_effect=race_mkdir):
+                    with self.assertRaises(UnsupportedStoreError):
+                        SqliteEventStore(db_path)
+                self.assertTrue(injected)
+                self.assertEqual(0o755, target.stat().st_mode & 0o777)
+                if kind == "directory":
+                    self.assertEqual(0o755, raced_parent.stat().st_mode & 0o777)
+                self.assertFalse(db_path.exists())
+                self.assertFalse(db_path.with_name(".events.db.problemforger.lock").exists())
+
+    def test_racing_secure_parent_creation_is_accepted_without_chmod(self):
+        raced_parent = Path(self.temporary.name) / "raced-secure"
+        original_mkdir = os.mkdir
+        injected = False
+
+        def race_mkdir(path, mode=0o777, *, dir_fd=None):
+            nonlocal injected
+            if Path(path).name == raced_parent.name and not injected:
+                injected = True
+                original_mkdir(path, mode=0o700, dir_fd=dir_fd)
+            return original_mkdir(path, mode=mode, dir_fd=dir_fd)
+
+        with patch("os.mkdir", side_effect=race_mkdir), patch.object(Path, "chmod") as chmod:
+            with SqliteEventStore(raced_parent / "nested" / "events.db"):
+                pass
+            chmod.assert_not_called()
+        self.assertTrue(injected)
+
+    def test_parent_replaced_with_symlink_during_creation_fails_closed(self):
+        parent = Path(self.temporary.name) / "parent"
+        moved_parent = Path(self.temporary.name) / "moved-parent"
+        target = Path(self.temporary.name) / "replacement-target"
+        target.mkdir(mode=0o700)
+        (target / "nested").mkdir(mode=0o700)
+        sentinel = target / "nested" / "sentinel"
+        sentinel.write_text("unchanged", encoding="utf-8")
+        target_mode = target.stat().st_mode
+        sentinel_mode = sentinel.stat().st_mode
+        original_mkdir = os.mkdir
+        replaced = False
+
+        def replace_parent(path, mode=0o777, *, dir_fd=None):
+            nonlocal replaced
+            if Path(path).name == "nested" and not replaced:
+                replaced = True
+                parent.rename(moved_parent)
+                parent.symlink_to(target, target_is_directory=True)
+            return original_mkdir(path, mode, dir_fd=dir_fd)
+
+        with patch("os.mkdir", side_effect=replace_parent):
+            with self.assertRaisesRegex(StoreIdentityChangedError, "parent directory was replaced"):
+                SqliteEventStore(parent / "nested" / "events.db")
+        self.assertTrue(replaced)
+        self.assertEqual("unchanged", sentinel.read_text(encoding="utf-8"))
+        self.assertEqual(target_mode, target.stat().st_mode)
+        self.assertEqual(sentinel_mode, sentinel.stat().st_mode)
+        self.assertEqual([sentinel], list((target / "nested").iterdir()))
+        self.assertEqual([], list((moved_parent / "nested").iterdir()))
+
     @unittest.skipUnless(LINUX, "uses Linux mountinfo")
     def test_only_explicitly_supported_filesystems_are_accepted(self):
         store = object.__new__(SqliteEventStore)
@@ -905,6 +1147,7 @@ class SqliteEventStoreTests(unittest.TestCase):
             self.open_store()
 
     def test_unsupported_schema_version_is_rejected_without_database_mutation(self):
+        self.path.touch(mode=0o600)
         connection = sqlite3.connect(self.path)
         journal_mode = connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]
         self.assertEqual("wal", journal_mode)
@@ -915,7 +1158,7 @@ class SqliteEventStoreTests(unittest.TestCase):
         connection.commit()
         connection.close()
 
-        with self.assertRaises(UnsupportedStoreError):
+        with self.assertRaisesRegex(UnsupportedStoreError, "unsupported SQLite EventStore schema version"):
             self.open_store()
 
         connection = sqlite3.connect(self.path)
