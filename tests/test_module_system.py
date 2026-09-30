@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from problemforger.config import (
+    ComposedModules,
     EventStoreModuleConfig,
     MemoryEventStoreConfig,
     ModuleConfig,
@@ -151,9 +152,13 @@ class ModuleConfigurationTests(unittest.TestCase):
                 {
                     "token": "secret",
                     "nested": {"api_key": "also-secret", "name": "kept"},
-                    "items": [{"password": "hidden"}],
+                    "items": [{"password": "hidden", "privateKey": "hidden"}],
                 }
             )["nested"]["api_key"],
+        )
+        self.assertEqual(
+            "<redacted>",
+            redact_value({"privateKey": "hidden"})["privateKey"],
         )
         self.assertEqual(
             config.to_value(redacted=False),
@@ -301,6 +306,41 @@ class CompositionRootTests(unittest.TestCase):
             components = compose(config)
             components.close()
             components.close()
+
+    def test_close_retries_after_provider_failure(self):
+        class CloseOnceProvider:
+            def __init__(self):
+                self.attempts = 0
+
+            def close(self):
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise RuntimeError("close failed")
+
+        class CloseTrackingProvider:
+            def __init__(self):
+                self.attempts = 0
+
+            def close(self):
+                self.attempts += 1
+
+        event_store = CloseOnceProvider()
+        telemetry = CloseTrackingProvider()
+        components = ComposedModules(event_store=event_store, telemetry=telemetry)
+
+        with self.assertRaisesRegex(RuntimeError, "close failed"):
+            components.close()
+        self.assertFalse(components._closed)
+        self.assertEqual(1, event_store.attempts)
+        self.assertEqual(1, telemetry.attempts)
+
+        components.close()
+        self.assertTrue(components._closed)
+        self.assertEqual(2, event_store.attempts)
+        self.assertEqual(2, telemetry.attempts)
+        components.close()
+        self.assertEqual(2, event_store.attempts)
+        self.assertEqual(2, telemetry.attempts)
 
     def test_cleanup_error_is_attached_when_startup_already_failed(self):
         class FailingCloseProvider:
