@@ -122,7 +122,20 @@ class ProviderRegistry:
             and registration.durability is not StoreDurability.DURABLE
         ):
             raise ValueError("normal service profile requires a durable EventStore")
-        return registration.factory(config, profile)
+        provider_instance = registration.factory(config, profile)
+        if (
+            capability == "event_store"
+            and profile is ServiceProfile.NORMAL
+            and getattr(provider_instance, "durability", None)
+            is not StoreDurability.DURABLE
+        ):
+            error = ValueError("normal service profile requires a durable EventStore")
+            try:
+                provider_instance.close()
+            except Exception as cleanup_error:
+                error.add_note(f"provider cleanup failed: {cleanup_error}")
+            raise error
+        return provider_instance
 
 
 def _build_event_store(config: object, profile: ServiceProfile) -> object:
