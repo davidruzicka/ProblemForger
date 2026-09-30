@@ -23,6 +23,8 @@ Do not silently override a higher-authority source. If an implementation need co
 
 ## Architectural invariants
 
+Owners: [ADR 0001](docs/adr/0001-harness-neutral-core.md) and [ADR 0009](docs/adr/0009-separate-local-process-service-boundary.md) (harness neutrality, service boundary, HarnessX/Pi adapters); [ADR 0002](docs/adr/0002-event-sourced-authoritative-state.md) and [ADR 0006](docs/adr/0006-authoritative-domain-events-and-stream-concurrency.md) (journal, versions, outcomes, receipts); [ADR 0003](docs/adr/0003-ports-adapters-config-modules.md) (ports, providers, configuration, EventStore durability); [ADR 0004](docs/adr/0004-external-graph-governor.md) (worker vs. governor authority); [ADR 0007](docs/adr/0007-separate-lifecycle-verification-and-evidence-axes.md) (outcome, lifecycle, and evidence axes); [ADR 0008](docs/adr/0008-explicit-agent-graph-api-for-initial-poc.md) (explicit graph API); [Verification](docs/verification.md) (evidence preference, verifier output); [UI](docs/ui.md) (observer role).
+
 - ProblemForger core is harness-neutral.
 - ProblemForger core/application logic runs behind the same separate local service boundary for HarnessX and Pi.
 - Harness adapters contain translation/integration logic only, never domain policy.
@@ -47,10 +49,10 @@ Do not silently override a higher-authority source. If an implementation need co
 - Verifier output is evidence, not ground truth.
 - Root goals, anchors, governor policy, audit history, and verification thresholds must not be silently mutable by the worker agent.
 - UI is an observer of optional telemetry, graph projections, and read-only durable governance/audit projections; it must not be required for correctness or access EventStore directly.
-- Do not build a generic plugin framework unless a real requirement justifies it.
 
 ## Scope discipline
 
+- Do not build a generic plugin framework unless a real requirement justifies it.
 - Implement only the current phase and issue.
 - Do not implement later phases speculatively.
 - Routing is architecturally anticipated but not part of the first graph/governance PoC.
@@ -74,7 +76,7 @@ For every behavioral change or bug fix:
 1. demonstrate the previous behavior with a failing test or reproducible check;
 2. implement the change;
 3. demonstrate that the test/check passes;
-4. run relevant regression tests.
+4. run relevant regression tests, and before claiming completion run every command in [Run checks](docs/specification-checks.md#run-checks).
 
 For research-facing changes:
 
@@ -86,6 +88,10 @@ For research-facing changes:
 - all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
 
 Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.
+
+## Commits
+
+Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <subject>`, for example `docs(agents): link invariants to owning ADRs` or `fix(persistence): reject stale graph-version writes`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`. The scope names a real code or documentation area, never a phase, issue, or internal ID; the subject says what changed in plain English.
 
 ## Issues and planning
 
