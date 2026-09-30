@@ -89,6 +89,13 @@ For research-facing changes:
 
 Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.
 
+## Before you commit
+
+1. Review the net diff against the branch you will merge into, not only your own edits: `git diff $(git merge-base origin/<target> HEAD)` runs from the merge base to your working tree, so it covers uncommitted work. Lines disappearing that you never wrote mean you dropped someone else's merged work.
+2. Run `scripts/review_diff.sh --target <target>` (default `main`) and fix what it reports.
+3. If your change relies on "all X do Y", produce that list mechanically instead of assuming it.
+4. Execute every branch you added at least once, the error path included.
+
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <subject>`, for example `docs(agents): link invariants to owning ADRs` or `fix(persistence): reject stale graph-version writes`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`. The scope names a real code or documentation area, never a phase, issue, or internal ID; the subject says what changed in plain English.

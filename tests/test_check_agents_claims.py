@@ -1,0 +1,184 @@
+"""Regression tests for the AGENTS.md claim checker.
+
+A false positive is worse than a missed finding here: a check that fails on correct
+documentation gets disabled. Each verdict is therefore tested in both directions.
+"""
+
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import json
+import subprocess
+import unittest
+from unittest import mock
+
+from scripts import check_agents_claims
+from scripts.check_agents_claims import collect, main
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_main(*argv):
+    """Run the CLI in-process and return (exit code, stdout, stderr)."""
+    out, err = StringIO(), StringIO()
+    code = 0
+    with redirect_stdout(out), redirect_stderr(err):
+        try:
+            main(list(argv))
+        except SystemExit as exit_:
+            code = exit_.code
+    return code, out.getvalue(), err.getvalue()
+
+
+class ClaimCheckerTests(unittest.TestCase):
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.repo = Path(temporary.name)
+        (self.repo / "src" / "pkg").mkdir(parents=True)
+        (self.repo / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (self.repo / "src" / "pkg" / "store.py").write_text("", encoding="utf-8")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "guide.md").write_text("", encoding="utf-8")
+        (self.repo / "node_modules" / "dep").mkdir(parents=True)
+        (self.repo / "node_modules" / "dep" / "hidden.md").write_text("", encoding="utf-8")
+        check_agents_claims.name_index.cache_clear()
+
+    def verdicts(self, text, doc_dir=None):
+        doc = (doc_dir or self.repo) / "AGENTS.md"
+        doc.write_text(text, encoding="utf-8")
+        return {(claim["kind"], claim["quote"]): claim["verdict"] for claim in collect(doc, self.repo)}
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+
+    def test_existing_and_missing_paths(self):
+        verdicts = self.verdicts(
+            "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"
+            "Read `docs/missing.md` and [gone](docs/gone.md#anchor).\n"
+        )
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+        self.assertEqual("TRUE", verdicts[("path", "src/pkg/")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/gone.md")])
+
+    def test_path_relative_to_a_nested_instruction_file(self):
+        verdicts = self.verdicts("See `store.py` and `__init__.py`.\n", doc_dir=self.repo / "src" / "pkg")
+        self.assertEqual("TRUE", verdicts[("path", "store.py")])
+        self.assertEqual("TRUE", verdicts[("path", "__init__.py")])
+
+    def test_path_escaping_the_repo_is_not_resolved_outside_it(self):
+        outside = self.repo.parent / "outside.md"
+        outside.write_text("", encoding="utf-8")
+        self.addCleanup(outside.unlink)
+        verdicts = self.verdicts("See `docs/../../outside.md`.\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/../../outside.md")])
+
+    def test_bare_file_names_and_shorthand_paths(self):
+        verdicts = self.verdicts("Edit `store.py`, `pkg/store.py`, `hidden.md`, and `nowhere.py`.\n")
+        self.assertEqual("TRUE", verdicts[("path", "store.py")])
+        self.assertEqual("IMPRECISE", verdicts[("path", "pkg/store.py")])
+        # node_modules is pruned from the index
+        self.assertEqual("UNRESOLVED", verdicts[("path", "hidden.md")])
+        self.assertEqual("UNRESOLVED", verdicts[("path", "nowhere.py")])
+
+    def test_prohibited_or_deployed_path_is_not_a_break(self):
+        verdicts = self.verdicts(
+            "Never commit `secrets/key.json` to the repository.\n"
+            "Logs go to `var/log/app/` (production).\n"
+        )
+        self.assertEqual("UNRESOLVED", verdicts[("path", "secrets/key.json")])
+        self.assertEqual("UNRESOLVED", verdicts[("path", "var/log/app/")])
+
+    def test_prohibition_must_stand_next_to_the_path(self):
+        verdicts = self.verdicts("Do not guess the layout; read `docs/missing.md` first.\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+
+    def test_commit_examples_are_checked_against_history(self):
+        self.git("init", "-q")
+        self.git("-c", "user.email=t@example.com", "-c", "user.name=T",
+                 "commit", "-q", "--allow-empty", "-m", "docs(agents): link invariants to owning ADRs")
+        verdicts = self.verdicts(
+            "Use `<type>(<scope>): <subject>`, for example `docs(agents): link invariants` "
+            "or `fix(persistence): reject stale writes`.\n"
+        )
+        self.assertEqual("TRUE", verdicts[("example", "docs(agents): link invariants")])
+        self.assertEqual("IMPRECISE", verdicts[("example", "fix(persistence): reject stale writes")])
+        self.assertNotIn(("example", "<type>(<scope>): <subject>"), verdicts)
+
+    def test_commit_example_without_git_history_is_unresolved(self):
+        verdicts = self.verdicts("For example `feat(core): add journal`.\n")
+        self.assertEqual("UNRESOLVED", verdicts[("example", "feat(core): add journal")])
+
+    def test_commit_example_when_git_cannot_run_is_unresolved(self):
+        with mock.patch.object(check_agents_claims.subprocess, "run", side_effect=OSError):
+            verdicts = self.verdicts("For example `feat(core): add journal`.\n")
+        self.assertEqual("UNRESOLVED", verdicts[("example", "feat(core): add journal")])
+
+    def test_python_imports_in_fenced_blocks(self):
+        verdicts = self.verdicts(
+            "```python\n"
+            "import json\n"
+            "from pkg.store import Store\n"
+            "from pkg.missing import Thing\n"
+            "import docs\n"
+            "```\n"
+            "```sh\n"
+            "run `thing` = `value`\n"
+            "```\n"
+        )
+        self.assertNotIn(("import", "import json"), verdicts)
+        self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import docs")])
+        self.assertEqual("UNRESOLVED", verdicts[("snippet", "python block, lines 1-6")])
+        self.assertEqual("UNRESOLVED", verdicts[("snippet", "sh block, lines 7-9")])
+        # config-looking text inside a fence is code, not a claim
+        self.assertNotIn(("config", "`thing` = `value`"), verdicts)
+
+    def test_process_and_config_claims_are_enumerated(self):
+        verdicts = self.verdicts("Migrations run on every deploy.\nThe `timeout` is `30`.\n")
+        self.assertEqual("UNRESOLVED", verdicts[("process", "Migrations run on every deploy.")])
+        self.assertEqual("UNRESOLVED", verdicts[("config", "`timeout` is `30`")])
+
+    def test_cli_exit_codes_and_output_modes(self):
+        doc = self.repo / "AGENTS.md"
+        doc.write_text("Read `docs/missing.md`, `docs/guide.md`, and `nowhere.py`.\n", encoding="utf-8")
+
+        code, out, _ = run_main(str(doc), "--repo", str(self.repo))
+        self.assertEqual(0, code)
+        self.assertIn("COUNTS: BREAKS-ON-USE=1, TRUE=1, UNRESOLVED=1, total=3", out)
+
+        code, _, err = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+        self.assertIn("1 claim(s) would break an agent", err)
+
+        _, out, _ = run_main(str(doc), "--repo", str(self.repo), "--json", "--only", "problems")
+        self.assertEqual(["docs/missing.md"], [json.loads(line)["quote"] for line in out.splitlines()])
+
+        _, out, _ = run_main(str(doc), "--repo", str(self.repo), "--json", "--only", "unresolved")
+        self.assertEqual(["nowhere.py"], [json.loads(line)["quote"] for line in out.splitlines()])
+
+        doc.write_text("Read `docs/guide.md`.\n", encoding="utf-8")
+        code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_cli_rejects_missing_inputs(self):
+        code, _, _ = run_main("AGENTS.md", "--repo", str(self.repo / "absent"))
+        self.assertIn("not a directory", code)
+        code, _, _ = run_main(str(self.repo / "absent.md"), "--repo", str(self.repo))
+        self.assertIn("not a file", code)
+
+    def test_repository_agents_files_have_no_breaks(self):
+        docs = subprocess.run(
+            ["git", "ls-files", "*AGENTS.md"], cwd=ROOT, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        self.assertTrue(docs)
+        code, out, _ = run_main(*(str(ROOT / doc) for doc in docs), "--repo", str(ROOT), "--fail-on-breaks")
+        self.assertEqual(0, code, out[-2000:])
+
+
+if __name__ == "__main__":
+    unittest.main()

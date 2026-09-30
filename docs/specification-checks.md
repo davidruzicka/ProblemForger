@@ -38,8 +38,12 @@ python3 -m scripts.check_architecture
 python3 -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
 python3 -m coverage report --fail-under=90
 node --test tests/review-workflow.test.mjs
+tests/test_review_diff.sh
+scripts/review_diff.sh --target main
 git diff --check
 ```
+
+`scripts/review_diff.sh` compares the merge base with the target branch against the working tree, so uncommitted work is included. It fails on a removed Python method that is still called, on conflict markers, and on an `AGENTS.md` claim that `scripts/check_agents_claims.py` resolves as `BREAKS-ON-USE` (missing path or first-party import). It warns, without failing, when the change deletes lines another author wrote. `IMPRECISE` and `UNRESOLVED` claims are reported for review and never fail. CI runs the whole-tree checks through `--check conflict-markers` and `--check agents-claims`; `tests/test_review_diff.sh` plants each defect in a throwaway repository and expects the gate to fail.
 
 The bootstrap tests verify the package layers import without harness/provider
 dependencies. Core, ports, and application use cases may import only reviewed,
