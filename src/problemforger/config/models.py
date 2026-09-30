@@ -28,6 +28,7 @@ _SENSITIVE_KEY_MARKERS = (
     "credential",
     "password",
     "private_key",
+    "privatekey",
     "secret",
     "token",
 )
