@@ -71,8 +71,9 @@ printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
 expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference to an async method'
 rm -rf "$repo"
 
-# A same-named method already exists at the merge base - the check must not switch off;
-# what decides is the drop in definition count against the merge base.
+# A same-named method remains elsewhere - grep cannot tell which class the call means, so the
+# check must not switch off (the definition count dropped) but must not fail either: it warns
+# and names the remaining definitions.
 repo=$(mktemp -d)
 git -C "$repo" init -q .
 git -C "$repo" config user.email test@example.com
@@ -85,7 +86,13 @@ git -C "$repo" add -A
 git -C "$repo" commit -qm base
 git -C "$repo" branch -q baseline
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference despite a same-named method elsewhere'
+out=$( (cd "$repo" && "$GATE" --target baseline) 2>&1 )
+code=$?
+expect_exit 0 "$code" 'same-named method elsewhere does not fail'
+case "$out" in
+    *'refreshV2'*'pkg/d.py'*'pkg/b.py'*) report ok 'same-named method elsewhere warns with definitions and calls' ;;
+    *) report fail "same-named method elsewhere is not reported: $out" ;;
+esac
 rm -rf "$repo"
 
 # Moving a method to another file is not a removal and must not be reported.
@@ -152,14 +159,15 @@ case "$out" in
 esac
 rm -rf "$repo"
 
-# Deleting lines another author wrote is a warning, not a failure.
+# Deleting lines another author wrote is a warning, not a failure. Both deleted lines come from
+# one commit, which blame --porcelain describes only once; the count must still be per line.
 repo=$(new_repo)
 git -C "$repo" config user.email me@example.com
-printf 'def use(widget):\n    return None\n' > "$repo/pkg/b.py"
+printf 'USE = None\n' > "$repo/pkg/b.py"
 out=$( (cd "$repo" && "$GATE" --target baseline) 2>&1 )
 code=$?
 case "$out" in
-    *'pkg/b.py (-1 lines written by someone else)'*) report ok 'foreign deletion is reported' ;;
+    *'pkg/b.py (-2 lines written by someone else)'*) report ok 'foreign deletion counts every line' ;;
     *) report fail "foreign deletion is not reported: $out" ;;
 esac
 expect_exit 0 "$code" 'foreign deletion does not fail'

@@ -74,9 +74,10 @@ warn_on_foreign_deletions() {
             [ -z "$start" ] && continue
             count=${count:-1}
             [ "$count" -eq 0 ] && continue
-            foreign=$((foreign + $(git blame --porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
+            # --line-porcelain repeats the author for every line; --porcelain gives it once per commit.
+            foreign=$((foreign + $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
                 | grep -c "^author-mail <\(.*\)>" || true)))
-            foreign=$((foreign - $(git blame --porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
+            foreign=$((foreign - $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
                 | grep -c "^author-mail <$me>" || true)))
         done <<< "$ranges"
 
@@ -118,14 +119,24 @@ check_orphan_references() {
             continue
         fi
         hits=$(git grep -nE "\.$name\(" -- '*.py')
-        if [ -n "$hits" ]; then
+        [ -z "$hits" ] && continue
+        # Grep cannot tell which class a call means. With no definition left the call can only
+        # fail at runtime; with same-named definitions left it may be theirs, so only warn.
+        if [ "$after" -eq 0 ]; then
             centered_text "Reference to removed method $name"
-            echo "Definitions in the repo: $before before the change, $after after. Remaining calls:"
+            echo "Definitions in the repo: $before before the change, none after. Remaining calls:"
             echo "$hits"
             echo
-            echo "On a rename, update the calls too; on a move to another class, confirm the callers"
-            echo "mean the new one. If these are a different method of the same name, ignore this."
+            echo "On a rename, update the calls too."
             exit_code=1
+        else
+            centered_text "Possible reference to removed method $name"
+            echo "Definitions in the repo: $before before the change, $after after. Remaining definitions:"
+            git grep -nE "def $name\b" -- '*.py'
+            echo "Remaining calls:"
+            echo "$hits"
+            echo
+            echo "Warning, not an error: confirm each call means one of the remaining definitions."
         fi
     done
 }
