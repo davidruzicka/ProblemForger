@@ -14,12 +14,13 @@ What it resolves by itself (deterministic, no judgement):
     example     - does a quoted Conventional Commits example exist in git history?
 
 What it only enumerates, for the model to adjudicate:
+    path        - NEEDS-AI when a missing path stands next to a negation
     snippet     - fenced code block: identifiers must resolve against real code
     config      - a claimed config value: read the config file and compare
     process     - "on every deploy...", "someone has to..." : corroborate elsewhere
 
 Exit code is 0 by default; with --fail-on-breaks it is 1 when some claim is BREAKS-ON-USE.
-IMPRECISE and UNRESOLVED never fail the run - an unresolved claim is data, not an error.
+IMPRECISE, NEEDS-AI, and UNRESOLVED never fail the run - an unresolved claim is data, not an error.
 """
 
 import argparse
@@ -31,11 +32,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# backticked path with a file extension, or a directory path ending in /
+# backticked path with a file extension, or a directory path ending in /; leading ./ and ../ are
+# kept so resolve_path can check them, including whether they escape the repository
 _EXT = r'py|md|mjs|js|json|toml|txt|ya?ml|sh'
-PATH_RE = re.compile(rf'`(?P<path>[\w][\w./-]*(?:\.(?:{_EXT})|/))`')
+_PARENTS = r'(?:\.{1,2}/)*'
+PATH_RE = re.compile(rf'`(?P<path>{_PARENTS}[\w][\w./-]*(?:\.(?:{_EXT})|/))`')
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path
-LINK_RE = re.compile(r'\]\((?P<path>/?[\w][\w./-]*\.[a-z]{2,4})(?:#[\w-]*)?\)')
+LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[\w-]*)?\)')
 IMPORT_RE = re.compile(r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s|import\s+(?P<mod>[\w.]+))', re.M)
 FENCE_RE = re.compile(r'^```(?P<lang>[\w]*)\s*$', re.M)
 # claims that name a config knob and a value
@@ -48,7 +51,8 @@ PROCESS_RE = re.compile(
     r'|happens automatically)\b',
     re.I,
 )
-# a path named in a prohibition ("never commit .env") is expected to be absent
+# a negation next to a missing path may mean "must stay absent" ("never commit .env") or may not
+# ("do not proceed until you read x"); only a model can tell, so such claims are NEEDS-AI
 PROHIBITION_RE = re.compile(r'\b(?:never|not |non-|don\'t|do not|avoid|must not|no )', re.I)
 # How many characters around a path still count as the same clause.
 CLAUSE_REACH = 60
@@ -197,15 +201,12 @@ def collect(doc, repo):
             prefix = line[max(0, m.start() - CLAUSE_REACH):m.start()]
             clause = re.split(r'[;.]\s|\s--\s', prefix)[-1]
             suffix = line[m.end():m.end() + CLAUSE_REACH]
-            prohibition = bool(
-                PROHIBITION_RE.search(clause)
-                or ELSEWHERE_RE.search(clause)
-                or ELSEWHERE_RE.search(suffix)
-            )
             verdict, detail = resolve_path(repo, doc.parent, raw)
-            if verdict != 'TRUE' and prohibition:
-                # "never commit credentials.json" — absence is the point, not a defect
-                verdict, detail = 'UNRESOLVED', 'absent, but the line reads as a prohibition'
+            if verdict != 'TRUE':
+                if PROHIBITION_RE.search(clause):
+                    verdict, detail = 'NEEDS-AI', 'missing, next to a negation: decide whether the absence is intended'
+                elif ELSEWHERE_RE.search(clause) or ELSEWHERE_RE.search(suffix):
+                    verdict, detail = 'UNRESOLVED', 'absent here; the text places it on a deploy target'
             add('path', line_no, raw, verdict, detail)
 
         for m in EXAMPLE_RE.finditer(line):
@@ -247,7 +248,7 @@ def main(argv=None):
     ap.add_argument('--json', action='store_true', help='NDJSON output')
     ap.add_argument('--only', choices=['unresolved', 'problems'], help='filter output')
     ap.add_argument('--fail-on-breaks', action='store_true',
-                    help='exit 1 if any claim is BREAKS-ON-USE (for CI). IMPRECISE and UNRESOLVED never fail.')
+                    help='exit 1 if any claim is BREAKS-ON-USE (for CI). IMPRECISE, NEEDS-AI, and UNRESOLVED never fail.')
     args = ap.parse_args(argv)
 
     # Absolute from here on: a relative root yields relative walk hits, which then blow up
@@ -266,10 +267,14 @@ def main(argv=None):
             claim['doc'] = str(doc)
             claims.append(claim)
 
+    # Counted before --only filters the display, so the exit status always sees every break.
+    breaks = sum(c['verdict'] == 'BREAKS-ON-USE' for c in claims)
+    needs_ai = sum(c['verdict'] == 'NEEDS-AI' for c in claims)
+
     if args.only == 'unresolved':
         claims = [c for c in claims if c['verdict'] == 'UNRESOLVED']
     elif args.only == 'problems':
-        claims = [c for c in claims if c['verdict'] in ('BREAKS-ON-USE', 'IMPRECISE')]
+        claims = [c for c in claims if c['verdict'] in ('BREAKS-ON-USE', 'IMPRECISE', 'NEEDS-AI')]
 
     if args.json:
         for c in claims:
@@ -285,11 +290,13 @@ def main(argv=None):
             counts[c['verdict']] = counts.get(c['verdict'], 0) + 1
         print('\nCOUNTS: ' + ', '.join(f'{k}={v}' for k, v in sorted(counts.items())) + f', total={len(claims)}')
         print('UNRESOLVED claims need a human or a model to adjudicate — they are not passes.')
+        if needs_ai:
+            print(f'NEEDS-AI claims: {needs_ai}. A missing path stands next to a negation; have a model or a '
+                  'reviewer decide whether each absence is intended or the instruction is broken.')
 
     if args.fail_on_breaks:
-        breaks = [c for c in claims if c['verdict'] == 'BREAKS-ON-USE']
         if breaks:
-            print(f'\n{len(breaks)} claim(s) would break an agent that follows them. Fix the code or the text.',
+            print(f'\n{breaks} claim(s) would break an agent that follows them. Fix the code or the text.',
                   file=sys.stderr)
             sys.exit(1)
 

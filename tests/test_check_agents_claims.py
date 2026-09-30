@@ -65,16 +65,25 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/gone.md")])
 
     def test_path_relative_to_a_nested_instruction_file(self):
-        verdicts = self.verdicts("See `store.py` and `__init__.py`.\n", doc_dir=self.repo / "src" / "pkg")
+        verdicts = self.verdicts(
+            "See `store.py`, `./__init__.py`, `../pkg/store.py`, [guide](../../docs/guide.md#setup), "
+            "`../missing.md`, and [gone](../../docs/gone.md).\n",
+            doc_dir=self.repo / "src" / "pkg",
+        )
         self.assertEqual("TRUE", verdicts[("path", "store.py")])
-        self.assertEqual("TRUE", verdicts[("path", "__init__.py")])
+        self.assertEqual("TRUE", verdicts[("path", "./__init__.py")])
+        self.assertEqual("TRUE", verdicts[("path", "../pkg/store.py")])
+        self.assertEqual("TRUE", verdicts[("path", "../../docs/guide.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../missing.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../../docs/gone.md")])
 
     def test_path_escaping_the_repo_is_not_resolved_outside_it(self):
         outside = self.repo.parent / "outside.md"
         outside.write_text("", encoding="utf-8")
         self.addCleanup(outside.unlink)
-        verdicts = self.verdicts("See `docs/../../outside.md`.\n")
+        verdicts = self.verdicts("See `docs/../../outside.md` and `../outside.md`.\n")
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/../../outside.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../outside.md")])
 
     def test_bare_file_names_and_shorthand_paths(self):
         verdicts = self.verdicts("Edit `store.py`, `pkg/store.py`, `hidden.md`, and `nowhere.py`.\n")
@@ -84,12 +93,23 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("UNRESOLVED", verdicts[("path", "hidden.md")])
         self.assertEqual("UNRESOLVED", verdicts[("path", "nowhere.py")])
 
-    def test_prohibited_or_deployed_path_is_not_a_break(self):
+    def test_missing_path_next_to_a_negation_needs_ai_and_never_fails(self):
+        # A negation cannot tell "must stay absent" from "do not proceed until you read it".
         verdicts = self.verdicts(
             "Never commit `secrets/key.json` to the repository.\n"
-            "Logs go to `var/log/app/` (production).\n"
+            "Do not proceed until you have read `docs/required.md`.\n"
+            "Do not edit `docs/guide.md` by hand.\n"
         )
-        self.assertEqual("UNRESOLVED", verdicts[("path", "secrets/key.json")])
+        self.assertEqual("NEEDS-AI", verdicts[("path", "secrets/key.json")])
+        self.assertEqual("NEEDS-AI", verdicts[("path", "docs/required.md")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+
+        code, out, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+        self.assertIn("NEEDS-AI claims: 2", out)
+
+    def test_deployed_path_is_not_a_break(self):
+        verdicts = self.verdicts("Logs go to `var/log/app/` (production).\n")
         self.assertEqual("UNRESOLVED", verdicts[("path", "var/log/app/")])
 
     def test_prohibition_must_stand_next_to_the_path(self):
@@ -160,6 +180,14 @@ class ClaimCheckerTests(unittest.TestCase):
 
         _, out, _ = run_main(str(doc), "--repo", str(self.repo), "--json", "--only", "unresolved")
         self.assertEqual(["nowhere.py"], [json.loads(line)["quote"] for line in out.splitlines()])
+
+        # Filtering the display must not hide a break from the exit status.
+        code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--only", "unresolved", "--fail-on-breaks")
+        self.assertEqual(1, code)
+
+        doc.write_text("Never read `docs/absent.md`.\n", encoding="utf-8")
+        _, out, _ = run_main(str(doc), "--repo", str(self.repo), "--json", "--only", "problems")
+        self.assertEqual(["NEEDS-AI"], [json.loads(line)["verdict"] for line in out.splitlines()])
 
         doc.write_text("Read `docs/guide.md`.\n", encoding="utf-8")
         code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")

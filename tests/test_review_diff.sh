@@ -95,6 +95,16 @@ case "$out" in
 esac
 rm -rf "$repo"
 
+# A `def name` inside a comment is not a surviving definition.
+repo=$(new_repo)
+printf '# Call def refreshV2() through use().\n' > "$repo/pkg/c.py"
+git -C "$repo" add -A
+git -C "$repo" commit -qm comment
+git -C "$repo" branch -qf baseline
+printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
+expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference despite def in a comment'
+rm -rf "$repo"
+
 # Moving a method to another file is not a removal and must not be reported.
 repo=$(new_repo)
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
@@ -171,6 +181,24 @@ case "$out" in
     *) report fail "foreign deletion is not reported: $out" ;;
 esac
 expect_exit 0 "$code" 'foreign deletion does not fail'
+
+# A renamed file that loses foreign lines is blamed under its old path. The file is large
+# enough that git still detects the rename after one of its lines is deleted.
+repo2=$(new_repo)
+printf 'A = 1\nB = 2\nC = 3\nD = 4\n' > "$repo2/pkg/consts.py"
+git -C "$repo2" add -A
+git -C "$repo2" commit -qm consts
+git -C "$repo2" branch -qf baseline
+git -C "$repo2" config user.email me@example.com
+git -C "$repo2" mv pkg/consts.py pkg/renamed.py
+printf 'A = 1\nB = 2\nC = 3\n' > "$repo2/pkg/renamed.py"
+git -C "$repo2" add -A
+out=$( (cd "$repo2" && "$GATE" --target baseline) 2>&1 )
+case "$out" in
+    *'pkg/renamed.py (-1 lines written by someone else)'*) report ok 'foreign deletion in a renamed file is reported' ;;
+    *) report fail "foreign deletion in a renamed file is not reported: $out" ;;
+esac
+rm -rf "$repo2"
 
 # Without an identity the author of a line cannot be told apart, so no false alarm.
 git -C "$repo" config user.email ''

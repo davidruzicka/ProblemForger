@@ -57,7 +57,7 @@ show_net_diff() {
 # file that only loses lines is not enough; what decides is WHO wrote the deleted lines,
 # so each deleted hunk is blamed at the merge base.
 warn_on_foreign_deletions() {
-    local base="$1" target="$2" me file ranges start count foreign total_foreign=0 report=''
+    local base="$1" target="$2" me added deleted file old ranges start count foreign total_foreign=0 report=''
     me=$(git config user.email)
     # Without an identity every deleted line would count as foreign.
     if [ -z "$me" ]; then
@@ -65,19 +65,28 @@ warn_on_foreign_deletions() {
         return
     fi
 
-    while read -r file; do
-        [ -z "$file" ] && continue
+    # -z numstat keeps paths unquoted and gives a rename as an empty path followed by the old and
+    # new path; the text form's "pkg/{old.py => new.py}" is not a path git diff or blame accept.
+    while IFS=$'\t' read -r -d '' added deleted file; do
+        if [ -z "$file" ]; then
+            IFS= read -r -d '' old
+            IFS= read -r -d '' file
+        else
+            old="$file"
+        fi
+        [ "$deleted" = '0' ] || [ "$deleted" = '-' ] && continue
         foreign=0
         # Old-side ranges of deleted hunks; -U0 yields hunks without context, so the range is exact.
-        ranges=$(git diff -U0 "$base" -- "$file" | sed -nE 's/^@@ -([0-9]+)(,([0-9]+))? .*/\1 \3/p')
+        # Deleted lines exist only under the old path at the merge base, so blame that one.
+        ranges=$(git diff -M -U0 "$base" -- "$old" "$file" | sed -nE 's/^@@ -([0-9]+)(,([0-9]+))? .*/\1 \3/p')
         while read -r start count; do
             [ -z "$start" ] && continue
             count=${count:-1}
             [ "$count" -eq 0 ] && continue
             # --line-porcelain repeats the author for every line; --porcelain gives it once per commit.
-            foreign=$((foreign + $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
+            foreign=$((foreign + $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$old" 2>/dev/null \
                 | grep -c "^author-mail <\(.*\)>" || true)))
-            foreign=$((foreign - $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
+            foreign=$((foreign - $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$old" 2>/dev/null \
                 | grep -c "^author-mail <$me>" || true)))
         done <<< "$ranges"
 
@@ -85,7 +94,7 @@ warn_on_foreign_deletions() {
             report="$report  $file (-$foreign lines written by someone else)"$'\n'
             total_foreign=$((total_foreign + foreign))
         fi
-    done <<< "$(git diff --numstat "$base" | awk '$2 != "0" && $2 != "-" { print $3 }')"
+    done < <(git diff -z -M --numstat "$base")
 
     if [ "$total_foreign" -gt 0 ]; then
         centered_text "Deleting lines someone else wrote"
@@ -108,13 +117,16 @@ check_orphan_references() {
 
     [ -z "$removed_names" ] && return
 
-    local before after
+    local before after definition
     for name in $removed_names; do
+        # Only a line that starts with the keyword counts; `def name` in a comment or prose would
+        # otherwise pass for a surviving definition and turn a real orphan into a warning.
+        definition="^[[:space:]]*(async[[:space:]]+)?def $name\b"
         # A definition existing elsewhere is not enough: common names like `run` or `save`
         # repeat across classes and the check would switch off for them. What decides is
         # whether the definition count dropped against the merge base.
-        before=$(git grep -cE "def $name\b" "$1" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
-        after=$(git grep -cE "def $name\b" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+        before=$(git grep -cE "$definition" "$1" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+        after=$(git grep -cE "$definition" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
         if [ "$after" -ge "$before" ]; then
             continue
         fi
@@ -132,7 +144,7 @@ check_orphan_references() {
         else
             centered_text "Possible reference to removed method $name"
             echo "Definitions in the repo: $before before the change, $after after. Remaining definitions:"
-            git grep -nE "def $name\b" -- '*.py'
+            git grep -nE "$definition" -- '*.py'
             echo "Remaining calls:"
             echo "$hits"
             echo
