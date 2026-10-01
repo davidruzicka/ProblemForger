@@ -127,6 +127,22 @@ git -C "$repo" add -A
 expect_exit 0 "$(run_gate "$repo" --target baseline)" 'moved method is not reported'
 rm -rf "$repo"
 
+# Before a commit the new file is often not added yet; it must count all the same.
+repo=$(new_repo)
+printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
+printf 'class Widget:\n    def refreshV2(self):\n        return 1\n' > "$repo/pkg/moved.py"
+expect_exit 0 "$(run_gate "$repo" --target baseline)" 'method moved into an untracked file is not reported'
+rm -rf "$repo"
+
+repo=$(new_repo)
+printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
+printf 'def use(widget):\n    return None\n' > "$repo/pkg/b.py"
+printf 'def use_again(widget):\n    return widget.refreshV2()\n' > "$repo/pkg/c.py"
+expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference from an untracked file'
+printf 'Intro.\n<<<<<<< HEAD\n' > "$repo/pkg/notes.md"
+expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" 'conflict marker in an untracked file'
+rm -rf "$repo"
+
 repo=$(new_repo)
 printf 'Intro.\n<<<<<<< HEAD\nours\n>>>>>>> other\n' > "$repo/pkg/notes.md"
 git -C "$repo" add -A
@@ -158,6 +174,10 @@ repo=$(new_repo)
 expect_exit 2 "$(run_gate "$repo" --target no-such-branch)" 'unknown target branch'
 expect_exit 2 "$(run_gate "$repo" --check nonsense)" 'unknown check name'
 expect_exit 2 "$(run_gate "$repo" --taget baseline)" 'typo in a flag'
+# A branch given without --target must not be dropped in favor of the default; with a `main`
+# branch present the default resolves, so only the argument check can produce exit 2.
+git -C "$repo" branch -q main
+expect_exit 2 "$(run_gate "$repo" baseline)" 'positional argument is rejected'
 rm -rf "$repo"
 
 printf 'Messages that must guide the reader:\n'

@@ -139,6 +139,64 @@ class ClaimCheckerTests(unittest.TestCase):
             verdicts = self.verdicts("For example `feat(core): add journal`.\n")
         self.assertEqual("UNRESOLVED", verdicts[("example", "feat(core): add journal")])
 
+    def test_directory_names_and_shorthand_directories(self):
+        (self.repo / "docs" / "adr").mkdir()
+        (self.repo / "docs" / "adr" / "0001.md").write_text("", encoding="utf-8")
+        (self.repo / "src" / "pkg" / "sub").mkdir()
+        verdicts = self.verdicts("Files under `adr/`, `pkg/sub/`, and `nowhere/`.\n")
+        # the same treatment as a bare file name or a shorthand file path, never a break
+        self.assertEqual("TRUE", verdicts[("path", "adr/")])
+        self.assertEqual("IMPRECISE", verdicts[("path", "pkg/sub/")])
+        self.assertEqual("UNRESOLVED", verdicts[("path", "nowhere/")])
+
+    def test_src_namespace_packages_are_first_party(self):
+        (self.repo / "src" / "acme").mkdir()
+        (self.repo / "src" / "acme" / "core.py").write_text("", encoding="utf-8")
+        (self.repo / "docs" / "adr").mkdir()
+        verdicts = self.verdicts(
+            "```python\n"
+            "from acme.core import A\n"
+            "from acme.missing import Thing\n"
+            "from adr.missing import Thing\n"
+            "```\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from acme.core import")])
+        # a namespace package may continue in an installed distribution: reported, never a break
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from acme.missing import")])
+        # only src/ children become import roots without __init__.py; docs/adr does not
+        self.assertNotIn(("import", "from adr.missing import"), verdicts)
+
+    def test_namespace_shared_with_an_installed_distribution_is_not_a_break(self):
+        (self.repo / "src" / "google" / "myteam").mkdir(parents=True)
+        (self.repo / "src" / "google" / "myteam" / "api.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\n"
+            "from google.myteam.api import Client\n"
+            "from google.protobuf import message\n"
+            "```\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from google.myteam.api import")])
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from google.protobuf import")])
+
+    def test_src_directory_without_python_is_not_an_import_root(self):
+        (self.repo / "src" / "http").mkdir()
+        (self.repo / "src" / "http" / "client.ts").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom http.server import HTTPServer\n```\n")
+        self.assertNotIn(("import", "from http.server import"), verdicts)
+
+    def test_regular_packages_one_level_below_any_top_level_directory(self):
+        (self.repo / "lib" / "libpkg").mkdir(parents=True)
+        (self.repo / "lib" / "libpkg" / "__init__.py").write_text("", encoding="utf-8")
+        (self.repo / "lib" / "libpkg" / "m.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\n"
+            "from libpkg.m import f\n"
+            "from libpkg.gone import g\n"
+            "```\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from libpkg.m import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from libpkg.gone import")])
+
     def test_python_imports_in_fenced_blocks(self):
         verdicts = self.verdicts(
             "```python\n"

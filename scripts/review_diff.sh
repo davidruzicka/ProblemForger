@@ -127,11 +127,13 @@ check_orphan_references() {
         # repeat across classes and the check would switch off for them. What decides is
         # whether the definition count dropped against the merge base.
         before=$(git grep -cE "$definition" "$1" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
-        after=$(git grep -cE "$definition" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+        # Working-tree greps include untracked files: before a commit the file a method moved
+        # to, or a new caller, is often not added yet.
+        after=$(git grep --untracked -cE "$definition" -- '*.py' 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
         if [ "$after" -ge "$before" ]; then
             continue
         fi
-        hits=$(git grep -nE "\.$name\(" -- '*.py')
+        hits=$(git grep --untracked -nE "\.$name\(" -- '*.py')
         [ -z "$hits" ] && continue
         # Grep cannot tell which class a call means. With no definition left the call can only
         # fail at runtime; with same-named definitions left it may be theirs, so only warn.
@@ -145,7 +147,7 @@ check_orphan_references() {
         else
             centered_text "Possible reference to removed method $name"
             echo "Definitions in the repo: $before before the change, $after after. Remaining definitions:"
-            git grep -nE "$definition" -- '*.py'
+            git grep --untracked -nE "$definition" -- '*.py'
             echo "Remaining calls:"
             echo "$hits"
             echo
@@ -158,7 +160,7 @@ check_conflict_markers() {
     local hits
     # A bare ======= is deliberately excluded: it is a heading underline in docs and docstrings.
     # One extension list serves both the local run and the CI job that calls --check.
-    hits=$(git grep -nE '^(<{7} |>{7} )' -- '*.py' '*.md' '*.mjs' '*.js' '*.json' '*.toml' '*.sh' '*.yml' '*.yaml')
+    hits=$(git grep --untracked -nE '^(<{7} |>{7} )' -- '*.py' '*.md' '*.mjs' '*.js' '*.json' '*.toml' '*.sh' '*.yml' '*.yaml')
     if [ -n "$hits" ]; then
         centered_text "Conflict markers in tracked files"
         echo "$hits"
@@ -201,9 +203,12 @@ while true; do
     case "$1" in
         -t|--target) TARGET="$2"; shift 2 ;;
         -c|--check) CHECK="$2"; shift 2 ;;
-        --) break ;;
+        --) shift; break ;;
     esac
 done
+# getopt moves positional arguments after `--`; a branch given without --target would
+# otherwise be dropped and the review would run against the default.
+[ $# -gt 0 ] && { echo "Unexpected argument '$1'; pass the branch as --target $1." >&2; usage; exit 2; }
 
 # A single check on its own; CI calls it so it has no copy of the same logic.
 # Whole-tree checks need no target branch.

@@ -94,7 +94,8 @@ def name_index(repo):
     index = {}
     for dirpath, dirnames, filenames in os.walk(repo):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_PARTS and not d.startswith('.')]
-        for name in filenames:
+        # Directories too, so `adr/` resolves like a bare file name does.
+        for name in dirnames + filenames:
             index.setdefault(name, []).append(Path(dirpath) / name)
     return index
 
@@ -116,7 +117,9 @@ def resolve_path(repo, doc_dir, raw):
         if candidate.exists():
             return 'TRUE', f'{candidate.relative_to(repo_abs)} ({label})'
 
-    # A bare filename with no directory part is a reference to a kind of file, not to one location.
+    # A bare name with no directory part is a reference to a kind of file, not to one location.
+    # A trailing slash only marks a directory; it is not a directory part.
+    bare = bare.rstrip('/')
     if '/' not in bare:
         hits = name_index(repo).get(bare, [])[:3]
         if hits:
@@ -140,24 +143,32 @@ def first_party_roots(repo):
         if not p.is_dir() or p.name.startswith('.') or p.name in SKIP_DIR_PARTS:
             continue
         roots.add(p.name)
-        # src layout: src/<package>/__init__.py
+        # Packages one level below a top-level directory: <dir>/<package>/__init__.py, and under
+        # src/ also PEP 420 namespace packages without __init__.py. Those must contain Python, or
+        # an asset folder such as src/http/ would shadow the stdlib or a third-party name.
         for child in p.iterdir():
-            if child.is_dir() and (child / '__init__.py').exists():
+            if child.is_dir() and ((child / '__init__.py').exists()
+                                   or (p.name == 'src' and next(child.rglob('*.py'), None))):
                 roots.add(child.name)
     return roots
 
 
-def module_exists(repo, dotted, roots):
-    """None = not a claim about this repo (stdlib/third-party), else True/False."""
+def import_verdict(repo, dotted, roots):
+    """None = not a claim about this repo (stdlib/third-party), else (verdict, evidence)."""
     top = dotted.split('.')[0]
     if top not in roots:
         return None
     rel = Path(*dotted.split('.'))
-    for base in [repo, *(p for p in repo.iterdir() if p.is_dir() and p.name not in SKIP_DIR_PARTS)]:
+    bases = [repo, *(p for p in repo.iterdir() if p.is_dir() and p.name not in SKIP_DIR_PARTS)]
+    for base in bases:
         # a directory without __init__.py still imports as a PEP 420 namespace package
         if (base / rel).with_suffix('.py').exists() or (base / rel).is_dir():
-            return True
-    return False
+            return 'TRUE', f'module path {dotted}'
+    # A namespace package can continue in an installed distribution (google.protobuf next to a
+    # repo's google.myteam), so a submodule missing here does not prove the import breaks.
+    if any((base / top).is_dir() and not (base / top / '__init__.py').exists() for base in bases):
+        return 'UNRESOLVED', f'{dotted} not in the repo; namespace package {top} may continue outside it'
+    return 'BREAKS-ON-USE', f'module path {dotted}'
 
 
 def git_has(repo, needle):
@@ -232,11 +243,10 @@ def collect(doc, repo):
         if lang in ('python', 'py'):
             for m in IMPORT_RE.finditer(body):
                 dotted = m.group('from') or m.group('mod')
-                exists = module_exists(repo, dotted, roots)
-                if exists is None:
+                verdict = import_verdict(repo, dotted, roots)
+                if verdict is None:
                     continue  # stdlib or third-party: not a claim about this repo
-                add('import', start, m.group(0).strip(),
-                    'TRUE' if exists else 'BREAKS-ON-USE', f'module path {dotted}')
+                add('import', start, m.group(0).strip(), *verdict)
         add('snippet', start, f'{lang or "text"} block, lines {start}-{end}', 'UNRESOLVED',
             'resolve every identifier against real code; check it runs on paste')
 
