@@ -180,6 +180,25 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
 
+    def test_imports_resolve_against_what_git_would_commit(self):
+        self.git("init", "-q")
+        (self.repo / ".gitignore").write_text("src/pkg/local.py\nbuild/\n", encoding="utf-8")
+        (self.repo / "src" / "pkg" / "local.py").write_text("", encoding="utf-8")
+        (self.repo / "build").mkdir()
+        (self.repo / "build" / "lib.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\n"
+            "from pkg.local import X\n"
+            "from pkg.store import Y\n"
+            "import build\n"
+            "```\n"
+        )
+        # an ignored module exists only locally; a clean checkout lacks it
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.local import")])
+        self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
+        # an ignored build/ directory is not a first-party package, so `build` stays third-party
+        self.assertNotIn(("import", "import build"), verdicts)
+
     def test_imports_in_indented_fences_lists_and_python3_blocks(self):
         verdicts = self.verdicts(
             "1. Example:\n"

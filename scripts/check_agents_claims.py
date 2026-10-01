@@ -141,6 +141,11 @@ def committable(repo, rel):
     return paths is None or rel in paths
 
 
+def exists_here(repo, path):
+    """Does `path` (under `repo`) exist in what git would commit, as a clean checkout would see it?"""
+    return path.exists() and committable(repo, path.relative_to(repo))
+
+
 def resolve_path(repo, doc_dir, raw):
     """
     Returns (verdict, evidence). Paths in a module-scoped instruction file are usually relative to
@@ -183,12 +188,15 @@ def first_party_roots(repo):
     for p in repo.iterdir():
         if not p.is_dir() or p.name.startswith('.') or p.name in SKIP_DIR_PARTS:
             continue
+        # an ignored directory such as build/ exists only locally and must not shadow a package
+        if not committable(repo, Path(p.name)):
+            continue
         roots.add(p.name)
         # Packages one level below a top-level directory: <dir>/<package>/__init__.py, and under
         # src/ also PEP 420 namespace packages without __init__.py. Those must contain Python, or
         # an asset folder such as src/http/ would shadow the stdlib or a third-party name.
         for child in p.iterdir():
-            if child.is_dir() and ((child / '__init__.py').exists()
+            if exists_here(repo, child) and child.is_dir() and ((child / '__init__.py').exists()
                                    or (p.name == 'src' and next(child.rglob('*.py'), None))):
                 roots.add(child.name)
     return roots
@@ -203,11 +211,12 @@ def import_verdict(repo, dotted, roots):
     bases = [repo, *(p for p in repo.iterdir() if p.is_dir() and p.name not in SKIP_DIR_PARTS)]
     for base in bases:
         # a directory without __init__.py still imports as a PEP 420 namespace package
-        if (base / rel).with_suffix('.py').exists() or (base / rel).is_dir():
+        if exists_here(repo, (base / rel).with_suffix('.py')) or exists_here(repo, base / rel):
             return 'TRUE', f'module path {dotted}'
     # A namespace package can continue in an installed distribution (google.protobuf next to a
     # repo's google.myteam), so a submodule missing here does not prove the import breaks.
-    if any((base / top).is_dir() and not (base / top / '__init__.py').exists() for base in bases):
+    if any(exists_here(repo, base / top) and not exists_here(repo, base / top / '__init__.py')
+           for base in bases):
         return 'UNRESOLVED', f'{dotted} not in the repo; namespace package {top} may continue outside it'
     return 'BREAKS-ON-USE', f'module path {dotted}'
 

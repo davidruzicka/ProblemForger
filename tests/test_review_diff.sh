@@ -112,6 +112,29 @@ printf 'class Special(Widget):\n    @classmethod\n    def make(cls): return cls.
 expect_exit 1 "$(run_gate "$repo" --target baseline)" 'call through cls fails'
 rm -rf "$repo"
 
+# A nested function is not a method, even though it is indented: removing a local `run()` must
+# not fail on a Thread subclass calling its inherited `self.run()`.
+repo=$(mktemp -d)
+git -C "$repo" init -q .
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name Test
+mkdir -p "$repo/pkg"
+printf 'def outer():\n    def run():\n        return 1\n    return run()\n' > "$repo/pkg/a.py"
+printf 'import threading\nclass Worker(threading.Thread):\n    def go(self):\n        return self.run()\n' > "$repo/pkg/b.py"
+git -C "$repo" add -A
+git -C "$repo" commit -qm base
+git -C "$repo" branch -q baseline
+printf 'def outer():\n    return 1\n' > "$repo/pkg/a.py"
+expect_exit 0 "$(run_gate "$repo" --target baseline)" 'removed nested function is not a method'
+# A file that does not parse falls back to indentation, so a removed method is still caught.
+printf 'class Widget:\n    def run(self):\n        return 1\n' > "$repo/pkg/a.py"
+git -C "$repo" commit -qam method
+git -C "$repo" branch -qf baseline
+printf 'class Widget:\n    pass\n\n(\n' > "$repo/pkg/a.py"
+printf 'class Worker:\n    def go(self):\n        return self.run()\n' > "$repo/pkg/b.py"
+expect_exit 1 "$(run_gate "$repo" --target baseline)" 'removed method in a file that does not parse'
+rm -rf "$repo"
+
 # A `def name` inside a comment is not a surviving definition.
 repo=$(new_repo)
 printf '# Call def refreshV2() through use().\n' > "$repo/pkg/c.py"
@@ -184,6 +207,20 @@ expect_exit 1 "$(run_gate "$repo" --target baseline)" 'false path claim in AGENT
 expect_exit 1 "$(run_gate "$repo" --check agents-claims)" 'false path claim via --check'
 printf 'Read `pkg/a.py` first.\n' > "$repo/AGENTS.md"
 expect_exit 0 "$(run_gate "$repo" --check agents-claims)" 'true path claim via --check'
+# A deleted AGENTS.md is still in the index; it must not be handed to the checker.
+mkdir -p "$repo/old"
+printf 'Read `pkg/a.py`.\n' > "$repo/old/AGENTS.md"
+git -C "$repo" add -A
+git -C "$repo" commit -qm 'scoped instructions'
+rm "$repo/old/AGENTS.md"
+expect_exit 0 "$(run_gate "$repo" --check agents-claims)" 'deleted AGENTS.md is skipped'
+# A path with a space is one file, checked as such.
+mkdir -p "$repo/legacy api"
+printf 'Read `pkg/a.py`.\n' > "$repo/legacy api/AGENTS.md"
+expect_exit 0 "$(run_gate "$repo" --check agents-claims)" 'AGENTS.md under a path with a space'
+printf 'Read `pkg/gone.py`.\n' > "$repo/legacy api/AGENTS.md"
+expect_exit 1 "$(run_gate "$repo" --check agents-claims)" 'false claim under a path with a space'
+rm -rf "$repo/legacy api"
 # A new scoped AGENTS.md is checked before it is added.
 printf 'Read `pkg/missing.py` here.\n' > "$repo/pkg/AGENTS.md"
 expect_exit 1 "$(run_gate "$repo" --check agents-claims)" 'false claim in an untracked AGENTS.md'

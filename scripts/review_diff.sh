@@ -104,16 +104,48 @@ warn_on_foreign_deletions() {
     fi
 }
 
+# Names of methods (defs directly in a class body) that a changed .py file had at the merge base
+# and no longer has. Top-level and nested functions are not methods: a removed local `run()` would
+# otherwise match an inherited `self.run()`. A file that does not parse falls back to indented
+# defs, so a half-edited file still gets checked.
+removed_methods() {
+    python3 - "$1" <<'PY'
+import ast, re, subprocess, sys
+
+def methods(source):
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return set(re.findall(r'^[ \t]+(?:async[ \t]+)?def[ \t]+(\w+)', source, re.M))
+    return {node.name for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+            for node in cls.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+base = sys.argv[1]
+fields = subprocess.run(['git', 'diff', '-z', '-M', '--name-status', base, '--', '*.py'],
+                        capture_output=True, text=True, check=True).stdout.split('\0')
+removed = set()
+while len(fields) > 1:
+    status = fields.pop(0)
+    old = fields.pop(0)
+    new = fields.pop(0) if status[0] in 'RC' else old
+    if status[0] == 'A':
+        continue
+    before = subprocess.run(['git', 'show', f'{base}:{old}'], capture_output=True, text=True).stdout
+    try:
+        with open(new, encoding='utf-8') as handle:
+            after = handle.read()
+    except OSError:
+        after = ''
+    removed |= methods(before) - methods(after)
+print('\n'.join(sorted(removed)))
+PY
+}
+
 # A removed method that is still called fails only at runtime; static analysis does not
 # resolve attribute calls on objects.
 check_orphan_references() {
     local removed_names name hits
-    # Digits in the name and `async def` must pass, or a truncated name is searched for and
-    # the orphan slips through silently. Only indented definitions are methods; a removed
-    # top-level function would otherwise match unrelated `obj.name(` calls on library objects.
-    removed_names=$(git diff "$1" -- '*.py' \
-        | grep -E '^-\s+(async\s+)?def [a-zA-Z_][a-zA-Z0-9_]*' \
-        | sed -E 's/^-\s+(async\s+)?def ([a-zA-Z_][a-zA-Z0-9_]*).*/\2/' | sort -u)
+    removed_names=$(removed_methods "$1") || exit 2
 
     [ -z "$removed_names" ] && return
 
@@ -184,17 +216,20 @@ check_agents_claims() {
         return
     fi
 
-    local docs
-    # Untracked but not ignored too: a new scoped AGENTS.md is checked before it is added.
-    docs=$(git ls-files --cached --others --exclude-standard '*AGENTS.md')
-    if [ -z "$docs" ]; then
+    local doc
+    local -a docs=()
+    # Untracked but not ignored too: a new scoped AGENTS.md is checked before it is added. A deleted
+    # one is still in the index and is skipped; NUL separation keeps paths with spaces whole.
+    while IFS= read -r -d '' doc; do
+        [ -f "$doc" ] && docs+=("$doc")
+    done < <(git ls-files -z --cached --others --exclude-standard '*AGENTS.md')
+    if [ ${#docs[@]} -eq 0 ]; then
         [ "$strict" = 'strict' ] && { echo "No tracked AGENTS.md; nothing to check." >&2; exit 2; }
         return
     fi
 
     centered_text "Claims in AGENTS.md"
-    # shellcheck disable=SC2086
-    if ! python3 "$checker" $docs --fail-on-breaks; then
+    if ! python3 "$checker" "${docs[@]}" --fail-on-breaks; then
         exit_code=1
     fi
 }
