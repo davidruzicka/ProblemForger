@@ -105,6 +105,20 @@ printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
 expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference despite def in a comment'
 rm -rf "$repo"
 
+# A removed top-level function is not a method: `c.close()` on a library object is unrelated.
+repo=$(mktemp -d)
+git -C "$repo" init -q .
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name Test
+printf 'def close():\n    pass\n' > "$repo/util.py"
+printf 'import sqlite3\nc = sqlite3.connect(":memory:")\nc.close()\n' > "$repo/app.py"
+git -C "$repo" add -A
+git -C "$repo" commit -qm base
+git -C "$repo" branch -q baseline
+printf '' > "$repo/util.py"
+expect_exit 0 "$(run_gate "$repo" --target baseline)" 'removed top-level function is not an orphaned method'
+rm -rf "$repo"
+
 # Moving a method to another file is not a removal and must not be reported.
 repo=$(new_repo)
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"

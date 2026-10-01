@@ -57,12 +57,14 @@ class ClaimCheckerTests(unittest.TestCase):
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"
-            "Read `docs/missing.md` and [gone](docs/gone.md#anchor).\n"
+            "Read `docs/missing.md`, [gone](docs/gone.md#anchor), and [old](docs/old.md#python-3.12).\n"
         )
         self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
         self.assertEqual("TRUE", verdicts[("path", "src/pkg/")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/gone.md")])
+        # punctuation in the fragment must not hide the file claim
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/old.md")])
 
     def test_path_relative_to_a_nested_instruction_file(self):
         verdicts = self.verdicts(
@@ -152,7 +154,8 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertNotIn(("import", "import json"), verdicts)
         self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
-        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import docs")])
+        # a directory without __init__.py imports as a PEP 420 namespace package
+        self.assertEqual("TRUE", verdicts[("import", "import docs")])
         self.assertEqual("UNRESOLVED", verdicts[("snippet", "python block, lines 1-6")])
         self.assertEqual("UNRESOLVED", verdicts[("snippet", "sh block, lines 7-9")])
         # config-looking text inside a fence is code, not a claim

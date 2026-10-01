@@ -110,10 +110,11 @@ warn_on_foreign_deletions() {
 check_orphan_references() {
     local removed_names name hits
     # Digits in the name and `async def` must pass, or a truncated name is searched for and
-    # the orphan slips through silently.
+    # the orphan slips through silently. Only indented definitions are methods; a removed
+    # top-level function would otherwise match unrelated `obj.name(` calls on library objects.
     removed_names=$(git diff "$1" -- '*.py' \
-        | grep -E '^-\s*(async\s+)?def [a-zA-Z_][a-zA-Z0-9_]*' \
-        | sed -E 's/^-\s*(async\s+)?def ([a-zA-Z_][a-zA-Z0-9_]*).*/\2/' | sort -u)
+        | grep -E '^-\s+(async\s+)?def [a-zA-Z_][a-zA-Z0-9_]*' \
+        | sed -E 's/^-\s+(async\s+)?def ([a-zA-Z_][a-zA-Z0-9_]*).*/\2/' | sort -u)
 
     [ -z "$removed_names" ] && return
 

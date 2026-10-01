@@ -37,8 +37,9 @@ from pathlib import Path
 _EXT = r'py|md|mjs|js|json|toml|txt|ya?ml|sh'
 _PARENTS = r'(?:\.{1,2}/)*'
 PATH_RE = re.compile(rf'`(?P<path>{_PARENTS}[\w][\w./-]*(?:\.(?:{_EXT})|/))`')
-# markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path
-LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[\w-]*)?\)')
+# markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
+# and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
+LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[^)\s]*)?\)')
 IMPORT_RE = re.compile(r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s|import\s+(?P<mod>[\w.]+))', re.M)
 FENCE_RE = re.compile(r'^```(?P<lang>[\w]*)\s*$', re.M)
 # claims that name a config knob and a value
@@ -153,7 +154,8 @@ def module_exists(repo, dotted, roots):
         return None
     rel = Path(*dotted.split('.'))
     for base in [repo, *(p for p in repo.iterdir() if p.is_dir() and p.name not in SKIP_DIR_PARTS)]:
-        if (base / rel).with_suffix('.py').exists() or (base / rel / '__init__.py').exists():
+        # a directory without __init__.py still imports as a PEP 420 namespace package
+        if (base / rel).with_suffix('.py').exists() or (base / rel).is_dir():
             return True
     return False
 
