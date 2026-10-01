@@ -157,7 +157,7 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", ".github/workflows/gone.yml")])
 
     def test_paths_resolve_against_what_git_would_commit(self):
-        """A file that exists only locally (ignored) or only in the index (deleted) differs in CI."""
+        """A deleted file differs in CI; an ignored one is generated output, absent by design there."""
         self.git("init", "-q")
         (self.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
         (self.repo / "build").mkdir()
@@ -166,9 +166,11 @@ class ClaimCheckerTests(unittest.TestCase):
         self.git("add", "docs/old.md")
         (self.repo / "docs" / "old.md").unlink()
         verdicts = self.verdicts(
-            "See `build/out.md`, `out.md`, `docs/old.md`, and the new `docs/guide.md`.\n"
+            "See `build/out.md`, `build/later.md`, `out.md`, `docs/old.md`, and the new `docs/guide.md`.\n"
         )
-        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "build/out.md")])
+        # ignored, whether it exists locally or not: the same verdict here and in a clean checkout
+        self.assertEqual("UNRESOLVED", verdicts[("path", "build/out.md")])
+        self.assertEqual("UNRESOLVED", verdicts[("path", "build/later.md")])
         self.assertEqual("UNRESOLVED", verdicts[("path", "out.md")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/old.md")])
         # untracked but not ignored: it will be committed with the change
@@ -182,19 +184,23 @@ class ClaimCheckerTests(unittest.TestCase):
 
     def test_imports_resolve_against_what_git_would_commit(self):
         self.git("init", "-q")
-        (self.repo / ".gitignore").write_text("src/pkg/local.py\nbuild/\n", encoding="utf-8")
+        (self.repo / ".gitignore").write_text("src/pkg/local.py\nsrc/pkg/_version.py\nbuild/\n", encoding="utf-8")
         (self.repo / "src" / "pkg" / "local.py").write_text("", encoding="utf-8")
         (self.repo / "build").mkdir()
         (self.repo / "build" / "lib.py").write_text("", encoding="utf-8")
         verdicts = self.verdicts(
             "```python\n"
             "from pkg.local import X\n"
+            "from pkg._version import version\n"
+            "from pkg.gone import Z\n"
             "from pkg.store import Y\n"
             "import build\n"
             "```\n"
         )
-        # an ignored module exists only locally; a clean checkout lacks it
-        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.local import")])
+        # an ignored module is generated (setuptools-scm writes _version.py), present or not
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from pkg.local import")])
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from pkg._version import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.gone import")])
         self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
         # an ignored build/ directory is not a first-party package, so `build` stays third-party
         self.assertNotIn(("import", "import build"), verdicts)

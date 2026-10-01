@@ -179,7 +179,32 @@ def resolve_path(repo, doc_dir, raw):
         if str(hit).endswith('/' + bare):
             return 'IMPRECISE', f'shorthand for {hit.relative_to(repo_abs)}'
 
+    if git_ignores(repo, bare):
+        return 'UNRESOLVED', 'gitignored: generated at build or run time; absent by design'
     return 'BREAKS-ON-USE', 'missing under both the file directory and the repo root'
+
+
+def git_ignores(repo, bare):
+    """
+    True when the repo's .gitignore covers a path that is missing from what git would commit: build
+    output, a generated `_version.py`. A clean checkout lacks it too, so it is absent by design.
+    A `dist/` pattern matches directories only and git cannot tell that a missing path is one, so
+    the path is retried with a slash. Git missing, not a repository (exit 128) or too slow: False,
+    which keeps BREAKS-ON-USE.
+    """
+    for candidate in (bare,) if bare.endswith('/') else (bare, bare + '/'):
+        try:
+            out = subprocess.run(
+                ['git', '-C', str(repo), 'check-ignore', '-q', '--no-index', '--', candidate],
+                capture_output=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if out.returncode == 0:
+            return True
+        if out.returncode != 1:
+            return False
+    return False
 
 
 def first_party_roots(repo):
@@ -208,13 +233,17 @@ def import_verdict(repo, dotted, roots):
     if top not in roots:
         return None
     rel = Path(*dotted.split('.'))
-    bases = [repo, *(p for p in repo.iterdir() if p.is_dir() and p.name not in SKIP_DIR_PARTS)]
+    # an ignored directory is not a place modules are imported from in a clean checkout
+    bases = [repo, *(p for p in repo.iterdir()
+                     if p.is_dir() and p.name not in SKIP_DIR_PARTS and committable(repo, Path(p.name)))]
     for base in bases:
         # a directory without __init__.py still imports as a PEP 420 namespace package
         if exists_here(repo, (base / rel).with_suffix('.py')) or exists_here(repo, base / rel):
             return 'TRUE', f'module path {dotted}'
     # A namespace package can continue in an installed distribution (google.protobuf next to a
     # repo's google.myteam), so a submodule missing here does not prove the import breaks.
+    if any(git_ignores(repo, str((base / rel).relative_to(repo)) + '.py') for base in bases):
+        return 'UNRESOLVED', f'{dotted} is gitignored: generated at build or run time; absent by design'
     if any(exists_here(repo, base / top) and not exists_here(repo, base / top / '__init__.py')
            for base in bases):
         return 'UNRESOLVED', f'{dotted} not in the repo; namespace package {top} may continue outside it'
