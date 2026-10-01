@@ -33,15 +33,22 @@ import sys
 from pathlib import Path
 
 # backticked path with a file extension, or a directory path ending in /; leading ./ and ../ are
-# kept so resolve_path can check them, including whether they escape the repository
+# kept so resolve_path can check them, including whether they escape the repository, and a
+# dot-prefixed first segment (.github/) is a path like any other
 _EXT = r'py|md|mjs|js|json|toml|txt|ya?ml|sh'
-_PARENTS = r'(?:\.{1,2}/)*'
+_PARENTS = r'(?:\.{1,2}/)*\.?'
 PATH_RE = re.compile(rf'`(?P<path>{_PARENTS}[\w][\w./-]*(?:\.(?:{_EXT})|/))`')
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[^)\s]*)?\)')
-IMPORT_RE = re.compile(r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s|import\s+(?P<mod>[\w.]+))', re.M)
-FENCE_RE = re.compile(r'^```(?P<lang>[\w]*)\s*$', re.M)
+IMPORT_RE = re.compile(
+    r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s'
+    r'|import\s+(?P<mod>[\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*))',
+    re.M,
+)
+# a fence may be indented, e.g. inside a list item
+FENCE_RE = re.compile(r'^\s*```(?P<lang>[\w]*)\s*$', re.M)
+PYTHON_LANGS = {'python', 'py', 'python3'}
 # claims that name a config knob and a value
 CONFIG_RE = re.compile(r'`(?P<key>[\w-]+)`\s*(?:=|is|:)\s*`?(?P<value>[\w.-]+)`?')
 # backticked Conventional Commits example; `<type>(<scope>): ...` templates do not match
@@ -96,8 +103,42 @@ def name_index(repo):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_PARTS and not d.startswith('.')]
         # Directories too, so `adr/` resolves like a bare file name does.
         for name in dirnames + filenames:
-            index.setdefault(name, []).append(Path(dirpath) / name)
+            path = Path(dirpath) / name
+            if committable(repo, path.relative_to(repo)):
+                index.setdefault(name, []).append(path)
     return index
+
+
+@functools.lru_cache(maxsize=None)
+def git_paths(repo):
+    """
+    Paths git would commit from this working tree (tracked, or untracked and not ignored) and their
+    parent directories, relative to `repo`; None outside a git work tree.
+
+    CI checks a clean checkout, so a file that exists only locally (ignored build output) must not
+    resolve here, or the local gate passes and CI fails on the same text.
+    """
+    try:
+        out = subprocess.run(
+            ['git', '-C', str(repo), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+            capture_output=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    paths = set()
+    for name in out.stdout.decode('utf-8', 'replace').split('\0'):
+        if name:
+            paths.add(Path(name))
+            paths.update(Path(name).parents)
+    return frozenset(paths)
+
+
+def committable(repo, rel):
+    """Would git commit the existing path `rel` (relative to `repo`)? Always True outside git."""
+    paths = git_paths(repo)
+    return paths is None or rel in paths
 
 
 def resolve_path(repo, doc_dir, raw):
@@ -114,7 +155,7 @@ def resolve_path(repo, doc_dir, raw):
             candidate.relative_to(repo_abs)
         except ValueError:
             continue
-        if candidate.exists():
+        if candidate.exists() and committable(repo_abs, candidate.relative_to(repo_abs)):
             return 'TRUE', f'{candidate.relative_to(repo_abs)} ({label})'
 
     # A bare name with no directory part is a reference to a kind of file, not to one location.
@@ -240,13 +281,19 @@ def collect(doc, repo):
 
     roots = first_party_roots(repo)
     for lang, start, end, body in blocks:
-        if lang in ('python', 'py'):
+        if lang in PYTHON_LANGS:
             for m in IMPORT_RE.finditer(body):
-                dotted = m.group('from') or m.group('mod')
-                verdict = import_verdict(repo, dotted, roots)
-                if verdict is None:
-                    continue  # stdlib or third-party: not a claim about this repo
-                add('import', start, m.group(0).strip(), *verdict)
+                if m.group('from'):
+                    targets = [(m.group('from'), m.group(0).strip())]
+                else:
+                    # `import a, b as c` names several modules; each is its own claim
+                    names = [part.split()[0] for part in m.group('mod').split(',')]
+                    targets = [(name, f'import {name}') for name in names]
+                for dotted, quote in targets:
+                    verdict = import_verdict(repo, dotted, roots)
+                    if verdict is None:
+                        continue  # stdlib or third-party: not a claim about this repo
+                    add('import', start, quote, *verdict)
         add('snippet', start, f'{lang or "text"} block, lines {start}-{end}', 'UNRESOLVED',
             'resolve every identifier against real code; check it runs on paste')
 

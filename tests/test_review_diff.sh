@@ -244,6 +244,35 @@ case "$out" in
 esac
 rm -rf "$repo"
 
+# Your own lines are matched by the literal address, ignoring case: a dot is not a wildcard,
+# and the same address typed in another case on another machine is still you.
+repo=$(new_repo)
+git -C "$repo" config user.email 'aXb@example.com'
+printf 'def use(widget):\n    return widget.refreshV2()\n\n\ndef other():\n    return 2\n' > "$repo/pkg/b.py"
+git -C "$repo" commit -qam 'add other'
+git -C "$repo" branch -qf baseline
+printf 'def use(widget):\n    return widget.refreshV2()\n' > "$repo/pkg/b.py"
+git -C "$repo" config user.email 'a.b@example.com'
+out=$( (cd "$repo" && "$GATE" --target baseline) 2>&1 )
+case "$out" in
+    *'pkg/b.py (-4 lines written by someone else)'*) report ok 'a dot in your address is not a wildcard' ;;
+    *) report fail "a dot in your address matched another author: $out" ;;
+esac
+git -C "$repo" config user.email 'AXB@EXAMPLE.COM'
+out=$( (cd "$repo" && "$GATE" --target baseline) 2>&1 )
+case "$out" in
+    *'written by someone else'*) report fail "your address in another case counts as foreign: $out" ;;
+    *) report ok 'your address in another case is still you' ;;
+esac
+rm -rf "$repo"
+
+# Option parsing without GNU getopt: both option forms, and a missing value.
+repo=$(new_repo)
+expect_exit 0 "$(run_gate "$repo" --target=baseline)" '--target=<branch> form'
+expect_exit 0 "$(run_gate "$repo" -t baseline)" '-t <branch> form'
+expect_exit 2 "$(run_gate "$repo" --target)" 'missing option value'
+rm -rf "$repo"
+
 printf 'Checks that must pass:\n'
 
 repo=$(new_repo)

@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import os
 import subprocess
 import unittest
 from unittest import mock
@@ -37,6 +38,10 @@ class ClaimCheckerTests(unittest.TestCase):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.repo = Path(temporary.name)
+        # git must not walk up into a repository that happens to contain the temp directory
+        environment = mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(self.repo.parent)})
+        environment.start()
+        self.addCleanup(environment.stop)
         (self.repo / "src" / "pkg").mkdir(parents=True)
         (self.repo / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
         (self.repo / "src" / "pkg" / "store.py").write_text("", encoding="utf-8")
@@ -45,6 +50,7 @@ class ClaimCheckerTests(unittest.TestCase):
         (self.repo / "node_modules" / "dep").mkdir(parents=True)
         (self.repo / "node_modules" / "dep" / "hidden.md").write_text("", encoding="utf-8")
         check_agents_claims.name_index.cache_clear()
+        check_agents_claims.git_paths.cache_clear()
 
     def verdicts(self, text, doc_dir=None):
         doc = (doc_dir or self.repo) / "AGENTS.md"
@@ -138,6 +144,61 @@ class ClaimCheckerTests(unittest.TestCase):
         with mock.patch.object(check_agents_claims.subprocess, "run", side_effect=OSError):
             verdicts = self.verdicts("For example `feat(core): add journal`.\n")
         self.assertEqual("UNRESOLVED", verdicts[("example", "feat(core): add journal")])
+
+    def test_dot_prefixed_paths_are_claims(self):
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        (self.repo / ".github" / "workflows" / "ci.yml").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "CI lives in `.github/workflows/ci.yml`; also read `.github/workflows/missing.yml` "
+            "and [gone](.github/workflows/gone.yml).\n"
+        )
+        self.assertEqual("TRUE", verdicts[("path", ".github/workflows/ci.yml")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", ".github/workflows/missing.yml")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", ".github/workflows/gone.yml")])
+
+    def test_paths_resolve_against_what_git_would_commit(self):
+        """A file that exists only locally (ignored) or only in the index (deleted) differs in CI."""
+        self.git("init", "-q")
+        (self.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
+        (self.repo / "build").mkdir()
+        (self.repo / "build" / "out.md").write_text("", encoding="utf-8")
+        (self.repo / "docs" / "old.md").write_text("", encoding="utf-8")
+        self.git("add", "docs/old.md")
+        (self.repo / "docs" / "old.md").unlink()
+        verdicts = self.verdicts(
+            "See `build/out.md`, `out.md`, `docs/old.md`, and the new `docs/guide.md`.\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "build/out.md")])
+        self.assertEqual("UNRESOLVED", verdicts[("path", "out.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/old.md")])
+        # untracked but not ignored: it will be committed with the change
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+
+    def test_paths_resolve_against_the_disk_when_git_cannot_run(self):
+        with mock.patch.object(check_agents_claims.subprocess, "run", side_effect=OSError):
+            verdicts = self.verdicts("See `docs/guide.md` and `docs/missing.md`.\n")
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+
+    def test_imports_in_indented_fences_lists_and_python3_blocks(self):
+        verdicts = self.verdicts(
+            "1. Example:\n"
+            "\n"
+            "   ```python\n"
+            "   from pkg.missing import X\n"
+            "   ```\n"
+            "```python\n"
+            "import json, pkg.gone as gone, pkg.store\n"
+            "```\n"
+            "```python3\n"
+            "import pkg.absent\n"
+            "```\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import pkg.gone")])
+        self.assertEqual("TRUE", verdicts[("import", "import pkg.store")])
+        self.assertNotIn(("import", "import json"), verdicts)
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import pkg.absent")])
 
     def test_directory_names_and_shorthand_directories(self):
         (self.repo / "docs" / "adr").mkdir()

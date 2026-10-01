@@ -84,10 +84,9 @@ warn_on_foreign_deletions() {
             count=${count:-1}
             [ "$count" -eq 0 ] && continue
             # --line-porcelain repeats the author for every line; --porcelain gives it once per commit.
+            # Your address is matched literally (a dot is not a wildcard) and without case.
             foreign=$((foreign + $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$old" 2>/dev/null \
-                | grep -c "^author-mail <\(.*\)>" || true)))
-            foreign=$((foreign - $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$old" 2>/dev/null \
-                | grep -c "^author-mail <$me>" || true)))
+                | grep '^author-mail ' | grep -cviF "<$me>" || true)))
         done <<< "$ranges"
 
         if [ "$foreign" -gt 0 ]; then
@@ -192,23 +191,23 @@ check_agents_claims() {
     fi
 }
 
-# Without checking the return value, a typo in a flag would review against the default branch,
-# answering a question nobody asked.
-OPTIONS=$(getopt -o t:c: --long target:,check: -- "$@") || { usage; exit 2; }
-eval set -- "$OPTIONS"
-
+# Parsed by hand rather than with getopt, whose --long form is GNU-only. Anything unrecognized
+# is an error: a typo in a flag or a branch given without --target would otherwise review against
+# the default branch, answering a question nobody asked.
 TARGET=''
 CHECK=''
-while true; do
+while [ $# -gt 0 ]; do
     case "$1" in
-        -t|--target) TARGET="$2"; shift 2 ;;
-        -c|--check) CHECK="$2"; shift 2 ;;
-        --) shift; break ;;
+        -t|--target|-c|--check)
+            [ $# -ge 2 ] || { echo "Option '$1' needs a value." >&2; usage; exit 2; }
+            case "$1" in -t|--target) TARGET="$2" ;; *) CHECK="$2" ;; esac
+            shift 2 ;;
+        --target=*) TARGET="${1#*=}"; shift ;;
+        --check=*) CHECK="${1#*=}"; shift ;;
+        -*) echo "Unknown option '$1'." >&2; usage; exit 2 ;;
+        *) echo "Unexpected argument '$1'; pass the branch as --target $1." >&2; usage; exit 2 ;;
     esac
 done
-# getopt moves positional arguments after `--`; a branch given without --target would
-# otherwise be dropped and the review would run against the default.
-[ $# -gt 0 ] && { echo "Unexpected argument '$1'; pass the branch as --target $1." >&2; usage; exit 2; }
 
 # A single check on its own; CI calls it so it has no copy of the same logic.
 # Whole-tree checks need no target branch.
