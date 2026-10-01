@@ -23,7 +23,8 @@ expect_exit() {
     [ "$expected" = "$actual" ] && report ok "$name" || report fail "$name (expected $expected, got $actual)"
 }
 
-# Repository with one method and one call to it; branch 'baseline' holds the state before the change.
+# Repository with one method and one call to it through `self` in a subclass, which can only mean
+# that method; branch 'baseline' holds the state before the change.
 new_repo() {
     local dir
     dir=$(mktemp -d)
@@ -32,7 +33,7 @@ new_repo() {
     git -C "$dir" config user.name Test
     mkdir -p "$dir/pkg"
     printf 'class Widget:\n    def refreshV2(self):\n        return 1\n' > "$dir/pkg/a.py"
-    printf 'def use(widget):\n    return widget.refreshV2()\n' > "$dir/pkg/b.py"
+    printf 'class Special(Widget):\n    def use(self): return self.refreshV2()\n' > "$dir/pkg/b.py"
     git -C "$dir" add -A
     git -C "$dir" commit -qm base
     git -C "$dir" branch -q baseline
@@ -63,7 +64,7 @@ git -C "$repo" config user.email test@example.com
 git -C "$repo" config user.name Test
 mkdir -p "$repo/pkg"
 printf 'class Widget:\n    async def loadAll(self):\n        return 2\n' > "$repo/pkg/a.py"
-printf 'def use(widget):\n    return widget.loadAll()\n' > "$repo/pkg/b.py"
+printf 'class Special(Widget):\n    def use(self): return self.loadAll()\n' > "$repo/pkg/b.py"
 git -C "$repo" add -A
 git -C "$repo" commit -qm base
 git -C "$repo" branch -q baseline
@@ -93,6 +94,22 @@ case "$out" in
     *'refreshV2'*'pkg/d.py'*'pkg/b.py'*) report ok 'same-named method elsewhere warns with definitions and calls' ;;
     *) report fail "same-named method elsewhere is not reported: $out" ;;
 esac
+rm -rf "$repo"
+
+# A call on any other receiver may be a library object (sqlite3's `connection.close()`), so with
+# the last definition gone it warns; `cls.` is as certain as `self.` and fails.
+repo=$(new_repo)
+printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
+printf 'def use(connection):\n    return connection.refreshV2()\n' > "$repo/pkg/b.py"
+out=$( (cd "$repo" && "$GATE" --target baseline) 2>&1 )
+code=$?
+expect_exit 0 "$code" 'call on another receiver does not fail'
+case "$out" in
+    *'Possible reference to removed method refreshV2'*'pkg/b.py'*) report ok 'call on another receiver warns' ;;
+    *) report fail "call on another receiver is not reported: $out" ;;
+esac
+printf 'class Special(Widget):\n    @classmethod\n    def make(cls): return cls.refreshV2()\n' > "$repo/pkg/b.py"
+expect_exit 1 "$(run_gate "$repo" --target baseline)" 'call through cls fails'
 rm -rf "$repo"
 
 # A `def name` inside a comment is not a surviving definition.
@@ -137,10 +154,17 @@ rm -rf "$repo"
 repo=$(new_repo)
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
 printf 'def use(widget):\n    return None\n' > "$repo/pkg/b.py"
-printf 'def use_again(widget):\n    return widget.refreshV2()\n' > "$repo/pkg/c.py"
+printf 'class Again(Widget):\n    def use(self): return self.refreshV2()\n' > "$repo/pkg/c.py"
 expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference from an untracked file'
 printf 'Intro.\n<<<<<<< HEAD\n' > "$repo/pkg/notes.md"
 expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" 'conflict marker in an untracked file'
+rm -rf "$repo"
+
+# Every text file counts, not a list of extensions: requirements.txt and .gitignore conflict too.
+repo=$(new_repo)
+printf 'coverage\n<<<<<<< HEAD\n' > "$repo/requirements.txt"
+git -C "$repo" add -A
+expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" 'conflict marker in .txt'
 rm -rf "$repo"
 
 repo=$(new_repo)
@@ -160,6 +184,9 @@ expect_exit 1 "$(run_gate "$repo" --target baseline)" 'false path claim in AGENT
 expect_exit 1 "$(run_gate "$repo" --check agents-claims)" 'false path claim via --check'
 printf 'Read `pkg/a.py` first.\n' > "$repo/AGENTS.md"
 expect_exit 0 "$(run_gate "$repo" --check agents-claims)" 'true path claim via --check'
+# A new scoped AGENTS.md is checked before it is added.
+printf 'Read `pkg/missing.py` here.\n' > "$repo/pkg/AGENTS.md"
+expect_exit 1 "$(run_gate "$repo" --check agents-claims)" 'false claim in an untracked AGENTS.md'
 rm -rf "$repo"
 
 # In CI a silent skip is a green job that checked nothing.
