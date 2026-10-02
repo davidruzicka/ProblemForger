@@ -74,7 +74,7 @@ class ClaimCheckerTests(unittest.TestCase):
 
     def test_space_containing_code_path(self):
         verdicts = self.verdicts("Read `docs/missing guide.md`.\n")
-        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing guide.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "docs/missing guide.md")))
         (self.repo / "docs" / "real guide.md").write_text("", encoding="utf-8")
         verdicts = self.verdicts("Read `docs/real guide.md`.\n")
         self.assertEqual("TRUE", verdicts[("path", "docs/real guide.md")])
@@ -192,6 +192,35 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts('[guide](<docs/missing.md)\n[guide]: <docs/missing.md\n')
         self.assertNotIn(("path", "docs/missing.md"), verdicts)
 
+    def test_spaced_angle_bracket_markdown_destinations(self):
+        (self.repo / "docs" / "real guide (v1).md").write_text("", encoding="utf-8")
+        for text in (
+            '[missing](<docs/missing guide.md>) '
+            '[existing](<docs/real guide (v1).md#setup> "Guide") '
+            '[external](<https://example.com/missing.md> "External")\n',
+            '[missing]: <docs/missing guide.md> (Missing)\n'
+            "[existing]: <docs/real guide (v1).md#setup> 'Existing'\n"
+            '[external]: <https://example.com/missing.md> "External"\n',
+        ):
+            with self.subTest(text=text):
+                verdicts = self.verdicts(text)
+                self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "docs/missing guide.md")))
+                self.assertEqual("TRUE", verdicts[("path", "docs/real guide (v1).md")])
+                self.assertNotIn(("path", "https://example.com/missing.md"), verdicts)
+
+    def test_angle_destination_fragments_allow_spaces_and_parentheses(self):
+        for text in (
+            "[missing](<docs/missing guide.md#section(with spaces)>)\n",
+            "[missing]: <docs/missing guide.md#section(with spaces)>\n",
+        ):
+            with self.subTest(text=text):
+                verdicts = self.verdicts(text)
+                self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "docs/missing guide.md")))
+
+    def test_explicit_spaced_markdown_path_is_not_an_inline_command(self):
+        verdicts = self.verdicts("[missing](<missing dir/file.md>)\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "missing dir/file.md")))
+
     def test_extensionless_markdown_destinations(self):
         (self.repo / "Makefile").write_text("", encoding="utf-8")
         (self.repo / "docs" / "check").write_text("", encoding="utf-8")
@@ -299,6 +328,13 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("TRUE", verdicts[("import", "from ..util import")])
         code, _, _ = run_main(str(package / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
         self.assertEqual(0, code)
+
+    def test_relative_escape_does_not_override_namespace_extension(self):
+        package = self.repo / "namespace" / "pkg"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom ..missing import Thing\n```\n", package)
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from ..missing import")])
 
     def test_cli_resolves_relative_instruction_file_paths(self):
         self.verdicts("```python\nfrom .missing import Thing\n```\n", self.repo / "src" / "pkg")
@@ -533,6 +569,105 @@ class ClaimCheckerTests(unittest.TestCase):
         )
         self.assertEqual("TRUE", verdicts[("import", "from libpkg.m import")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from libpkg.gone import")])
+
+    def test_imports_do_not_search_unrelated_roots_in_src_layout(self):
+        (self.repo / "pyproject.toml").write_text(
+            '[tool.setuptools]\n'
+            'package-dir = {"" = "src"}\n'
+            '[tool.setuptools.packages.find]\n'
+            'where = ["src"]\n',
+            encoding="utf-8",
+        )
+        test_package = self.repo / "tests" / "pkg"
+        test_package.mkdir(parents=True)
+        (test_package / "__init__.py").write_text("", encoding="utf-8")
+        (test_package / "missing.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\nfrom pkg.store import Store\nfrom pkg.missing import Thing\n```\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+
+    def test_named_setuptools_package_dir_keeps_package_identity(self):
+        (self.repo / "pyproject.toml").write_text(
+            '[tool.setuptools]\n'
+            'package-dir = {pkg = "lib"}\n'
+            'packages = ["pkg"]\n',
+            encoding="utf-8",
+        )
+        package = self.repo / "lib"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "store.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\nfrom pkg.store import Store\nfrom pkg.missing import Thing\n```\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+
+    def test_ignored_regular_package_marker_keeps_namespace_unresolved(self):
+        self.git("init", "-q")
+        package = self.repo / "src" / "acme"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "api.py").write_text("", encoding="utf-8")
+        (self.repo / ".gitignore").write_text("src/acme/__init__.py\n", encoding="utf-8")
+        self.git("add", ".gitignore", "src/acme/api.py")
+        self.git("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "-m", "fixture")
+        check_agents_claims.git_paths.cache_clear()
+        verdicts = self.verdicts(
+            "```python\nfrom acme.missing import Thing\n```\n"
+        )
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from acme.missing import")])
+
+    def test_extensionless_file_is_not_an_importable_module(self):
+        (self.repo / "src" / "pkg" / "missing").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom pkg.missing import Thing\n```\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+
+    def test_relative_imports_use_the_enclosing_package_root(self):
+        package = self.repo / "lib" / "libpkg"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "local.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\nfrom .local import Thing\nfrom .missing import Thing\n```\n",
+            package,
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from .local import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from .missing import")])
+
+    def test_relative_imports_resolve_from_src_namespace_with_only_subpackages(self):
+        package = self.repo / "src" / "acme" / "sub"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "local.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom .local import Thing\n```\n", package)
+        self.assertEqual("TRUE", verdicts[("import", "from .local import")])
+
+    def test_relative_import_keeps_regular_package_context_with_neighbor_module(self):
+        package = self.repo / "lib" / "libpkg"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (self.repo / "lib" / "utility.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom .missing import Thing\n```\n", package)
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from .missing import")])
+
+    def test_dotted_setuptools_package_dir_preserves_subpackage_mapping(self):
+        (self.repo / "pyproject.toml").write_text(
+            '[tool.setuptools]\n'
+            'package-dir = {"pkg.sub" = "other"}\n'
+            'packages = ["pkg", "pkg.sub"]\n',
+            encoding="utf-8",
+        )
+        (self.repo / "pkg").mkdir()
+        (self.repo / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        mapped = self.repo / "other"
+        mapped.mkdir()
+        (mapped / "__init__.py").write_text("", encoding="utf-8")
+        (mapped / "local.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom pkg.sub.local import Thing\n```\n")
+        self.assertEqual("TRUE", verdicts[("import", "from pkg.sub.local import")])
 
     def test_python_imports_in_fenced_blocks(self):
         verdicts = self.verdicts(

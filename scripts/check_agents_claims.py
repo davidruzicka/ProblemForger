@@ -31,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 # backticked path with a file extension, or a directory path ending in /; leading ./ and ../ are
@@ -47,8 +48,8 @@ PATH_RE = re.compile(
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 # Angle-wrapped destinations must close before the optional title; the brackets are not path data.
 _LINK_TARGET = (
-    rf'(?P<angle><)?(?P<path>/?{_PARENTS}[\w][\w./-]*)'
-    r'(?:#[^)\s<>]*)?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?'
+    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w](?(angle)[^<>#\n]*|[\w./-]*))'
+    r'(?:#(?(angle)[^<>\n]*|[^)\s<>]*))?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'|\([^\n)]*\)))?'
 )
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
 REFERENCE_RE = re.compile(rf'^[ \t]{{0,3}}\[[^\]\n]+\]:[ \t]+{_LINK_TARGET}[ \t]*$')
@@ -206,7 +207,7 @@ def resolve_path(repo, doc_dir, raw, explicit=False):
     # A spaced span with a bare first word followed by a path may be an inline command.
     # Keep it advisory rather than guessing shell syntax or installed executables.
     head, separator, tail = raw.partition(' ')
-    if separator and '/' not in head and '/' in tail:
+    if not explicit and separator and '/' not in head and '/' in tail:
         return 'UNRESOLVED', 'may be an inline command rather than a literal path'
     return 'BREAKS-ON-USE', 'missing under both the file directory and the repo root'
 
@@ -234,64 +235,230 @@ def git_ignores(repo, bare):
     return False
 
 
+def configured_package_roots(repo):
+    """Map setuptools import names to their actual package directories."""
+    repo = repo.resolve()
+    pyproject = repo / 'pyproject.toml'
+    if not exists_here(repo, pyproject):
+        return None
+    try:
+        with pyproject.open('rb') as stream:
+            config = tomllib.load(stream)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+
+    tools = config.get('tool')
+    setuptools = tools.get('setuptools') if isinstance(tools, dict) else None
+    if not isinstance(setuptools, dict):
+        return None
+
+    roots = {}
+    declared = False
+
+    def add(name, path, context=False):
+        path = path.resolve()
+        if not path.is_relative_to(repo):
+            return
+        candidates = roots.setdefault(name, [])
+        for index, (candidate, is_context) in enumerate(candidates):
+            if candidate == path:
+                candidates[index] = (path, is_context or context)
+                break
+        else:
+            candidates.append((path, context))
+
+    def directories(base):
+        try:
+            return [child for child in base.iterdir()
+                    if child.is_dir() and not child.name.startswith('.')
+                    and child.name not in SKIP_DIR_PARTS
+                    and exists_here(repo, child)]
+        except OSError:
+            return []
+
+    def has_python(path):
+        return any(child.is_file() and exists_here(repo, child)
+                   for child in path.rglob('*.py'))
+
+    def add_from_base(base, context=False):
+        base = base.resolve()
+        if not base.is_relative_to(repo):
+            return
+        for child in directories(base):
+            initializer = child / '__init__.py'
+            regular = exists_here(repo, initializer) and initializer.is_file()
+            if base == repo or regular or has_python(child):
+                add(child.name, child, context or regular)
+
+    package_dir = setuptools.get('package-dir', {})
+    if isinstance(package_dir, dict):
+        for package, directory in package_dir.items():
+            if not isinstance(package, str) or not isinstance(directory, str):
+                continue
+            declared = True
+            mapped = (repo / directory).resolve()
+            if package:
+                add(package, mapped, context=True)
+            else:
+                add_from_base(mapped, context=True)
+
+    packages = setuptools.get('packages', {})
+    finder = packages.get('find', {}) if isinstance(packages, dict) else {}
+    if isinstance(finder, dict) and 'where' in finder:
+        declared = True
+        where = finder['where']
+        if isinstance(where, str):
+            where = [where]
+        if isinstance(where, list):
+            for directory in where:
+                if isinstance(directory, str):
+                    add_from_base((repo / directory).resolve(), context=True)
+    elif isinstance(finder, dict) and finder:
+        declared = True
+        add_from_base(repo)
+
+    return roots if declared else None
+
+
 def first_party_roots(repo):
-    """Top-level names that could be repo packages. Anything else is stdlib/third-party."""
-    roots = set()
-    for p in repo.iterdir():
-        if not p.is_dir() or p.name.startswith('.') or p.name in SKIP_DIR_PARTS:
-            continue
-        # an ignored directory such as build/ exists only locally and must not shadow a package
-        if not committable(repo, Path(p.name)):
-            continue
-        roots.add(p.name)
-        # Packages one level below a top-level directory: <dir>/<package>/__init__.py, and under
-        # src/ also PEP 420 namespace packages without __init__.py. Those must contain Python, or
-        # an asset folder such as src/http/ would shadow the stdlib or a third-party name.
-        for child in p.iterdir():
-            if exists_here(repo, child) and child.is_dir() and ((child / '__init__.py').exists()
-                                   or (p.name == 'src' and next(child.rglob('*.py'), None))):
-                roots.add(child.name)
+    """Map first-party import names to their actual package directories and context roots."""
+    repo = repo.resolve()
+    roots = {}
+
+    def add(name, package, context=False):
+        package = package.resolve()
+        packages = roots.setdefault(name, [])
+        for index, (candidate, is_context) in enumerate(packages):
+            if candidate == package:
+                packages[index] = (package, is_context or context)
+                break
+        else:
+            packages.append((package, context))
+
+    def directories(base):
+        try:
+            children = base.iterdir()
+            return [child for child in children
+                    if child.is_dir() and not child.name.startswith('.')
+                    and child.name not in SKIP_DIR_PARTS
+                    and exists_here(repo, child)]
+        except OSError:
+            return []
+
+    def has_direct_module(path):
+        return any(child.is_file() and exists_here(repo, child)
+                   for child in path.glob('*.py'))
+
+    def has_python(path):
+        return any(child.is_file() and exists_here(repo, child)
+                   for child in path.rglob('*.py'))
+
+    configured = configured_package_roots(repo)
+    if configured is not None:
+        roots.update(configured)
+        # The repository root is a real import base for tools such as `scripts`; it must not
+        # override a same-named package found under an explicitly configured source root.
+        for child in directories(repo):
+            if child.name != 'src' and child.name not in roots:
+                initializer = child / '__init__.py'
+                context = ((exists_here(repo, initializer) and initializer.is_file())
+                           or has_python(child))
+                add(child.name, child, context)
+        return roots
+
+    top_level = directories(repo)
+    # Prefer conventional src/ packages when a fixture has no packaging metadata. Keep each name
+    # tied to its actual package directory so an unrelated tests/pkg cannot satisfy the import.
+    package_bases = [child for child in top_level if child.name == 'src']
+    package_bases.extend(child for child in top_level if child.name != 'src')
+    for base in package_bases:
+        for child in directories(base):
+            initializer = child / '__init__.py'
+            if exists_here(repo, initializer) and initializer.is_file():
+                add(child.name, child, context=True)
+            elif base.name == 'src' and any(
+                    descendant.is_file() and exists_here(repo, descendant)
+                    for descendant in child.rglob('*.py')):
+                add(child.name, child, context=True)
+    for child in top_level:
+        if child.name != 'src' and child.name not in roots:
+            initializer = child / '__init__.py'
+            context = ((exists_here(repo, initializer) and initializer.is_file())
+                       or has_python(child))
+            add(child.name, child, context)
     return roots
+
+
+def absolute_import_verdict(repo, dotted, roots):
+    """Resolve an absolute import. None means it is outside the discovered first-party roots."""
+    names = [name for name in roots if dotted == name or dotted.startswith(name + '.')]
+    if not names:
+        return None
+    prefix = max(names, key=lambda name: len(name.split('.')))
+    remainder = dotted.split('.')[len(prefix.split('.')):]
+    tail = Path(*remainder)
+    locations = roots[prefix]
+
+    for package_root, _ in locations:
+        module = (package_root / tail).with_suffix('.py')
+        package = package_root / tail
+        if ((exists_here(repo, module) and module.is_file())
+                or (exists_here(repo, package) and package.is_dir())):
+            return 'TRUE', f'module path {dotted}'
+
+    if any(git_ignores(repo, str((package_root / tail).relative_to(repo)) + suffix)
+           for package_root, _ in locations for suffix in ('.py', '/')):
+        return 'UNRESOLVED', f'{dotted} is gitignored: generated at build or run time; absent by design'
+    existing_roots = [package_root for package_root, _ in locations
+                      if exists_here(repo, package_root) and package_root.is_dir()]
+    if existing_roots and all(
+            not (exists_here(repo, package_root / '__init__.py')
+                 and (package_root / '__init__.py').is_file())
+            for package_root in existing_roots):
+        return 'UNRESOLVED', f'{dotted} not in the repo; namespace package {prefix} may continue outside it'
+    return 'BREAKS-ON-USE', f'module path {dotted}'
 
 
 def import_verdict(repo, dotted, roots, doc_dir):
     """None = not a claim about this repo (stdlib/third-party), else (verdict, evidence)."""
-    # An instruction file within a regular package supplies the snippet's package context.
-    # Keep namespace ancestors; src/ is an import root, as in first_party_roots().
-    # Without that context, a relative import cannot be tested as an absolute module path.
-    if dotted.startswith('.'):
-        directory = doc_dir.resolve()
-        if not directory.is_relative_to(repo) or not exists_here(repo, directory / '__init__.py'):
-            return 'UNRESOLVED', f'{dotted}: no regular package context for this instruction file'
-        package = directory.relative_to(repo).parts
-        if package[:1] == ('src',):
-            package = package[1:]
-        if not package:
-            return 'UNRESOLVED', f'{dotted}: no regular package context for this instruction file'
+    repo = repo.resolve()
+    if not dotted.startswith('.'):
+        return absolute_import_verdict(repo, dotted, roots)
+
+    # Relative imports need a package context. Resolve against each configured or regular package
+    # root containing this instruction file; multiple valid names can exist in source layouts.
+    directory = doc_dir.resolve()
+    initializer = directory / '__init__.py'
+    if not directory.is_relative_to(repo) or not exists_here(repo, initializer) or not initializer.is_file():
+        return 'UNRESOLVED', f'{dotted}: no regular package context for this instruction file'
+
+    contexts = []
+    for name, locations in roots.items():
+        for package_root, is_context in locations:
+            if is_context and directory.is_relative_to(package_root):
+                package = '.'.join((name, *directory.relative_to(package_root).parts))
+                contexts.append(package)
+    if not contexts:
+        return 'UNRESOLVED', f'{dotted}: no import root for this instruction file'
+
+    results = []
+    escaped = False
+    for package in contexts:
         try:
-            dotted = importlib.util.resolve_name(dotted, '.'.join(package))
+            absolute = importlib.util.resolve_name(dotted, package)
         except ImportError:
-            return 'BREAKS-ON-USE', 'relative import escapes the scoped package'
-    top = dotted.split('.')[0]
-    if top not in roots:
-        return None
-    rel = Path(*dotted.split('.'))
-    # an ignored directory is not a place modules are imported from in a clean checkout
-    bases = [repo, *(p for p in repo.iterdir()
-                     if p.is_dir() and p.name not in SKIP_DIR_PARTS and committable(repo, Path(p.name)))]
-    for base in bases:
-        # a directory without __init__.py still imports as a PEP 420 namespace package
-        if exists_here(repo, (base / rel).with_suffix('.py')) or exists_here(repo, base / rel):
-            return 'TRUE', f'module path {dotted}'
-    # A namespace package can continue in an installed distribution (google.protobuf next to a
-    # repo's google.myteam), so a submodule missing here does not prove the import breaks.
-    if any(git_ignores(repo, str((base / rel).relative_to(repo)) + suffix)
-           for base in bases for suffix in ('.py', '/')):
-        return 'UNRESOLVED', f'{dotted} is gitignored: generated at build or run time; absent by design'
-    if any(exists_here(repo, base / top) and not exists_here(repo, base / top / '__init__.py')
-           for base in bases):
-        return 'UNRESOLVED', f'{dotted} not in the repo; namespace package {top} may continue outside it'
-    return 'BREAKS-ON-USE', f'module path {dotted}'
+            escaped = True
+            continue
+        verdict = absolute_import_verdict(repo, absolute, roots)
+        results.append(verdict or ('UNRESOLVED', f'{absolute}: no matching first-party import root'))
+
+    for verdict in ('TRUE', 'BREAKS-ON-USE', 'UNRESOLVED'):
+        for result in results:
+            if result[0] == verdict:
+                return result
+    if escaped:
+        return 'BREAKS-ON-USE', 'relative import escapes the scoped package'
+    return 'UNRESOLVED', f'{dotted}: no reliable package context'
 
 
 def git_has(repo, needle):
