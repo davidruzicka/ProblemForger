@@ -192,6 +192,125 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts('[guide](<docs/missing.md)\n[guide]: <docs/missing.md\n')
         self.assertNotIn(("path", "docs/missing.md"), verdicts)
 
+    def test_extensionless_markdown_destinations(self):
+        (self.repo / "Makefile").write_text("", encoding="utf-8")
+        (self.repo / "docs" / "check").write_text("", encoding="utf-8")
+        for text in (
+            '[build](Makefile) [script](docs/check) [missing](scripts/check) '
+            '[parent](../README) [absent](MissingMakefile) '
+            '[external](https://example.com/check) [anchor](#setup)\n',
+            '[build]: <Makefile>\n[script]: docs/check "Check"\n'
+            '[missing]: <scripts/check>\n[parent]: ../README\n[absent]: MissingMakefile\n'
+            '[external]: mailto:user@example.com\n[anchor]: #setup\n',
+        ):
+            with self.subTest(text=text):
+                verdicts = self.verdicts(text)
+                self.assertEqual("TRUE", verdicts[("path", "Makefile")])
+                self.assertEqual("TRUE", verdicts[("path", "docs/check")])
+                self.assertEqual("BREAKS-ON-USE", verdicts[("path", "scripts/check")])
+                self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../README")])
+                self.assertEqual("BREAKS-ON-USE", verdicts[("path", "MissingMakefile")])
+                self.assertEqual(5, sum(kind == "path" for kind, _ in verdicts))
+                code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+                self.assertEqual(1, code)
+        self.verdicts('[build](Makefile)\n[script]: docs/check\n')
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_relative_imports_in_scoped_package(self):
+        nested = self.repo / "src" / "pkg" / "nested"
+        nested.mkdir()
+        (nested / "__init__.py").write_text("", encoding="utf-8")
+        (nested / "local.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            "```python\nfrom .local import Thing\nfrom ..store import Store\n"
+            "from .missing import Thing\nfrom ..missing import Thing\nimport json\n```\n",
+            nested,
+        )
+        self.assertEqual("TRUE", verdicts[("import", "from .local import")])
+        self.assertEqual("TRUE", verdicts[("import", "from ..store import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from .missing import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from ..missing import")])
+        self.assertNotIn(("import", "import json"), verdicts)
+        code, _, _ = run_main(str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+        self.verdicts("```python\nfrom .local import Thing\nfrom ..store import Store\n```\n", nested)
+        code, _, _ = run_main(str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_markdown_destinations_require_an_exact_path(self):
+        (self.repo / "docs" / "Makefile").write_text("", encoding="utf-8")
+        (self.repo / "tools" / "scripts").mkdir(parents=True)
+        (self.repo / "tools" / "scripts" / "check").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            '[build](Makefile) [script](scripts/check)\n'
+            '[build]: Makefile\n[script]: scripts/check\n'
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "Makefile")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "scripts/check")])
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+
+    def test_explicit_destinations_override_backticked_link_labels(self):
+        for text in ('Read [`missing.md`](missing.md).\n', '[`missing.md`]: missing.md\n'):
+            with self.subTest(text=text):
+                verdicts = self.verdicts(text)
+                self.assertEqual("BREAKS-ON-USE", verdicts[("path", "missing.md")])
+                code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+                self.assertEqual(1, code)
+        verdicts = self.verdicts('Read `missing.md`.\n')
+        self.assertEqual("UNRESOLVED", verdicts[("path", "missing.md")])
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_relative_imports_without_package_context_are_unresolved(self):
+        verdicts = self.verdicts("```python\nfrom .missing import Thing\n```\n")
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from .missing import")])
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+        (self.repo / "__init__.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom .missing import Thing\n```\n")
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from .missing import")])
+        namespace = self.repo / "src" / "namespace" / "nested"
+        namespace.mkdir(parents=True)
+        (namespace / "__init__.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom .missing import Thing\n```\n", namespace)
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from .missing import")])
+        with TemporaryDirectory() as outside:
+            directory = Path(outside)
+            (directory / "__init__.py").write_text("", encoding="utf-8")
+            verdicts = self.verdicts("```python\nfrom .missing import Thing\n```\n", directory)
+            self.assertEqual("UNRESOLVED", verdicts[("import", "from .missing import")])
+
+    def test_relative_imports_cannot_escape_scoped_package(self):
+        package = self.repo / "src" / "pkg"
+        verdicts = self.verdicts("```python\nfrom . import store\nfrom ..missing import Thing\n```\n", package)
+        self.assertEqual("TRUE", verdicts[("import", "from . import")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from ..missing import")])
+        code, _, _ = run_main(str(package / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+
+    def test_relative_imports_preserve_namespace_ancestors(self):
+        package = self.repo / "namespace" / "pkg"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package.parent / "util.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom ..util import Thing\n```\n", package)
+        self.assertEqual("TRUE", verdicts[("import", "from ..util import")])
+        code, _, _ = run_main(str(package / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_cli_resolves_relative_instruction_file_paths(self):
+        self.verdicts("```python\nfrom .missing import Thing\n```\n", self.repo / "src" / "pkg")
+        process = subprocess.run(
+            [os.sys.executable, str(ROOT / "scripts" / "check_agents_claims.py"),
+             "src/pkg/AGENTS.md", "--repo", str(self.repo), "--fail-on-breaks"],
+            cwd=self.repo, capture_output=True, text=True,
+        )
+        self.assertEqual(1, process.returncode)
+        self.assertIn("BREAKS-ON-USE", process.stdout)
+        self.assertIn("1 claim(s) would break", process.stderr)
+
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"

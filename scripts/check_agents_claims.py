@@ -25,6 +25,7 @@ IMPRECISE, NEEDS-AI, and UNRESOLVED never fail the run - an unresolved claim is 
 
 import argparse
 import functools
+import importlib.util
 import json
 import os
 import re
@@ -42,11 +43,11 @@ PATH_RE = re.compile(
     rf'`(?P<path>{_PARENTS}[\w][\w ./-]*(?:\.(?:{_EXT})|/)'
     rf'|{_PARENTS}[\w][\w ./-]*/[\w .-]+\.[a-zA-Z][a-zA-Z0-9]*)`'
 )
-# markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
+# Markdown destinations identify paths even without an extension; an #anchor is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 # Angle-wrapped destinations must close before the optional title; the brackets are not path data.
 _LINK_TARGET = (
-    rf'(?P<angle><)?(?P<path>/?{_PARENTS}[\w][\w./-]*(?:\.[a-zA-Z][a-zA-Z0-9]*|/))'
+    rf'(?P<angle><)?(?P<path>/?{_PARENTS}[\w][\w./-]*)'
     r'(?:#[^)\s<>]*)?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?'
 )
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
@@ -164,7 +165,7 @@ def exists_here(repo, path):
     return path.exists() and committable(repo, path.relative_to(repo))
 
 
-def resolve_path(repo, doc_dir, raw):
+def resolve_path(repo, doc_dir, raw, explicit=False):
     """
     Returns (verdict, evidence). Paths in a module-scoped instruction file are usually relative to
     that module, not to the repo root, so try the document's own directory first.
@@ -183,10 +184,10 @@ def resolve_path(repo, doc_dir, raw):
         if candidate.exists() and committable(repo_abs, candidate.relative_to(repo_abs)):
             return 'TRUE', f'{candidate.relative_to(repo_abs)} ({label})'
 
-    # A bare name with no directory part is a reference to a kind of file, not to one location.
+    # A bare backticked name may describe a kind of file; a Markdown destination names a target.
     # A trailing slash only marks a directory; it is not a directory part.
     bare = bare.rstrip('/')
-    if '/' not in bare:
+    if not explicit and '/' not in bare:
         hits = name_index(repo).get(bare, [])[:3]
         if hits:
             return 'TRUE', f'{len(hits)}+ files named {bare}, e.g. {hits[0].relative_to(repo_abs)}'
@@ -194,10 +195,11 @@ def resolve_path(repo, doc_dir, raw):
 
     # Shorthand path: the doc names a real file but omits leading directories. Worth reporting,
     # because an agent cannot open it as written, but the fix is a longer path, not new code.
-    tail = Path(bare).name
-    for hit in name_index(repo).get(tail, []):
-        if str(hit).endswith('/' + bare):
-            return 'IMPRECISE', f'shorthand for {hit.relative_to(repo_abs)}'
+    if not explicit:
+        tail = Path(bare).name
+        for hit in name_index(repo).get(tail, []):
+            if str(hit).endswith('/' + bare):
+                return 'IMPRECISE', f'shorthand for {hit.relative_to(repo_abs)}'
 
     if any(git_ignores(repo, candidate) for candidate in candidates):
         return 'UNRESOLVED', 'gitignored: generated at build or run time; absent by design'
@@ -252,8 +254,24 @@ def first_party_roots(repo):
     return roots
 
 
-def import_verdict(repo, dotted, roots):
+def import_verdict(repo, dotted, roots, doc_dir):
     """None = not a claim about this repo (stdlib/third-party), else (verdict, evidence)."""
+    # An instruction file within a regular package supplies the snippet's package context.
+    # Keep namespace ancestors; src/ is an import root, as in first_party_roots().
+    # Without that context, a relative import cannot be tested as an absolute module path.
+    if dotted.startswith('.'):
+        directory = doc_dir.resolve()
+        if not directory.is_relative_to(repo) or not exists_here(repo, directory / '__init__.py'):
+            return 'UNRESOLVED', f'{dotted}: no regular package context for this instruction file'
+        package = directory.relative_to(repo).parts
+        if package[:1] == ('src',):
+            package = package[1:]
+        if not package:
+            return 'UNRESOLVED', f'{dotted}: no regular package context for this instruction file'
+        try:
+            dotted = importlib.util.resolve_name(dotted, '.'.join(package))
+        except ImportError:
+            return 'BREAKS-ON-USE', 'relative import escapes the scoped package'
     top = dotted.split('.')[0]
     if top not in roots:
         return None
@@ -310,7 +328,8 @@ def collect(doc, repo):
         })
 
     for line_no, line in enumerate(text.splitlines(), start=1):
-        for m in list(PATH_RE.finditer(line)) + list(LINK_RE.finditer(line)) + list(REFERENCE_RE.finditer(line)):
+        # Explicit destinations take precedence when a backticked label names the same path.
+        for m in list(LINK_RE.finditer(line)) + list(REFERENCE_RE.finditer(line)) + list(PATH_RE.finditer(line)):
             raw = m.group('path')
             # The prohibition must stand next to the path, not anywhere on the line: instruction
             # text is full of "not" and "never", and a line-wide match exempted links the agent is
@@ -319,7 +338,7 @@ def collect(doc, repo):
             prefix = line[max(0, m.start() - CLAUSE_REACH):m.start()]
             clause = re.split(r'[;.]\s|\s--\s', prefix)[-1]
             suffix = re.split(r'[;.!?](?:\s|$)|\s--\s', line[m.end():m.end() + CLAUSE_REACH])[0]
-            verdict, detail = resolve_path(repo, doc.parent, raw)
+            verdict, detail = resolve_path(repo, doc.parent, raw, explicit=m.re is not PATH_RE)
             if verdict != 'TRUE':
                 if PROHIBITION_RE.search(clause) or PROHIBITION_RE.search(suffix):
                     verdict, detail = 'NEEDS-AI', 'missing, next to a negation: decide whether the absence is intended'
@@ -354,7 +373,7 @@ def collect(doc, repo):
                     names = [part.split()[0] for part in m.group('mod').split(',')]
                     targets = [(name, f'import {name}') for name in names]
                 for dotted, quote in targets:
-                    verdict = import_verdict(repo, dotted, roots)
+                    verdict = import_verdict(repo, dotted, roots, doc.parent)
                     if verdict is None:
                         continue  # stdlib or third-party: not a claim about this repo
                     add('import', start, quote, *verdict)
