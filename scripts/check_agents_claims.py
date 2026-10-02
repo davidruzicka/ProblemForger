@@ -44,7 +44,7 @@ PATH_RE = re.compile(
 )
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
-LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?\)')
+LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*(?:\.[a-zA-Z][a-zA-Z0-9]*|/))(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?\)')
 IMPORT_RE = re.compile(
     r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s'
     r'|import\s+(?P<mod>[\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*))',
@@ -308,14 +308,14 @@ def collect(doc, repo):
             raw = m.group('path')
             # The prohibition must stand next to the path, not anywhere on the line: instruction
             # text is full of "not" and "never", and a line-wide match exempted links the agent is
-            # told to follow. A prohibition precedes the path ("never commit `x`"), an environment
-            # marker follows it ("`x` (production)"), so each is searched on its own side.
+            # told to follow. Negations may precede or follow the path; both sides stop at a
+            # clause boundary. Environment markers also apply only within that clause.
             prefix = line[max(0, m.start() - CLAUSE_REACH):m.start()]
             clause = re.split(r'[;.]\s|\s--\s', prefix)[-1]
             suffix = re.split(r'[;.!?](?:\s|$)|\s--\s', line[m.end():m.end() + CLAUSE_REACH])[0]
             verdict, detail = resolve_path(repo, doc.parent, raw)
             if verdict != 'TRUE':
-                if PROHIBITION_RE.search(clause):
+                if PROHIBITION_RE.search(clause) or PROHIBITION_RE.search(suffix):
                     verdict, detail = 'NEEDS-AI', 'missing, next to a negation: decide whether the absence is intended'
                 elif ELSEWHERE_RE.search(clause) or ELSEWHERE_RE.search(suffix):
                     verdict, detail = 'UNRESOLVED', 'absent here; the text places it on a deploy target'

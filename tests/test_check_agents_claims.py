@@ -126,6 +126,33 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts("~~~python\nfrom pkg.missing import X\n")
         self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
 
+    def test_suffix_prohibition_is_advisory_and_clause_bounded(self):
+        verdicts = self.verdicts(
+            "`secrets/key.json` must not be committed.\n"
+            "Read `docs/missing.md`. Do not change production files.\n"
+            "Read `docs/other.md`; never modify secrets.\n"
+        )
+        self.assertEqual("NEEDS-AI", verdicts[("path", "secrets/key.json")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/other.md")])
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+        self.verdicts("`secrets/key.json` must not be committed.\n")
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_directory_and_long_extension_links(self):
+        verdicts = self.verdicts(
+            'Read [missing](docs/missing/), [schema](schema/missing.proto#message "Schema"), '
+            '[guide](docs/#overview "Guide"), [long](types/missing.customextension), '
+            '[web](https://example.com/schema.proto).\n'
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing/")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "schema/missing.proto")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "types/missing.customextension")])
+        self.assertNotIn(("path", "https://example.com/schema.proto"), verdicts)
+
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"
