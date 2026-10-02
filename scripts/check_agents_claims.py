@@ -37,10 +37,10 @@ from pathlib import Path
 # dot-prefixed first segment (.github/) is a path like any other
 _EXT = r'py|md|mjs|js|json|toml|txt|ya?ml|sh'
 _PARENTS = r'(?:\.{1,2}/)*\.?'
-PATH_RE = re.compile(rf'`(?P<path>{_PARENTS}[\w][\w./-]*(?:\.(?:{_EXT})|/))`')
+PATH_RE = re.compile(rf'`(?P<path>{_PARENTS}[\w][\w ./-]*(?:\.(?:{_EXT})|/))`')
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
-LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[^)\s]*)?\)')
+LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?\)')
 IMPORT_RE = re.compile(
     r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s'
     r'|import\s+(?P<mod>[\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*))',
@@ -153,13 +153,15 @@ def resolve_path(repo, doc_dir, raw):
     """
     repo_abs = repo.resolve()
     bare = raw.lstrip('/')
+    candidates = []
 
     for base, label in ((doc_dir, 'relative to the file'), (repo, 'repo-relative')):
         candidate = (base / bare).resolve()
         try:
-            candidate.relative_to(repo_abs)
+            relative = candidate.relative_to(repo_abs)
         except ValueError:
             continue
+        candidates.append(str(relative))
         if candidate.exists() and committable(repo_abs, candidate.relative_to(repo_abs)):
             return 'TRUE', f'{candidate.relative_to(repo_abs)} ({label})'
 
@@ -179,8 +181,13 @@ def resolve_path(repo, doc_dir, raw):
         if str(hit).endswith('/' + bare):
             return 'IMPRECISE', f'shorthand for {hit.relative_to(repo_abs)}'
 
-    if git_ignores(repo, bare):
+    if any(git_ignores(repo, candidate) for candidate in candidates):
         return 'UNRESOLVED', 'gitignored: generated at build or run time; absent by design'
+    # A spaced span with a bare first word followed by a path may be an inline command.
+    # Keep it advisory rather than guessing shell syntax or installed executables.
+    head, separator, tail = raw.partition(' ')
+    if separator and '/' not in head and '/' in tail:
+        return 'UNRESOLVED', 'may be an inline command rather than a literal path'
     return 'BREAKS-ON-USE', 'missing under both the file directory and the repo root'
 
 
@@ -242,7 +249,8 @@ def import_verdict(repo, dotted, roots):
             return 'TRUE', f'module path {dotted}'
     # A namespace package can continue in an installed distribution (google.protobuf next to a
     # repo's google.myteam), so a submodule missing here does not prove the import breaks.
-    if any(git_ignores(repo, str((base / rel).relative_to(repo)) + '.py') for base in bases):
+    if any(git_ignores(repo, str((base / rel).relative_to(repo)) + suffix)
+           for base in bases for suffix in ('.py', '/')):
         return 'UNRESOLVED', f'{dotted} is gitignored: generated at build or run time; absent by design'
     if any(exists_here(repo, base / top) and not exists_here(repo, base / top / '__init__.py')
            for base in bases):
@@ -292,7 +300,7 @@ def collect(doc, repo):
             # marker follows it ("`x` (production)"), so each is searched on its own side.
             prefix = line[max(0, m.start() - CLAUSE_REACH):m.start()]
             clause = re.split(r'[;.]\s|\s--\s', prefix)[-1]
-            suffix = line[m.end():m.end() + CLAUSE_REACH]
+            suffix = re.split(r'[;.!?](?:\s|$)|\s--\s', line[m.end():m.end() + CLAUSE_REACH])[0]
             verdict, detail = resolve_path(repo, doc.parent, raw)
             if verdict != 'TRUE':
                 if PROHIBITION_RE.search(clause):

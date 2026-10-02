@@ -60,6 +60,39 @@ class ClaimCheckerTests(unittest.TestCase):
     def git(self, *args):
         subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
 
+    def test_scoped_ignored_path(self):
+        self.git("init", "-q")
+        (self.repo / ".gitignore").write_text("src/pkg/generated/\n", encoding="utf-8")
+        verdicts = self.verdicts("Read `generated/out.md`.\n", self.repo / "src" / "pkg")
+        self.assertEqual("UNRESOLVED", verdicts[("path", "generated/out.md")])
+
+    def test_ignored_generated_package(self):
+        self.git("init", "-q")
+        (self.repo / ".gitignore").write_text("src/pkg/generated/\n", encoding="utf-8")
+        verdicts = self.verdicts("```python\nfrom pkg.generated import X\n```\n")
+        self.assertEqual("UNRESOLVED", verdicts[("import", "from pkg.generated import")])
+
+    def test_space_containing_code_path(self):
+        verdicts = self.verdicts("Read `docs/missing guide.md`.\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing guide.md")])
+        (self.repo / "docs" / "real guide.md").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("Read `docs/real guide.md`.\n")
+        self.assertEqual("TRUE", verdicts[("path", "docs/real guide.md")])
+
+    def test_inline_command_is_advisory(self):
+        (self.repo / "scripts").mkdir()
+        (self.repo / "scripts" / "check.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts("Run `python scripts/check.py`.\n")
+        self.assertEqual("UNRESOLVED", verdicts[("path", "python scripts/check.py")])
+
+    def test_titled_markdown_path(self):
+        verdicts = self.verdicts('Read [guide](docs/missing.md "Guide").\n')
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+
+    def test_deployment_context_stops_at_sentence_boundary(self):
+        verdicts = self.verdicts("Read `docs/missing.md`. Deploy to production afterwards.\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"

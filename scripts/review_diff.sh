@@ -149,7 +149,7 @@ check_orphan_references() {
 
     [ -z "$removed_names" ] && return
 
-    local before after definition certain
+    local before after definition
     for name in $removed_names; do
         # Only a line that starts with the keyword counts; `def name` in a comment or prose would
         # otherwise pass for a surviving definition and turn a real orphan into a warning.
@@ -166,30 +166,18 @@ check_orphan_references() {
         fi
         hits=$(git grep --untracked -nE "\.$name\(" -- '*.py')
         [ -z "$hits" ] && continue
-        # Grep cannot tell which class a call means. Only `self.name(` and `cls.name(` with no
-        # definition left are certain orphans; any other receiver may be a library object
-        # (sqlite3's `connection.close()`) or a remaining same-named definition, so only warn.
-        certain=$(git grep --untracked -nE "\b(self|cls)\.$name\(" -- '*.py')
-        if [ "$after" -eq 0 ] && [ -n "$certain" ]; then
-            centered_text "Reference to removed method $name"
-            echo "Definitions in the repo: $before before the change, none after. Calls through self or cls:"
-            echo "$certain"
-            echo
-            echo "On a rename, update the calls too."
-            exit_code=1
-        else
-            centered_text "Possible reference to removed method $name"
-            echo "Definitions in the repo: $before before the change, $after after."
-            if [ "$after" -gt 0 ]; then
-                echo "Remaining definitions:"
-                git grep --untracked -nE "$definition" -- '*.py'
-            fi
-            echo "Remaining calls:"
-            echo "$hits"
-            echo
-            echo "Warning, not an error: confirm no call meant the removed method; a call on a library"
-            echo "object or on a remaining same-named definition is fine."
+        # Names alone cannot resolve a receiver, including self/cls inheriting library methods.
+        centered_text "Possible reference to removed method $name"
+        echo "Definitions in the repo: $before before the change, $after after."
+        if [ "$after" -gt 0 ]; then
+            echo "Remaining definitions:"
+            git grep --untracked -nE "$definition" -- '*.py'
         fi
+        echo "Remaining calls:"
+        echo "$hits"
+        echo
+        echo "Warning, not an error: confirm no call meant the removed method; inherited methods"
+        echo "or methods on a library object or remaining same-named definition may be valid."
     done
 }
 

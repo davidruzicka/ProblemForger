@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/review_diff.sh. Every check has a scenario that MUST make it fail:
+# Tests for scripts/review_diff.sh. Blocking checks must fail; uncertain method references warn:
 # for a detector the dangerous direction is "passes when it should not", not the reverse.
 #
 # Run without arguments; builds throwaway repositories under the temp directory and removes them.
@@ -21,6 +21,17 @@ report() {
 expect_exit() {
     local expected="$1" actual="$2" name="$3"
     [ "$expected" = "$actual" ] && report ok "$name" || report fail "$name (expected $expected, got $actual)"
+}
+
+expect_method_warning() {
+    local dir="$1" name="$2" label="$3" out code
+    out=$( (cd "$dir" && "$GATE" --target baseline) 2>&1 )
+    code=$?
+    expect_exit 0 "$code" "$label"
+    case "$out" in
+        *"Possible reference to removed method $name"*'Remaining calls:'*) report ok "$label warns" ;;
+        *) report fail "$label warning absent: $out" ;;
+    esac
 }
 
 # Repository with one method and one call to it through `self` in a subclass, which can only mean
@@ -46,14 +57,25 @@ run_gate() {
     echo $?
 }
 
-printf 'Checks that must fail:\n'
+# An inherited stdlib method remains valid after removing an unrelated local method.
+repo=$(new_repo)
+printf 'class Widget:\n    def run(self):\n        return 1\n' > "$repo/pkg/a.py"
+printf 'from threading import Thread\nclass Special(Thread):\n    def use(self): return self.run()\n' > "$repo/pkg/b.py"
+git -C "$repo" add -A
+git -C "$repo" commit -qm inherited
+git -C "$repo" branch -f baseline
+printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
+expect_method_warning "$repo" run 'inherited method remains advisory'
+rm -rf "$repo"
+
+printf 'Blocking and advisory checks:\n'
 
 # An orphaned reference found before commit - exactly how the gate is run.
 repo=$(new_repo)
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference in uncommitted change'
+expect_method_warning "$repo" refreshV2 'orphaned reference in uncommitted change'
 git -C "$repo" commit -qam removed
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference after commit'
+expect_method_warning "$repo" refreshV2 'orphaned reference after commit'
 rm -rf "$repo"
 
 # An async method must survive name extraction. It must exist at baseline already - a method
@@ -69,7 +91,7 @@ git -C "$repo" add -A
 git -C "$repo" commit -qm base
 git -C "$repo" branch -q baseline
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference to an async method'
+expect_method_warning "$repo" loadAll 'orphaned reference to an async method'
 rm -rf "$repo"
 
 # A same-named method remains elsewhere - grep cannot tell which class the call means, so the
@@ -97,7 +119,7 @@ esac
 rm -rf "$repo"
 
 # A call on any other receiver may be a library object (sqlite3's `connection.close()`), so with
-# the last definition gone it warns; `cls.` is as certain as `self.` and fails.
+# the last definition gone it warns, including `self.` and `cls.` receivers.
 repo=$(new_repo)
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
 printf 'def use(connection):\n    return connection.refreshV2()\n' > "$repo/pkg/b.py"
@@ -109,7 +131,7 @@ case "$out" in
     *) report fail "call on another receiver is not reported: $out" ;;
 esac
 printf 'class Special(Widget):\n    @classmethod\n    def make(cls): return cls.refreshV2()\n' > "$repo/pkg/b.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'call through cls fails'
+expect_method_warning "$repo" refreshV2 'call through cls remains advisory'
 rm -rf "$repo"
 
 # A nested function is not a method, even though it is indented: removing a local `run()` must
@@ -132,7 +154,7 @@ git -C "$repo" commit -qam method
 git -C "$repo" branch -qf baseline
 printf 'class Widget:\n    pass\n\n(\n' > "$repo/pkg/a.py"
 printf 'class Worker:\n    def go(self):\n        return self.run()\n' > "$repo/pkg/b.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'removed method in a file that does not parse'
+expect_method_warning "$repo" run 'removed method in a file that does not parse'
 rm -rf "$repo"
 
 # A `def name` inside a comment is not a surviving definition.
@@ -142,7 +164,7 @@ git -C "$repo" add -A
 git -C "$repo" commit -qm comment
 git -C "$repo" branch -qf baseline
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference despite def in a comment'
+expect_method_warning "$repo" refreshV2 'orphaned reference despite def in a comment'
 rm -rf "$repo"
 
 # A removed top-level function is not a method: `c.close()` on a library object is unrelated.
@@ -178,7 +200,7 @@ repo=$(new_repo)
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
 printf 'def use(widget):\n    return None\n' > "$repo/pkg/b.py"
 printf 'class Again(Widget):\n    def use(self): return self.refreshV2()\n' > "$repo/pkg/c.py"
-expect_exit 1 "$(run_gate "$repo" --target baseline)" 'orphaned reference from an untracked file'
+expect_method_warning "$repo" refreshV2 'orphaned reference from an untracked file'
 printf 'Intro.\n<<<<<<< HEAD\n' > "$repo/pkg/notes.md"
 expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" 'conflict marker in an untracked file'
 rm -rf "$repo"
@@ -344,7 +366,12 @@ expect_exit 0 "$(run_gate "$repo" --target baseline)" 'clean tree'
 expect_exit 0 "$(run_gate "$repo" --check conflict-markers)" 'clean tree via --check'
 # A run from a subdirectory must see the whole repository, not just part of it.
 printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
-expect_exit 1 "$(cd "$repo/pkg" && "$GATE" --target baseline >/dev/null 2>&1; echo $?)" 'run from a subdirectory finds the same'
+out=$( (cd "$repo/pkg" && "$GATE" --target baseline) 2>&1 )
+expect_exit 0 "$?" 'run from a subdirectory remains advisory'
+case "$out" in
+    *'Possible reference to removed method refreshV2'*'pkg/b.py'*) report ok 'subdirectory warning sees whole repository' ;;
+    *) report fail "subdirectory warning absent: $out" ;;
+esac
 rm -rf "$repo"
 
 printf '\n'
