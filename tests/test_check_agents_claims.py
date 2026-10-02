@@ -169,6 +169,29 @@ class ClaimCheckerTests(unittest.TestCase):
         code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
         self.assertEqual(0, code)
 
+    def test_angle_bracket_markdown_destinations(self):
+        for text in (
+            '[guide](<docs/missing.md>) and [existing](<docs/guide.md#setup> "Guide").\n'
+            '[external](<https://example.com/missing.md>).\n',
+            '[guide]: <docs/missing.md>\n'
+            "[existing]: <docs/guide.md#setup> 'Guide'\n"
+            '[external]: <https://example.com/missing.md>\n',
+        ):
+            with self.subTest(text=text):
+                verdicts = self.verdicts(text)
+                self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+                self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+                self.assertNotIn(("path", "https://example.com/missing.md"), verdicts)
+                code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+                self.assertEqual(1, code)
+        self.verdicts('[guide](<docs/guide.md>)\n[guide]: <docs/guide.md>\n')
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+    def test_markdown_destination_angle_brackets_must_be_paired(self):
+        verdicts = self.verdicts('[guide](<docs/missing.md)\n[guide]: <docs/missing.md\n')
+        self.assertNotIn(("path", "docs/missing.md"), verdicts)
+
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"

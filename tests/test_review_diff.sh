@@ -219,6 +219,15 @@ expect_exit 1 "$(run_gate "$repo" --target baseline)" 'conflict marker in .md'
 expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" 'conflict marker via --check'
 rm -rf "$repo"
 
+# Git permits longer conflict markers through a path's conflict-marker-size attribute.
+repo=$(new_repo)
+printf 'pkg/notes.md conflict-marker-size=10\n' > "$repo/.gitattributes"
+for marker in '<<<<<<<<<< HEAD' '>>>>>>>>>> other' '<<<<<<<<<<' '>>>>>>>>>>'; do
+    printf 'Intro.\n%s\n' "$marker" > "$repo/pkg/notes.md"
+    expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" "configured conflict marker: $marker"
+done
+rm -rf "$repo"
+
 # A false path claim in AGENTS.md fails both the full run and the CI check.
 repo=$(new_repo)
 mkdir -p "$repo/scripts"

@@ -44,7 +44,11 @@ PATH_RE = re.compile(
 )
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
-_LINK_TARGET = rf'(?P<path>/?{_PARENTS}[\w][\w./-]*(?:\.[a-zA-Z][a-zA-Z0-9]*|/))(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?'
+# Angle-wrapped destinations must close before the optional title; the brackets are not path data.
+_LINK_TARGET = (
+    rf'(?P<angle><)?(?P<path>/?{_PARENTS}[\w][\w./-]*(?:\.[a-zA-Z][a-zA-Z0-9]*|/))'
+    r'(?:#[^)\s<>]*)?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?'
+)
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
 REFERENCE_RE = re.compile(rf'^[ \t]{{0,3}}\[[^\]\n]+\]:[ \t]+{_LINK_TARGET}[ \t]*$')
 IMPORT_RE = re.compile(

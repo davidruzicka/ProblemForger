@@ -186,7 +186,8 @@ check_conflict_markers() {
     # A bare ======= is deliberately excluded: it is a heading underline in docs and docstrings.
     # Every text file is searched (-I skips binaries); an extension list missed requirements.txt
     # and .gitignore.
-    hits=$(git grep --untracked -I -nE '^(<{7} |>{7} )')
+    # Attributes can increase conflict-marker-size; labels are optional.
+    hits=$(git grep --untracked -I -nE '^(<{7,}|>{7,})( |$)')
     if [ -n "$hits" ]; then
         centered_text "Conflict markers in tracked files"
         echo "$hits"
