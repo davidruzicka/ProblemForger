@@ -93,6 +93,39 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts("Read `docs/missing.md`. Deploy to production afterwards.\n")
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
 
+    def test_general_extensions_require_path_shape(self):
+        verdicts = self.verdicts(
+            "Read `config/missing.ini`, `schema/missing.sql`, `web/missing.html`, "
+            "and `types/missing.customextension`. Versions `3.12` and hosts `example.com`, `example.com/v1.2`.\n"
+        )
+        for path in ("config/missing.ini", "schema/missing.sql", "web/missing.html",
+                     "types/missing.customextension"):
+            self.assertEqual("BREAKS-ON-USE", verdicts[("path", path)])
+        self.assertNotIn(("path", "3.12"), verdicts)
+        self.assertNotIn(("path", "example.com"), verdicts)
+        self.assertNotIn(("path", "example.com/v1.2"), verdicts)
+
+    def test_python_fence_variants(self):
+        for opening, closing in (("````python", "````"), ("~~~python", "~~~"),
+                                 ("```python title=Example", "```")):
+            with self.subTest(opening=opening):
+                verdicts = self.verdicts(f"{opening}\nfrom pkg.missing import X\n{closing}\n")
+                self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+
+    def test_fence_closer_matches_type_length_and_has_no_info(self):
+        text = "````python\n```\n~~~~\n````python\nfrom pkg.missing import X\n`````\n"
+        blocks = list(check_agents_claims.fenced_blocks(text))
+        self.assertEqual(1, len(blocks))
+        self.assertEqual(("python", 1, 6), blocks[0][:3])
+        self.assertIn("from pkg.missing import X", blocks[0][3])
+
+    def test_backtick_fence_info_cannot_contain_backticks(self):
+        self.assertEqual([], list(check_agents_claims.fenced_blocks("```python `example`\n")))
+
+    def test_unclosed_python_fence_extends_to_eof(self):
+        verdicts = self.verdicts("~~~python\nfrom pkg.missing import X\n")
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"

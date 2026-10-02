@@ -37,7 +37,11 @@ from pathlib import Path
 # dot-prefixed first segment (.github/) is a path like any other
 _EXT = r'py|md|mjs|js|json|toml|txt|ya?ml|sh'
 _PARENTS = r'(?:\.{1,2}/)*\.?'
-PATH_RE = re.compile(rf'`(?P<path>{_PARENTS}[\w][\w ./-]*(?:\.(?:{_EXT})|/))`')
+# General extensions require a slash; bare domains and version strings are not file claims.
+PATH_RE = re.compile(
+    rf'`(?P<path>{_PARENTS}[\w][\w ./-]*(?:\.(?:{_EXT})|/)'
+    rf'|{_PARENTS}[\w][\w ./-]*/[\w .-]+\.[a-zA-Z][a-zA-Z0-9]*)`'
+)
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*\.[a-z]{{2,4}})(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?\)')
@@ -47,7 +51,7 @@ IMPORT_RE = re.compile(
     re.M,
 )
 # a fence may be indented, e.g. inside a list item
-FENCE_RE = re.compile(r'^\s*```(?P<lang>[\w]*)\s*$', re.M)
+FENCE_RE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$')
 PYTHON_LANGS = {'python', 'py', 'python3'}
 # claims that name a config knob and a value
 CONFIG_RE = re.compile(r'`(?P<key>[\w-]+)`\s*(?:=|is|:)\s*`?(?P<value>[\w.-]+)`?')
@@ -75,15 +79,23 @@ def fenced_blocks(text):
     lines = text.splitlines()
     open_at = None
     lang = ''
+    fence = ''
     for i, line in enumerate(lines, start=1):
         m = FENCE_RE.match(line)
         if not m:
             continue
+        marker, info = m.group('fence'), m.group('info').strip()
         if open_at is None:
-            open_at, lang = i, m.group('lang')
-        else:
+            if marker[0] == '`' and '`' in info:
+                continue
+            open_at, fence = i, marker
+            lang = info.split()[0] if info else ''
+        elif marker[0] == fence[0] and len(marker) >= len(fence) and not info:
             yield lang, open_at, i, '\n'.join(lines[open_at:i - 1])
             open_at = None
+
+    if open_at is not None:
+        yield lang, open_at, len(lines) + 1, '\n'.join(lines[open_at:])
 
 
 def in_fence(line_no, blocks):
