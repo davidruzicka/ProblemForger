@@ -44,7 +44,9 @@ PATH_RE = re.compile(
 )
 # markdown link target that looks like a repo-relative file; an #anchor suffix is not part of the path,
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
-LINK_RE = re.compile(rf'\]\((?P<path>/?{_PARENTS}[\w][\w./-]*(?:\.[a-zA-Z][a-zA-Z0-9]*|/))(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?\)')
+_LINK_TARGET = rf'(?P<path>/?{_PARENTS}[\w][\w./-]*(?:\.[a-zA-Z][a-zA-Z0-9]*|/))(?:#[^)\s]*)?(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'))?'
+LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
+REFERENCE_RE = re.compile(rf'^[ \t]{{0,3}}\[[^\]\n]+\]:[ \t]+{_LINK_TARGET}[ \t]*$')
 IMPORT_RE = re.compile(
     r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s'
     r'|import\s+(?P<mod>[\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*))',
@@ -304,7 +306,7 @@ def collect(doc, repo):
         })
 
     for line_no, line in enumerate(text.splitlines(), start=1):
-        for m in list(PATH_RE.finditer(line)) + list(LINK_RE.finditer(line)):
+        for m in list(PATH_RE.finditer(line)) + list(LINK_RE.finditer(line)) + list(REFERENCE_RE.finditer(line)):
             raw = m.group('path')
             # The prohibition must stand next to the path, not anywhere on the line: instruction
             # text is full of "not" and "never", and a line-wide match exempted links the agent is

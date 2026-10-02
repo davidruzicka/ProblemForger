@@ -210,7 +210,7 @@ check_agents_claims() {
     # one is still in the index and is skipped; NUL separation keeps paths with spaces whole.
     while IFS= read -r -d '' doc; do
         [ -f "$doc" ] && docs+=("$doc")
-    done < <(git ls-files -z --cached --others --exclude-standard '*AGENTS.md')
+    done < <(git ls-files -z --cached --others --exclude-standard ':(glob)**/AGENTS.md')
     if [ ${#docs[@]} -eq 0 ]; then
         [ "$strict" = 'strict' ] && { echo "No tracked AGENTS.md; nothing to check." >&2; exit 2; }
         return

@@ -229,6 +229,11 @@ expect_exit 1 "$(run_gate "$repo" --target baseline)" 'false path claim in AGENT
 expect_exit 1 "$(run_gate "$repo" --check agents-claims)" 'false path claim via --check'
 printf 'Read `pkg/a.py` first.\n' > "$repo/AGENTS.md"
 expect_exit 0 "$(run_gate "$repo" --check agents-claims)" 'true path claim via --check'
+# Ordinary documents whose names only end in AGENTS.md are not agent instructions.
+printf 'Read `pkg/missing.py`.\n' > "$repo/NOT_AGENTS.md"
+printf 'Read `pkg/missing.py`.\n' > "$repo/pkg/NOT_AGENTS.md"
+git -C "$repo" add -A
+expect_exit 0 "$(run_gate "$repo" --check agents-claims)" 'suffix-named documents are excluded'
 # A deleted AGENTS.md is still in the index; it must not be handed to the checker.
 mkdir -p "$repo/old"
 printf 'Read `pkg/a.py`.\n' > "$repo/old/AGENTS.md"

@@ -153,6 +153,22 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "types/missing.customextension")])
         self.assertNotIn(("path", "https://example.com/schema.proto"), verdicts)
 
+    def test_reference_link_definitions_are_checked(self):
+        verdicts = self.verdicts(
+            '[the guide][guide] and [existing][present].\n'
+            '[guide]: docs/missing.md#setup "Guide"\n'
+            "[present]: docs/guide.md#setup 'Existing'\n"
+            '[external]: https://example.com/missing.md "External"\n'
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+        self.assertNotIn(("path", "https://example.com/missing.md"), verdicts)
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+        self.verdicts('[the guide][guide]\n[guide]: docs/guide.md#setup "Guide"\n')
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
     def test_existing_and_missing_paths(self):
         verdicts = self.verdicts(
             "See `docs/guide.md`, `src/pkg/`, and [guide](docs/guide.md#setup).\n"
@@ -441,7 +457,7 @@ class ClaimCheckerTests(unittest.TestCase):
 
     def test_repository_agents_files_have_no_breaks(self):
         docs = subprocess.run(
-            ["git", "ls-files", "*AGENTS.md"], cwd=ROOT, capture_output=True, text=True, check=True,
+            ["git", "ls-files", ":(glob)**/AGENTS.md"], cwd=ROOT, capture_output=True, text=True, check=True,
         ).stdout.split()
         self.assertTrue(docs)
         code, out, _ = run_main(*(str(ROOT / doc) for doc in docs), "--repo", str(ROOT), "--fail-on-breaks")
