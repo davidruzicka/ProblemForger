@@ -102,8 +102,10 @@ Provider-specific configuration belongs to the provider module.
 
 ### Composition root and configuration
 
-A typed loader maps a capability and provider name to validated configuration
-and an explicit factory/registry entry, as defined in [Modules](modules.md).
+A versioned `ModuleConfig` maps each capability/provider name to validated
+typed configuration and an explicit factory/registry entry, as defined in
+[Modules](modules.md). The composition root constructs one provider instance
+set and passes only the resulting ports into application code.
 
 Core code receives implementations of ports, never raw provider configuration.
 
