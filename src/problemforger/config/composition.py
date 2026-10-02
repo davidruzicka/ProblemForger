@@ -19,14 +19,20 @@ class ComposedModules:
     event_store: EventStore
     telemetry: TelemetrySink
     _closed: bool = False
+    _telemetry_closed: bool = False
+    _event_store_closed: bool = False
 
     def close(self) -> None:
         if self._closed:
             return
         try:
-            self.telemetry.close()
+            if not self._telemetry_closed:
+                self.telemetry.close()
+                self._telemetry_closed = True
         finally:
-            self.event_store.close()
+            if not self._event_store_closed:
+                self.event_store.close()
+                self._event_store_closed = True
         self._closed = True
 
 

@@ -344,7 +344,7 @@ class CompositionRootTests(unittest.TestCase):
             components.close()
             components.close()
 
-    def test_close_retries_after_provider_failure(self):
+    def test_close_retries_only_the_failed_provider(self):
         class CloseOnceProvider:
             def __init__(self):
                 self.attempts = 0
@@ -360,24 +360,31 @@ class CompositionRootTests(unittest.TestCase):
 
             def close(self):
                 self.attempts += 1
+                if self.attempts > 1:
+                    raise RuntimeError("already closed")
 
-        event_store = CloseOnceProvider()
-        telemetry = CloseTrackingProvider()
-        components = ComposedModules(event_store=event_store, telemetry=telemetry)
+        for failing_capability in ("event_store", "telemetry"):
+            with self.subTest(failing_capability=failing_capability):
+                failing = CloseOnceProvider()
+                successful = CloseTrackingProvider()
+                components = ComposedModules(
+                    event_store=failing if failing_capability == "event_store" else successful,
+                    telemetry=failing if failing_capability == "telemetry" else successful,
+                )
 
-        with self.assertRaisesRegex(RuntimeError, "close failed"):
-            components.close()
-        self.assertFalse(components._closed)
-        self.assertEqual(1, event_store.attempts)
-        self.assertEqual(1, telemetry.attempts)
+                with self.assertRaisesRegex(RuntimeError, "close failed"):
+                    components.close()
+                self.assertFalse(components._closed)
+                self.assertEqual(1, failing.attempts)
+                self.assertEqual(1, successful.attempts)
 
-        components.close()
-        self.assertTrue(components._closed)
-        self.assertEqual(2, event_store.attempts)
-        self.assertEqual(2, telemetry.attempts)
-        components.close()
-        self.assertEqual(2, event_store.attempts)
-        self.assertEqual(2, telemetry.attempts)
+                components.close()
+                self.assertTrue(components._closed)
+                self.assertEqual(2, failing.attempts)
+                self.assertEqual(1, successful.attempts)
+                components.close()
+                self.assertEqual(2, failing.attempts)
+                self.assertEqual(1, successful.attempts)
 
     def test_cleanup_error_is_attached_when_startup_already_failed(self):
         class FailingCloseProvider:
