@@ -62,6 +62,18 @@ class ModuleConfigurationTests(unittest.TestCase):
         self.assertIsInstance(config.telemetry.config, RecordingTelemetryConfig)
         self.assertEqual(5, config.telemetry.config.max_observations)
 
+    def test_sqlite_configuration_rejects_bytes_paths_before_composition(self):
+        class BytesPath:
+            def __fspath__(self):
+                return b"events.db"
+
+        for path in (b"events.db", BytesPath()):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(TypeError, "SQLite path must be a string"):
+                    SqliteEventStoreConfig(path)
+                with self.assertRaisesRegex(TypeError, "SQLite path must be a string"):
+                    SqliteEventStoreConfig.from_value({"path": path})
+
     def test_missing_telemetry_explicitly_defaults_to_null(self):
         config = ModuleConfig.from_value(
             {
