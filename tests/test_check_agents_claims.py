@@ -306,117 +306,46 @@ class ClaimCheckerTests(unittest.TestCase):
         code, _, _ = run_main(str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
         self.assertEqual(0, code)
 
-    def test_relative_package_import_validates_imported_names(self):
-        nested = self.repo / "src" / "pkg" / "nested"
-        nested.mkdir()
-        initializer = nested / "__init__.py"
-        initializer.write_text("", encoding="utf-8")
-        fence = chr(96) * 3
-
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import missing\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
-        code, _, _ = run_main(
-            str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
-        )
-        self.assertEqual(1, code)
-        runtime = subprocess.run(
-            [os.sys.executable, "-c", "from pkg.nested import missing"],
-            cwd=self.repo,
-            env={**os.environ, "PYTHONPATH": str(self.repo / "src")},
-            capture_output=True,
-            text=True,
-        )
-        self.assertNotEqual(0, runtime.returncode)
-        self.assertIn("missing", runtime.stderr)
-
-        (nested / "submodule.py").write_text("", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import submodule\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
-
-        initializer.write_text("exported = object()\n", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import exported\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
-
-        initializer.write_text("exported = object()\ndel exported\n", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import exported\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
-
-        initializer.write_text("exported: object\n", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import exported\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
-
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import submodule as alias\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
-
-        initializer.write_text("exported = object()\n", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import (\n    submodule,\n    exported,\n)\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
-
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import exported, missing\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
-
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom .. import store\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("TRUE", verdicts.get(("import", "from .. import")))
-
-        initializer.write_text(
-            "def __getattr__(name):\n    return None\n",
-            encoding="utf-8",
-        )
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import dynamic_name\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("UNRESOLVED", verdicts.get(("import", "from . import")))
-
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom . import *\n{fence}\n",
-            nested,
-        )
-        self.assertEqual("UNRESOLVED", verdicts.get(("import", "from . import")))
-
-    def test_absolute_package_import_validates_imported_names(self):
+    def test_from_import_checks_module_path_and_keeps_each_claim(self):
         package = self.repo / "src" / "pkg"
-        initializer = package / "__init__.py"
+        (package / "existing.py").write_text("", encoding="utf-8")
+        nested = package / "nested"
+        (nested / "subpkg").mkdir(parents=True)
+        (nested / "__init__.py").write_text("", encoding="utf-8")
+        (nested / "subpkg" / "__init__.py").write_text("", encoding="utf-8")
         fence = chr(96) * 3
+        text = (
+            f"{fence}python\n"
+            "from pkg import existing\n"
+            "from pkg import missing\n"
+            "from pkg.nested.subpkg import missing\n"
+            "from . import missing\n"
+            "from .subpkg import missing\n"
+            f"{fence}\n"
+        )
+        doc = nested / "AGENTS.md"
+        doc.write_text(text, encoding="utf-8")
+        all_claims = collect(doc, self.repo)
+        claims = [claim for claim in all_claims if claim["kind"] == "import"]
+        member_claims = [claim for claim in all_claims if claim["kind"] == "import-member"]
 
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom pkg import missing\n{fence}\n"
-        )
+        # The checker proves only that each imported module/package path exists. It does not
+        # claim to prove that a package exports a requested member.
+        self.assertEqual([2, 3, 4, 5, 6], [claim["line"] for claim in claims])
+        self.assertEqual(["TRUE"] * 5, [claim["verdict"] for claim in claims])
         self.assertEqual(
-            "BREAKS-ON-USE",
-            verdicts.get(("import", "from pkg import")),
+            ["from pkg import", "from pkg import", "from pkg.nested.subpkg import",
+             "from . import", "from .subpkg import"],
+            [claim["quote"] for claim in claims],
         )
-        code, _, _ = run_main(
-            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
-        )
-        self.assertEqual(1, code)
+        self.assertEqual([2, 3, 4, 5, 6], [claim["line"] for claim in member_claims])
+        self.assertEqual(["UNRESOLVED"] * 5, [claim["verdict"] for claim in member_claims])
+        self.assertTrue(all("not statically checked" in claim["evidence"] for claim in member_claims))
+        self.assertEqual("UNRESOLVED", next(claim["verdict"] for claim in all_claims
+                                             if claim["kind"] == "snippet"))
+
+        # A missing member can still fail when executed; that is intentionally outside the
+        # fail-on-breaks contract and remains visible in the unresolved snippet claim.
         runtime = subprocess.run(
             [os.sys.executable, "-c", "from pkg import missing"],
             cwd=self.repo,
@@ -425,28 +354,25 @@ class ClaimCheckerTests(unittest.TestCase):
             text=True,
         )
         self.assertNotEqual(0, runtime.returncode)
-        self.assertIn("missing", runtime.stderr)
-
-        (package / "new_module.py").write_text("", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom pkg import new_module as alias\n{fence}\n"
+        code, _, _ = run_main(
+            str(doc), "--repo", str(self.repo), "--fail-on-breaks"
         )
-        self.assertEqual("TRUE", verdicts.get(("import", "from pkg import")))
+        self.assertEqual(0, code)
 
-        initializer.write_text("exported = object()\n", encoding="utf-8")
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom pkg import exported\n{fence}\n"
-        )
-        self.assertEqual("TRUE", verdicts.get(("import", "from pkg import")))
-
-        initializer.write_text(
-            "def __getattr__(name):\n    return None\n",
+    def test_distinct_from_imports_on_separate_lines_keep_separate_claims(self):
+        doc = self.repo / "AGENTS.md"
+        doc.write_text(
+            "```python\nfrom pkg import existing\nfrom pkg import missing\n```\n",
             encoding="utf-8",
         )
-        verdicts = self.verdicts(
-            f"{fence}python\nfrom pkg import dynamic_name\n{fence}\n"
-        )
-        self.assertEqual("UNRESOLVED", verdicts.get(("import", "from pkg import")))
+        claims = [claim for claim in collect(doc, self.repo) if claim["kind"] == "import"]
+        member_claims = [claim for claim in collect(doc, self.repo)
+                         if claim["kind"] == "import-member"]
+        self.assertEqual(2, len(claims))
+        self.assertEqual([2, 3], [claim["line"] for claim in claims])
+        self.assertEqual(["from pkg import", "from pkg import"], [claim["quote"] for claim in claims])
+        self.assertEqual(2, len(member_claims))
+        self.assertEqual([2, 3], [claim["line"] for claim in member_claims])
 
     def test_markdown_destinations_require_an_exact_path(self):
         (self.repo / "docs" / "Makefile").write_text("", encoding="utf-8")

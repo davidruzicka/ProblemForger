@@ -10,7 +10,8 @@ Usage:
 
 What it resolves by itself (deterministic, no judgement):
     path        - does the referenced file/directory exist?
-    import      - does a module path plausibly exist on disk?
+    import      - does a first-party module path plausibly exist on disk? Member names in
+                  `from ... import ...` statements are reported separately as unresolved.
     example     - does a quoted Conventional Commits example exist in git history?
 
 What it only enumerates, for the model to adjudicate:
@@ -462,8 +463,8 @@ def import_verdict(repo, dotted, roots, doc_dir):
     return 'UNRESOLVED', f'{dotted}: no reliable package context'
 
 
-def package_import_names(body, match):
-    """Read names imported from a package, including parenthesized import lists."""
+def from_import_names(body, match):
+    """Read member names for reporting and claim identity, not for import evaluation."""
     dotted = match.group('from')
     level = len(dotted) - len(dotted.lstrip('.'))
     module = dotted[level:] or None
@@ -507,119 +508,6 @@ def package_import_names(body, match):
     return [alias.name for alias in statements[0].names]
 
 
-def package_export_verdict(repo, package_dir, name):
-    """Return TRUE for a static package export, UNRESOLVED for dynamic exports, else None."""
-    repo = repo.resolve()
-    package_dir = package_dir.resolve()
-    initializer = package_dir / '__init__.py'
-    if not exists_here(repo, initializer) or not initializer.is_file():
-        return None
-    if not initializer.resolve().is_relative_to(repo):
-        return 'UNRESOLVED', f'{initializer} resolves outside the repo'
-    try:
-        tree = ast.parse(initializer.read_text(encoding='utf-8'))
-    except (OSError, UnicodeError, SyntaxError):
-        return 'UNRESOLVED', f'cannot statically inspect package export {name}'
-
-    def target_names(target):
-        if isinstance(target, ast.Name):
-            return {target.id}
-        if isinstance(target, (ast.Tuple, ast.List)):
-            return set().union(*(target_names(item) for item in target.elts))
-        return set()
-
-    exported = False
-    dynamic = False
-    for statement in tree.body:
-        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            exported |= statement.name == name
-            dynamic |= statement.name == '__getattr__' and name != '__getattr__'
-        elif isinstance(statement, ast.Assign):
-            exported |= any(name in target_names(target) for target in statement.targets)
-        elif isinstance(statement, ast.AnnAssign):
-            exported |= (statement.value is not None
-                         and name in target_names(statement.target))
-        elif isinstance(statement, ast.AugAssign):
-            dynamic |= name in target_names(statement.target)
-        elif isinstance(statement, ast.Delete):
-            exported &= not any(name in target_names(target) for target in statement.targets)
-        elif isinstance(statement, ast.Import):
-            dynamic |= any((alias.asname or alias.name.split('.')[0]) == name
-                           for alias in statement.names)
-        elif isinstance(statement, ast.ImportFrom):
-            dynamic |= any(alias.name == '*' or (alias.asname or alias.name) == name
-                           for alias in statement.names)
-        elif isinstance(statement, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try,
-                                    ast.TryStar, ast.With, ast.AsyncWith, ast.Match)):
-            dynamic = True
-        elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
-            dynamic = True
-
-    if exported and not dynamic:
-        return 'TRUE', f'{name} is defined in {initializer.relative_to(repo)}'
-    if dynamic:
-        return 'UNRESOLVED', f'{initializer.relative_to(repo)} may define {name} dynamically'
-    return None
-
-
-def package_import_verdict(repo, dotted, names, roots, doc_dir):
-    """Validate names imported directly from a first-party package."""
-    package = import_verdict(repo, dotted, roots, doc_dir)
-    if package is None or package[0] != 'TRUE':
-        return package
-
-    repo = repo.resolve()
-    if dotted.startswith('.'):
-        package_dir = doc_dir.resolve()
-        for _ in range(len(dotted) - 1):
-            package_dir = package_dir.parent
-        if not package_dir.is_relative_to(repo):
-            return 'UNRESOLVED', f'{dotted}: package directory is outside the repo'
-        package_dirs = [package_dir]
-    else:
-        matching = [name for name in roots if dotted == name or dotted.startswith(name + '.')]
-        if not matching:
-            return 'UNRESOLVED', f'{dotted}: no first-party package root'
-        prefix = max(matching, key=lambda name: len(name.split('.')))
-        remainder = dotted.split('.')[len(prefix.split('.')):]
-        package_dirs = [
-            package_root.joinpath(*remainder)
-            for package_root, _ in roots[prefix]
-            if exists_here(repo, package_root.joinpath(*remainder))
-            and package_root.joinpath(*remainder).is_dir()
-        ]
-        if not package_dirs:
-            return package
-    if not names:
-        return 'UNRESOLVED', f'{dotted}: could not inspect imported package names'
-
-    missing = []
-    unresolved = []
-    for name in names:
-        if name == '*':
-            unresolved.append(name)
-            continue
-        member = dotted + name if dotted.startswith('.') else f'{dotted}.{name}'
-        module = import_verdict(repo, member, roots, doc_dir)
-        if module is not None and module[0] == 'TRUE':
-            continue
-        exports = [package_export_verdict(repo, package_dir, name)
-                   for package_dir in package_dirs]
-        if any(export is not None and export[0] == 'TRUE' for export in exports):
-            continue
-        if (module is not None and module[0] == 'BREAKS-ON-USE'
-                and all(export is None for export in exports)):
-            missing.append(name)
-        else:
-            unresolved.append(name)
-
-    if missing:
-        return 'BREAKS-ON-USE', f'missing package member(s): {", ".join(missing)}'
-    if unresolved:
-        return 'UNRESOLVED', f'cannot statically validate package member(s): {", ".join(unresolved)}'
-    return 'TRUE', f'imported package member(s) exist: {", ".join(names)}'
-
-
 def git_has(repo, needle):
     """Search the whole history for a commit message, not a bounded slice."""
     try:
@@ -655,9 +543,9 @@ def collect(doc, repo):
 
     seen = set()
 
-    def add(kind, line, quote, verdict, evidence):
+    def add(kind, line, quote, verdict, evidence, identity=None):
         # The same path often appears twice on one line (backticked and as a link target).
-        key = (kind, line, quote.strip()[:200])
+        key = (kind, line, quote.strip()[:200], identity)
         if key in seen:
             return
         seen.add(key)
@@ -709,24 +597,29 @@ def collect(doc, repo):
     for lang, start, end, body in blocks:
         if lang.lower() in PYTHON_LANGS:
             for m in IMPORT_RE.finditer(body):
+                claim_line = start + body.count('\n', 0, m.start()) + 1
                 if m.group('from'):
-                    targets = [(m.group('from'), m.group(0).strip())]
+                    names = from_import_names(body, m)
+                    # Keep member names in the deduplication key even though their runtime
+                    # existence is outside this static check's contract.
+                    identity = tuple(names or ())
+                    targets = [(m.group('from'), m.group(0).strip(), identity)]
                 else:
                     # `import a, b as c` names several modules; each is its own claim
                     names = [part.split()[0] for part in m.group('mod').split(',')]
-                    targets = [(name, f'import {name}') for name in names]
-                for dotted, quote in targets:
-                    if m.group('from') and (
-                            not dotted.startswith('.') or re.fullmatch(r'\.+', dotted)):
-                        names = package_import_names(body, m)
-                        verdict = package_import_verdict(
-                            repo, dotted, names, roots, doc.parent
-                        )
-                    else:
-                        verdict = import_verdict(repo, dotted, roots, doc.parent)
+                    targets = [(name, f'import {name}', None) for name in names]
+                for dotted, quote, identity in targets:
+                    verdict = import_verdict(repo, dotted, roots, doc.parent)
                     if verdict is None:
                         continue  # stdlib or third-party: not a claim about this repo
-                    add('import', start, quote, *verdict)
+                    add('import', claim_line, quote, *verdict, identity=identity)
+                    if (m.group('from') and verdict[0] == 'TRUE' and names):
+                        add(
+                            'import-member', claim_line, quote, 'UNRESOLVED',
+                            f'{dotted} exists; imported member names are not statically checked: '
+                            f'{", ".join(names)}',
+                            identity=identity,
+                        )
         add('snippet', start, f'{lang or "text"} block, lines {start}-{end}', 'UNRESOLVED',
             'resolve every identifier against real code; check it runs on paste')
 
