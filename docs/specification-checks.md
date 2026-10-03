@@ -38,8 +38,12 @@ python3 -m scripts.check_architecture
 python3 -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
 python3 -m coverage report --fail-under=90
 node --test tests/review-workflow.test.mjs
+tests/test_review_diff.sh
+scripts/review_diff.sh --target main
 git diff --check
 ```
+
+`scripts/review_diff.sh` compares the merge base with the target branch against the working tree, so uncommitted work is included. It warns when a Python method definition count drops while attribute calls with that name remain. Name matching cannot determine the receiver's class or inherited library methods, even for `self` and `cls`, so these findings are advisory (only methods defined directly in a class body are checked, not top-level or nested functions, and only calls count, so a removed property or a method passed as a callback is not caught). It fails on conflict markers in any text file, and on an `AGENTS.md` claim that `scripts/check_agents_claims.py` resolves as `BREAKS-ON-USE` (missing path, or a missing module in a first-party regular package; a namespace package without `__init__.py` may continue in an installed distribution, so a module missing there is `UNRESOLVED`). It warns, without failing, when the change deletes lines another author wrote. `IMPRECISE` and `UNRESOLVED` claims are reported for review and never fail. A path or module that `.gitignore` covers is generated output (build artifacts, a generated `_version.py`) and is `UNRESOLVED` whether or not it exists locally, so the local gate and CI agree. A missing path next to a negation ("never commit `x`", "do not proceed until you read `x`") is `NEEDS-AI`: it never fails, and a model or reviewer decides whether the absence is intended. CI runs the whole-tree checks through `--check conflict-markers` and `--check agents-claims`; `tests/test_review_diff.sh` plants defects in throwaway repositories and verifies blocking failures and advisory warnings.
 
 The bootstrap tests verify the package layers import without harness/provider
 dependencies. Core, ports, and application use cases may import only reviewed,

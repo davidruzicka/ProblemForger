@@ -33,6 +33,12 @@ jobs:
           "$RUNNER_TEMP/spec-checks-venv/bin/python" -m scripts.check_architecture
       - name: Test the review-request script without posting comments
         run: node --test tests/review-workflow.test.mjs
+      - name: Check conflict markers and AGENTS.md claims
+        run: |
+          scripts/review_diff.sh --check conflict-markers
+          scripts/review_diff.sh --check agents-claims
+      - name: Test the pre-commit review gate
+        run: tests/test_review_diff.sh
       - name: Check whitespace
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
