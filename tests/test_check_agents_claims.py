@@ -401,6 +401,53 @@ class ClaimCheckerTests(unittest.TestCase):
         )
         self.assertEqual("UNRESOLVED", verdicts.get(("import", "from . import")))
 
+    def test_absolute_package_import_validates_imported_names(self):
+        package = self.repo / "src" / "pkg"
+        initializer = package / "__init__.py"
+        fence = chr(96) * 3
+
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom pkg import missing\n{fence}\n"
+        )
+        self.assertEqual(
+            "BREAKS-ON-USE",
+            verdicts.get(("import", "from pkg import")),
+        )
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+        runtime = subprocess.run(
+            [os.sys.executable, "-c", "from pkg import missing"],
+            cwd=self.repo,
+            env={**os.environ, "PYTHONPATH": str(self.repo / "src")},
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, runtime.returncode)
+        self.assertIn("missing", runtime.stderr)
+
+        (package / "new_module.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom pkg import new_module as alias\n{fence}\n"
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from pkg import")))
+
+        initializer.write_text("exported = object()\n", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom pkg import exported\n{fence}\n"
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from pkg import")))
+
+        initializer.write_text(
+            "def __getattr__(name):\n    return None\n",
+            encoding="utf-8",
+        )
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom pkg import dynamic_name\n{fence}\n"
+        )
+        self.assertEqual("UNRESOLVED", verdicts.get(("import", "from pkg import")))
+
     def test_markdown_destinations_require_an_exact_path(self):
         (self.repo / "docs" / "Makefile").write_text("", encoding="utf-8")
         (self.repo / "tools" / "scripts").mkdir(parents=True)
@@ -877,3 +924,4 @@ class ClaimCheckerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

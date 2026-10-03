@@ -462,11 +462,11 @@ def import_verdict(repo, dotted, roots, doc_dir):
     return 'UNRESOLVED', f'{dotted}: no reliable package context'
 
 
-def relative_package_import_names(body, match):
-    """Read imported names from a dot-only relative package import."""
+def package_import_names(body, match):
+    """Read names imported from a package, including parenthesized import lists."""
     dotted = match.group('from')
-    if not re.fullmatch(r'\.+', dotted):
-        return None
+    level = len(dotted) - len(dotted.lstrip('.'))
+    module = dotted[level:] or None
 
     start = body.rfind('\n', 0, match.start()) + 1
     cursor = match.end()
@@ -502,7 +502,7 @@ def relative_package_import_names(body, match):
     except (SyntaxError, ValueError):
         return None
     if (len(statements) != 1 or not isinstance(statements[0], ast.ImportFrom)
-            or statements[0].module is not None or statements[0].level != len(dotted)):
+            or statements[0].module != module or statements[0].level != level):
         return None
     return [alias.name for alias in statements[0].names]
 
@@ -562,19 +562,36 @@ def package_export_verdict(repo, package_dir, name):
     return None
 
 
-def relative_package_import_verdict(repo, dotted, names, roots, doc_dir):
-    """Validate names imported directly from a relative package."""
+def package_import_verdict(repo, dotted, names, roots, doc_dir):
+    """Validate names imported directly from a first-party package."""
     package = import_verdict(repo, dotted, roots, doc_dir)
     if package is None or package[0] != 'TRUE':
         return package
+
+    repo = repo.resolve()
+    if dotted.startswith('.'):
+        package_dir = doc_dir.resolve()
+        for _ in range(len(dotted) - 1):
+            package_dir = package_dir.parent
+        if not package_dir.is_relative_to(repo):
+            return 'UNRESOLVED', f'{dotted}: package directory is outside the repo'
+        package_dirs = [package_dir]
+    else:
+        matching = [name for name in roots if dotted == name or dotted.startswith(name + '.')]
+        if not matching:
+            return 'UNRESOLVED', f'{dotted}: no first-party package root'
+        prefix = max(matching, key=lambda name: len(name.split('.')))
+        remainder = dotted.split('.')[len(prefix.split('.')):]
+        package_dirs = [
+            package_root.joinpath(*remainder)
+            for package_root, _ in roots[prefix]
+            if exists_here(repo, package_root.joinpath(*remainder))
+            and package_root.joinpath(*remainder).is_dir()
+        ]
+        if not package_dirs:
+            return package
     if not names:
         return 'UNRESOLVED', f'{dotted}: could not inspect imported package names'
-
-    package_dir = doc_dir.resolve()
-    for _ in range(len(dotted) - 1):
-        package_dir = package_dir.parent
-    if not package_dir.is_relative_to(repo.resolve()):
-        return 'UNRESOLVED', f'{dotted}: package directory is outside the repo'
 
     missing = []
     unresolved = []
@@ -582,13 +599,16 @@ def relative_package_import_verdict(repo, dotted, names, roots, doc_dir):
         if name == '*':
             unresolved.append(name)
             continue
-        module = import_verdict(repo, dotted + name, roots, doc_dir)
+        member = dotted + name if dotted.startswith('.') else f'{dotted}.{name}'
+        module = import_verdict(repo, member, roots, doc_dir)
         if module is not None and module[0] == 'TRUE':
             continue
-        exported = package_export_verdict(repo, package_dir, name)
-        if exported is not None and exported[0] == 'TRUE':
+        exports = [package_export_verdict(repo, package_dir, name)
+                   for package_dir in package_dirs]
+        if any(export is not None and export[0] == 'TRUE' for export in exports):
             continue
-        if module is not None and module[0] == 'BREAKS-ON-USE' and exported is None:
+        if (module is not None and module[0] == 'BREAKS-ON-USE'
+                and all(export is None for export in exports)):
             missing.append(name)
         else:
             unresolved.append(name)
@@ -696,9 +716,10 @@ def collect(doc, repo):
                     names = [part.split()[0] for part in m.group('mod').split(',')]
                     targets = [(name, f'import {name}') for name in names]
                 for dotted, quote in targets:
-                    if m.group('from') and re.fullmatch(r'\.+', dotted):
-                        names = relative_package_import_names(body, m)
-                        verdict = relative_package_import_verdict(
+                    if m.group('from') and (
+                            not dotted.startswith('.') or re.fullmatch(r'\.+', dotted)):
+                        names = package_import_names(body, m)
+                        verdict = package_import_verdict(
                             repo, dotted, names, roots, doc.parent
                         )
                     else:
@@ -774,3 +795,4 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
