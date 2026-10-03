@@ -10,8 +10,8 @@ Usage:
 
 What it resolves by itself (deterministic, no judgement):
     path        - does the referenced file/directory exist?
-    import      - does a first-party module path plausibly exist on disk? Member names in
-                  `from ... import ...` statements are reported separately as unresolved.
+    import      - does a first-party module path in a parseable Python block plausibly exist on
+                  disk? Member names in `from ... import ...` statements are unresolved.
     example     - does a quoted Conventional Commits example exist in git history?
 
 What it only enumerates, for the model to adjudicate:
@@ -33,6 +33,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -55,11 +56,6 @@ _LINK_TARGET = (
 )
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
 REFERENCE_RE = re.compile(rf'^[ \t]{{0,3}}\[[^\]\n]+\]:[ \t]+{_LINK_TARGET}[ \t]*$')
-IMPORT_RE = re.compile(
-    r'^\s*(?:from\s+(?P<from>[\w.]+)\s+import\s'
-    r'|import\s+(?P<mod>[\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*))',
-    re.M,
-)
 # a fence may be indented, e.g. inside a list item
 FENCE_RE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$')
 PYTHON_LANGS = {'python', 'py', 'python3'}
@@ -171,13 +167,18 @@ def exists_here(repo, path):
 def resolve_path(repo, doc_dir, raw, explicit=False):
     """
     Returns (verdict, evidence). Paths in a module-scoped instruction file are usually relative to
-    that module, not to the repo root, so try the document's own directory first.
+    that module, not to the repo root. A leading slash marks a repo-root path; other forms try the
+    document's own directory first.
     """
     repo_abs = repo.resolve()
+    root_relative = raw.startswith('/')
     bare = raw.lstrip('/')
     candidates = []
 
-    for base, label in ((doc_dir, 'relative to the file'), (repo, 'repo-relative')):
+    bases = ((repo, 'repo-relative'),) if root_relative else (
+        (doc_dir, 'relative to the file'), (repo, 'repo-relative')
+    )
+    for base, label in bases:
         candidate = (base / bare).resolve()
         try:
             relative = candidate.relative_to(repo_abs)
@@ -463,51 +464,6 @@ def import_verdict(repo, dotted, roots, doc_dir):
     return 'UNRESOLVED', f'{dotted}: no reliable package context'
 
 
-def from_import_names(body, match):
-    """Read member names for reporting and claim identity, not for import evaluation."""
-    dotted = match.group('from')
-    level = len(dotted) - len(dotted.lstrip('.'))
-    module = dotted[level:] or None
-
-    start = body.rfind('\n', 0, match.start()) + 1
-    cursor = match.end()
-    while cursor < len(body) and body[cursor] in ' \t\r\n':
-        cursor += 1
-    if cursor < len(body) and body[cursor] == '(':
-        depth = 0
-        in_comment = False
-        end = None
-        for index in range(cursor, len(body)):
-            char = body[index]
-            if in_comment:
-                if char == '\n':
-                    in_comment = False
-            elif char == '#':
-                in_comment = True
-            elif char == '(':
-                depth += 1
-            elif char == ')':
-                depth -= 1
-                if depth == 0:
-                    end = index + 1
-                    break
-        if end is None:
-            return None
-    else:
-        end = body.find('\n', cursor)
-        if end == -1:
-            end = len(body)
-
-    try:
-        statements = ast.parse(body[start:end].strip()).body
-    except (SyntaxError, ValueError):
-        return None
-    if (len(statements) != 1 or not isinstance(statements[0], ast.ImportFrom)
-            or statements[0].module != module or statements[0].level != level):
-        return None
-    return [alias.name for alias in statements[0].names]
-
-
 def git_has(repo, needle):
     """Search the whole history for a commit message, not a bounded slice."""
     try:
@@ -596,30 +552,41 @@ def collect(doc, repo):
     roots = first_party_roots(repo)
     for lang, start, end, body in blocks:
         if lang.lower() in PYTHON_LANGS:
-            for m in IMPORT_RE.finditer(body):
-                claim_line = start + body.count('\n', 0, m.start()) + 1
-                if m.group('from'):
-                    names = from_import_names(body, m)
-                    # Keep member names in the deduplication key even though their runtime
-                    # existence is outside this static check's contract.
-                    identity = tuple(names or ())
-                    targets = [(m.group('from'), m.group(0).strip(), identity)]
-                else:
-                    # `import a, b as c` names several modules; each is its own claim
-                    names = [part.split()[0] for part in m.group('mod').split(',')]
-                    targets = [(name, f'import {name}', None) for name in names]
-                for dotted, quote, identity in targets:
-                    verdict = import_verdict(repo, dotted, roots, doc.parent)
-                    if verdict is None:
-                        continue  # stdlib or third-party: not a claim about this repo
-                    add('import', claim_line, quote, *verdict, identity=identity)
-                    if (m.group('from') and verdict[0] == 'TRUE' and names):
-                        add(
-                            'import-member', claim_line, quote, 'UNRESOLVED',
-                            f'{dotted} exists; imported member names are not statically checked: '
-                            f'{", ".join(names)}',
-                            identity=identity,
-                        )
+            try:
+                tree = ast.parse(textwrap.dedent(body))
+            except (SyntaxError, ValueError):
+                tree = None  # the snippet claim below keeps unparsable examples visible
+            if tree is not None:
+                import_nodes = sorted(
+                    (node for node in ast.walk(tree)
+                     if isinstance(node, (ast.Import, ast.ImportFrom))),
+                    key=lambda node: (node.lineno, node.col_offset),
+                )
+                for node in import_nodes:
+                    claim_line = start + node.lineno
+                    if isinstance(node, ast.ImportFrom):
+                        dotted = '.' * node.level + (node.module or '')
+                        quote = f'from {dotted} import'
+                        names = [alias.name for alias in node.names]
+                        identity = tuple((alias.name, alias.asname) for alias in node.names)
+                        targets = [(dotted, quote, identity)]
+                    else:
+                        names = None
+                        targets = [(alias.name, f'import {alias.name}', None)
+                                   for alias in node.names]
+                    for dotted, quote, identity in targets:
+                        verdict = import_verdict(repo, dotted, roots, doc.parent)
+                        if verdict is None:
+                            continue  # stdlib or third-party: not a claim about this repo
+                        add('import', claim_line, quote, *verdict, identity=identity)
+                        if (isinstance(node, ast.ImportFrom) and verdict[0] == 'TRUE'
+                                and names):
+                            add(
+                                'import-member', claim_line, quote, 'UNRESOLVED',
+                                f'{dotted} exists; imported member names are not statically checked: '
+                                f'{", ".join(names)}',
+                                identity=identity,
+                            )
         add('snippet', start, f'{lang or "text"} block, lines {start}-{end}', 'UNRESOLVED',
             'resolve every identifier against real code; check it runs on paste')
 

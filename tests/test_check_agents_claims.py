@@ -479,6 +479,28 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../missing.md")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../../docs/gone.md")])
 
+    def test_leading_slash_markdown_links_resolve_only_from_repo_root(self):
+        nested = self.repo / "src" / "pkg" / "nested"
+        shadow = nested / "docs" / "rooted.md"
+        shadow.parent.mkdir(parents=True)
+        shadow.write_text("", encoding="utf-8")
+        text = "[missing root target](/docs/rooted.md)\n"
+
+        verdicts = self.verdicts(text, nested)
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "/docs/rooted.md")])
+        code, _, _ = run_main(str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+
+        root_target = self.repo / "docs" / "rooted.md"
+        root_target.write_text("", encoding="utf-8")
+        doc = nested / "AGENTS.md"
+        doc.write_text(text, encoding="utf-8")
+        claim = next(claim for claim in collect(doc, self.repo) if claim["kind"] == "path")
+        self.assertEqual("TRUE", claim["verdict"])
+        self.assertEqual("docs/rooted.md (repo-relative)", claim["evidence"])
+        code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
     def test_path_escaping_the_repo_is_not_resolved_outside_it(self):
         outside = self.repo.parent / "outside.md"
         outside.write_text("", encoding="utf-8")
@@ -797,6 +819,29 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("UNRESOLVED", verdicts[("snippet", "sh block, lines 7-9")])
         # config-looking text inside a fence is code, not a claim
         self.assertNotIn(("config", "`thing` = `value`"), verdicts)
+
+    def test_import_shaped_text_inside_a_multiline_string_is_not_an_import(self):
+        text = (
+            "```python\n"
+            '"""Example text:\n'
+            "from pkg.missing import Thing\n"
+            '"""\n'
+            "from pkg.store import Store\n"
+            "```\n"
+        )
+        verdicts = self.verdicts(text)
+        self.assertNotIn(("import", "from pkg.missing import"), verdicts)
+        self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
+        malformed = self.verdicts(
+            "```python\nif (\nfrom pkg.missing import Thing\n```\n"
+        )
+        self.assertNotIn(("import", "from pkg.missing import"), malformed)
+        self.assertEqual("UNRESOLVED", malformed[("snippet", "python block, lines 1-4")])
+        code, _, _ = run_main(str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
 
     def test_process_and_config_claims_are_enumerated(self):
         verdicts = self.verdicts("Migrations run on every deploy.\nThe `timeout` is `30`.\n")
