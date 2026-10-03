@@ -48,7 +48,7 @@ PATH_RE = re.compile(
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 # Angle-wrapped destinations must close before the optional title; the brackets are not path data.
 _LINK_TARGET = (
-    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w](?(angle)[^<>#\n]*|[\w./-]*))'
+    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w](?(angle)[^<>#\n]*|[\w./()-]*))'
     r'(?:#(?(angle)[^<>\n]*|[^)\s<>]*))?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'|\([^\n)]*\)))?'
 )
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
@@ -476,6 +476,19 @@ def git_has(repo, needle):
     return bool(out.stdout.strip())
 
 
+def balanced_parentheses(value):
+    """Whether unwrapped Markdown destination parentheses are properly paired."""
+    depth = 0
+    for char in value:
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
 def collect(doc, repo):
     text = doc.read_text(encoding='utf-8', errors='replace')
     blocks = list(fenced_blocks(text))
@@ -498,6 +511,10 @@ def collect(doc, repo):
         # Explicit destinations take precedence when a backticked label names the same path.
         for m in list(LINK_RE.finditer(line)) + list(REFERENCE_RE.finditer(line)) + list(PATH_RE.finditer(line)):
             raw = m.group('path')
+            # The link regex can include parentheses in an unwrapped destination. Keep only
+            # balanced pairs there; angle-wrapped destinations have their own delimiter.
+            if m.re is not PATH_RE and not m.group('angle') and not balanced_parentheses(raw):
+                continue
             # The prohibition must stand next to the path, not anywhere on the line: instruction
             # text is full of "not" and "never", and a line-wide match exempted links the agent is
             # told to follow. Negations may precede or follow the path; both sides stop at a
@@ -531,7 +548,7 @@ def collect(doc, repo):
 
     roots = first_party_roots(repo)
     for lang, start, end, body in blocks:
-        if lang in PYTHON_LANGS:
+        if lang.lower() in PYTHON_LANGS:
             for m in IMPORT_RE.finditer(body):
                 if m.group('from'):
                     targets = [(m.group('from'), m.group(0).strip())]

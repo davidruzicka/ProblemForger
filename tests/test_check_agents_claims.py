@@ -89,6 +89,28 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts('Read [guide](docs/missing.md "Guide").\n')
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
 
+    def test_markdown_destinations_with_balanced_parentheses(self):
+        guide = self.repo / "docs" / "guide_(v1).md"
+        guide.parent.mkdir(parents=True, exist_ok=True)
+        guide.write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            '[missing](docs/missing_(old).md) and [guide](docs/guide_(v1).md#setup "Guide").\n'
+            '[missing reference][old]\n'
+            "[old]: docs/missing_(reference).md\n"
+            "[nested]: docs/missing_(reference_(v2)).md\n"
+            "[unbalanced]: docs/unbalanced).md\n"
+            "[present]: docs/guide_(v1).md#setup 'Guide'\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "docs/missing_(old).md")))
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "docs/missing_(reference).md")))
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("path", "docs/missing_(reference_(v2)).md")))
+        self.assertEqual("TRUE", verdicts.get(("path", "docs/guide_(v1).md")))
+        self.assertNotIn(("path", "docs/unbalanced).md"), verdicts)
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
     def test_deployment_context_stops_at_sentence_boundary(self):
         verdicts = self.verdicts("Read `docs/missing.md`. Deploy to production afterwards.\n")
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
@@ -111,6 +133,23 @@ class ClaimCheckerTests(unittest.TestCase):
             with self.subTest(opening=opening):
                 verdicts = self.verdicts(f"{opening}\nfrom pkg.missing import X\n{closing}\n")
                 self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+
+    def test_python_fence_language_is_case_insensitive(self):
+        for language in ("Python", "PYTHON", "PyThOn3", "pY"):
+            with self.subTest(language=language):
+                opening = chr(96) * 3 + language
+                closing = chr(96) * 3
+                verdicts = self.verdicts(
+                    f"{opening}\nfrom pkg.missing import X\n{closing}\n"
+                )
+                self.assertEqual(
+                    "BREAKS-ON-USE",
+                    verdicts.get(("import", "from pkg.missing import")),
+                )
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
 
     def test_fence_closer_matches_type_length_and_has_no_info(self):
         text = "````python\n```\n~~~~\n````python\nfrom pkg.missing import X\n`````\n"
