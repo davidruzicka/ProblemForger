@@ -24,6 +24,7 @@ IMPRECISE, NEEDS-AI, and UNRESOLVED never fail the run - an unresolved claim is 
 """
 
 import argparse
+import ast
 import functools
 import importlib.util
 import json
@@ -461,6 +462,144 @@ def import_verdict(repo, dotted, roots, doc_dir):
     return 'UNRESOLVED', f'{dotted}: no reliable package context'
 
 
+def relative_package_import_names(body, match):
+    """Read imported names from a dot-only relative package import."""
+    dotted = match.group('from')
+    if not re.fullmatch(r'\.+', dotted):
+        return None
+
+    start = body.rfind('\n', 0, match.start()) + 1
+    cursor = match.end()
+    while cursor < len(body) and body[cursor] in ' \t\r\n':
+        cursor += 1
+    if cursor < len(body) and body[cursor] == '(':
+        depth = 0
+        in_comment = False
+        end = None
+        for index in range(cursor, len(body)):
+            char = body[index]
+            if in_comment:
+                if char == '\n':
+                    in_comment = False
+            elif char == '#':
+                in_comment = True
+            elif char == '(':
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        if end is None:
+            return None
+    else:
+        end = body.find('\n', cursor)
+        if end == -1:
+            end = len(body)
+
+    try:
+        statements = ast.parse(body[start:end].strip()).body
+    except (SyntaxError, ValueError):
+        return None
+    if (len(statements) != 1 or not isinstance(statements[0], ast.ImportFrom)
+            or statements[0].module is not None or statements[0].level != len(dotted)):
+        return None
+    return [alias.name for alias in statements[0].names]
+
+
+def package_export_verdict(repo, package_dir, name):
+    """Return TRUE for a static package export, UNRESOLVED for dynamic exports, else None."""
+    repo = repo.resolve()
+    package_dir = package_dir.resolve()
+    initializer = package_dir / '__init__.py'
+    if not exists_here(repo, initializer) or not initializer.is_file():
+        return None
+    if not initializer.resolve().is_relative_to(repo):
+        return 'UNRESOLVED', f'{initializer} resolves outside the repo'
+    try:
+        tree = ast.parse(initializer.read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, SyntaxError):
+        return 'UNRESOLVED', f'cannot statically inspect package export {name}'
+
+    def target_names(target):
+        if isinstance(target, ast.Name):
+            return {target.id}
+        if isinstance(target, (ast.Tuple, ast.List)):
+            return set().union(*(target_names(item) for item in target.elts))
+        return set()
+
+    exported = False
+    dynamic = False
+    for statement in tree.body:
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            exported |= statement.name == name
+            dynamic |= statement.name == '__getattr__' and name != '__getattr__'
+        elif isinstance(statement, ast.Assign):
+            exported |= any(name in target_names(target) for target in statement.targets)
+        elif isinstance(statement, ast.AnnAssign):
+            exported |= (statement.value is not None
+                         and name in target_names(statement.target))
+        elif isinstance(statement, ast.AugAssign):
+            dynamic |= name in target_names(statement.target)
+        elif isinstance(statement, ast.Delete):
+            exported &= not any(name in target_names(target) for target in statement.targets)
+        elif isinstance(statement, ast.Import):
+            dynamic |= any((alias.asname or alias.name.split('.')[0]) == name
+                           for alias in statement.names)
+        elif isinstance(statement, ast.ImportFrom):
+            dynamic |= any(alias.name == '*' or (alias.asname or alias.name) == name
+                           for alias in statement.names)
+        elif isinstance(statement, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try,
+                                    ast.TryStar, ast.With, ast.AsyncWith, ast.Match)):
+            dynamic = True
+        elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            dynamic = True
+
+    if exported and not dynamic:
+        return 'TRUE', f'{name} is defined in {initializer.relative_to(repo)}'
+    if dynamic:
+        return 'UNRESOLVED', f'{initializer.relative_to(repo)} may define {name} dynamically'
+    return None
+
+
+def relative_package_import_verdict(repo, dotted, names, roots, doc_dir):
+    """Validate names imported directly from a relative package."""
+    package = import_verdict(repo, dotted, roots, doc_dir)
+    if package is None or package[0] != 'TRUE':
+        return package
+    if not names:
+        return 'UNRESOLVED', f'{dotted}: could not inspect imported package names'
+
+    package_dir = doc_dir.resolve()
+    for _ in range(len(dotted) - 1):
+        package_dir = package_dir.parent
+    if not package_dir.is_relative_to(repo.resolve()):
+        return 'UNRESOLVED', f'{dotted}: package directory is outside the repo'
+
+    missing = []
+    unresolved = []
+    for name in names:
+        if name == '*':
+            unresolved.append(name)
+            continue
+        module = import_verdict(repo, dotted + name, roots, doc_dir)
+        if module is not None and module[0] == 'TRUE':
+            continue
+        exported = package_export_verdict(repo, package_dir, name)
+        if exported is not None and exported[0] == 'TRUE':
+            continue
+        if module is not None and module[0] == 'BREAKS-ON-USE' and exported is None:
+            missing.append(name)
+        else:
+            unresolved.append(name)
+
+    if missing:
+        return 'BREAKS-ON-USE', f'missing package member(s): {", ".join(missing)}'
+    if unresolved:
+        return 'UNRESOLVED', f'cannot statically validate package member(s): {", ".join(unresolved)}'
+    return 'TRUE', f'imported package member(s) exist: {", ".join(names)}'
+
+
 def git_has(repo, needle):
     """Search the whole history for a commit message, not a bounded slice."""
     try:
@@ -557,7 +696,13 @@ def collect(doc, repo):
                     names = [part.split()[0] for part in m.group('mod').split(',')]
                     targets = [(name, f'import {name}') for name in names]
                 for dotted, quote in targets:
-                    verdict = import_verdict(repo, dotted, roots, doc.parent)
+                    if m.group('from') and re.fullmatch(r'\.+', dotted):
+                        names = relative_package_import_names(body, m)
+                        verdict = relative_package_import_verdict(
+                            repo, dotted, names, roots, doc.parent
+                        )
+                    else:
+                        verdict = import_verdict(repo, dotted, roots, doc.parent)
                     if verdict is None:
                         continue  # stdlib or third-party: not a claim about this repo
                     add('import', start, quote, *verdict)

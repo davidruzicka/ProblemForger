@@ -306,6 +306,101 @@ class ClaimCheckerTests(unittest.TestCase):
         code, _, _ = run_main(str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks")
         self.assertEqual(0, code)
 
+    def test_relative_package_import_validates_imported_names(self):
+        nested = self.repo / "src" / "pkg" / "nested"
+        nested.mkdir()
+        initializer = nested / "__init__.py"
+        initializer.write_text("", encoding="utf-8")
+        fence = chr(96) * 3
+
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import missing\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
+        code, _, _ = run_main(
+            str(nested / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+        runtime = subprocess.run(
+            [os.sys.executable, "-c", "from pkg.nested import missing"],
+            cwd=self.repo,
+            env={**os.environ, "PYTHONPATH": str(self.repo / "src")},
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, runtime.returncode)
+        self.assertIn("missing", runtime.stderr)
+
+        (nested / "submodule.py").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import submodule\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
+
+        initializer.write_text("exported = object()\n", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import exported\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
+
+        initializer.write_text("exported = object()\ndel exported\n", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import exported\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
+
+        initializer.write_text("exported: object\n", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import exported\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
+
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import submodule as alias\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
+
+        initializer.write_text("exported = object()\n", encoding="utf-8")
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import (\n    submodule,\n    exported,\n)\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from . import")))
+
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import exported, missing\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts.get(("import", "from . import")))
+
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom .. import store\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("TRUE", verdicts.get(("import", "from .. import")))
+
+        initializer.write_text(
+            "def __getattr__(name):\n    return None\n",
+            encoding="utf-8",
+        )
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import dynamic_name\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("UNRESOLVED", verdicts.get(("import", "from . import")))
+
+        verdicts = self.verdicts(
+            f"{fence}python\nfrom . import *\n{fence}\n",
+            nested,
+        )
+        self.assertEqual("UNRESOLVED", verdicts.get(("import", "from . import")))
+
     def test_markdown_destinations_require_an_exact_path(self):
         (self.repo / "docs" / "Makefile").write_text("", encoding="utf-8")
         (self.repo / "tools" / "scripts").mkdir(parents=True)
