@@ -51,7 +51,8 @@ PATH_RE = re.compile(
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 # Angle-wrapped destinations must close before the optional title; the brackets are not path data.
 _LINK_TARGET = (
-    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w](?(angle)[^<>#\n]*|[\w./()-]*))'
+    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w](?(angle)[^<>?#\n]*|[\w./()-]*))'
+    r'(?:\?(?(angle)[^<>#\n]*|[^)\s<>#]*))?'
     r'(?:#(?(angle)[^<>\n]*|[^)\s<>]*))?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'|\([^\n)]*\)))?'
 )
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
@@ -178,6 +179,7 @@ def resolve_path(repo, doc_dir, raw, explicit=False):
     bases = ((repo, 'repo-relative'),) if root_relative else (
         (doc_dir, 'relative to the file'), (repo, 'repo-relative')
     )
+    directory_target = raw.endswith('/')
     for base, label in bases:
         candidate = (base / bare).resolve()
         try:
@@ -185,7 +187,8 @@ def resolve_path(repo, doc_dir, raw, explicit=False):
         except ValueError:
             continue
         candidates.append(str(relative))
-        if candidate.exists() and committable(repo_abs, candidate.relative_to(repo_abs)):
+        if (candidate.exists() and (not directory_target or candidate.is_dir())
+                and committable(repo_abs, candidate.relative_to(repo_abs))):
             return 'TRUE', f'{candidate.relative_to(repo_abs)} ({label})'
 
     # A bare backticked name may describe a kind of file; a Markdown destination names a target.

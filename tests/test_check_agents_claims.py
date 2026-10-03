@@ -192,6 +192,52 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "types/missing.customextension")])
         self.assertNotIn(("path", "https://example.com/schema.proto"), verdicts)
 
+    def test_trailing_slash_markdown_targets_must_be_directories(self):
+        (self.repo / "docs" / "other.md").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            '[file as directory](docs/guide.md/) '
+            '[directory](docs/?raw=1) '
+            '[file with query](docs/guide.md?raw=1#preview) '
+            '[queried file as directory](docs/other.md/?raw=1#preview).\n'
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/guide.md/")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/other.md/")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
+    def test_markdown_query_strings_do_not_hide_local_targets(self):
+        (self.repo / "docs" / "query.json").write_text("{}", encoding="utf-8")
+        verdicts = self.verdicts(
+            '[missing](docs/missing.json?raw=1#preview) '
+            '[existing](docs/query.json?raw=1#preview) '
+            '[angle missing](<docs/missing-angle.json?raw=1#preview>)\n'
+            '[reference][missing-ref]\n'
+            '[missing-ref]: docs/missing-ref.json?raw=1\n'
+            '[existing-ref]: <docs/query.json?download=1> "Raw"\n'
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.json")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/query.json")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing-angle.json")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing-ref.json")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
+        valid_links = self.verdicts(
+            '[existing](<docs/query.json?raw=1#preview>)\n'
+            '[existing-ref]: docs/query.json?download=1\n'
+        )
+        self.assertEqual("TRUE", valid_links[("path", "docs/query.json")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
+
     def test_reference_link_definitions_are_checked(self):
         verdicts = self.verdicts(
             '[the guide][guide] and [existing][present].\n'
