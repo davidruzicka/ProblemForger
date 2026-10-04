@@ -659,6 +659,37 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts("Do not guess the layout; read `docs/missing.md` first.\n")
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
 
+    def test_repeated_same_line_path_keeps_each_contextual_verdict(self):
+        doc = self.repo / "AGENTS.md"
+        doc.write_text(
+            "Never commit `secrets/key.json`. Before release, read `secrets/key.json`.\n",
+            encoding="utf-8",
+        )
+        claims = [claim for claim in collect(doc, self.repo)
+                  if claim["kind"] == "path" and claim["quote"] == "secrets/key.json"]
+        self.assertEqual(["NEEDS-AI", "BREAKS-ON-USE"],
+                         [claim["verdict"] for claim in claims])
+        code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(1, code)
+
+    def test_markdown_links_inside_fenced_example_are_not_active_paths(self):
+        doc = self.repo / "AGENTS.md"
+        doc.write_text(
+            "```markdown\n"
+            "[example](docs/does-not-exist.md)\n"
+            "[reference][missing]\n"
+            "[missing]: docs/also-missing.md\n"
+            "```\n",
+            encoding="utf-8",
+        )
+        claims = collect(doc, self.repo)
+        self.assertFalse(any(claim["kind"] == "path" and claim["verdict"] == "BREAKS-ON-USE"
+                             for claim in claims))
+        self.assertEqual("UNRESOLVED", next(claim["verdict"] for claim in claims
+                                             if claim["kind"] == "snippet"))
+        code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")
+        self.assertEqual(0, code)
+
     def test_commit_examples_are_checked_against_history(self):
         self.git("init", "-q")
         self.git("-c", "user.email=t@example.com", "-c", "user.name=T",

@@ -111,14 +111,15 @@ warn_on_foreign_deletions() {
 removed_methods() {
     python3 - "$1" <<'PY'
 import ast, re, subprocess, sys
+from collections import Counter
 
 def methods(source):
     try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
-        return set(re.findall(r'^[ \t]+(?:async[ \t]+)?def[ \t]+(\w+)', source, re.M))
-    return {node.name for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
-            for node in cls.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        return Counter(re.findall(r'^[ \t]+(?:async[ \t]+)?def[ \t]+(\w+)', source, re.M))
+    return Counter(node.name for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+                   for node in cls.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
 
 base = sys.argv[1]
 fields = subprocess.run(['git', 'diff', '-z', '-M', '--name-status', base, '--', '*.py'],
@@ -136,7 +137,9 @@ while len(fields) > 1:
             after = handle.read()
     except OSError:
         after = ''
-    removed |= methods(before) - methods(after)
+    before_methods = methods(before)
+    after_methods = methods(after)
+    removed.update(name for name, count in before_methods.items() if count > after_methods[name])
 print('\n'.join(sorted(removed)))
 PY
 }

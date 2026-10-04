@@ -541,7 +541,6 @@ def collect(doc, repo):
     seen = set()
 
     def add(kind, line, quote, verdict, evidence, identity=None):
-        # The same path often appears twice on one line (backticked and as a link target).
         key = (kind, line, quote.strip()[:200], identity)
         if key in seen:
             return
@@ -553,7 +552,32 @@ def collect(doc, repo):
 
     for line_no, line in enumerate(text.splitlines(), start=1):
         # Explicit destinations take precedence when a backticked label names the same path.
-        for m in list(LINK_RE.finditer(line)) + list(REFERENCE_RE.finditer(line)) + list(PATH_RE.finditer(line)):
+        fenced = in_fence(line_no, blocks)
+        links = list(LINK_RE.finditer(line)) if not fenced else []
+        references = list(REFERENCE_RE.finditer(line)) if not fenced else []
+        matches = links + references
+        if not fenced:
+            for path_match in PATH_RE.finditer(line):
+                start, end = path_match.span()
+                raw = path_match.group('path')
+                # A backticked label inside an explicit link is illustrative text. If it names
+                # the exact destination, keep the destination's stronger path verdict only.
+                linked_label = any(
+                    raw == link.group('path')
+                    and (label_start := line.rfind('[', 0, link.start())) >= 0
+                    and label_start < start < end <= link.start()
+                    for link in links
+                )
+                reference_label = any(
+                    raw == reference.group('path')
+                    and (label_start := line.find('[', reference.start(), reference.end())) >= 0
+                    and (label_end := line.find(']:', label_start, reference.end())) >= 0
+                    and label_start < start < end <= label_end
+                    for reference in references
+                )
+                if not linked_label and not reference_label:
+                    matches.append(path_match)
+        for m in matches:
             raw = m.group('path')
             # The link regex can include parentheses in an unwrapped destination. Keep only
             # balanced pairs there; angle-wrapped destinations have their own delimiter.
@@ -572,7 +596,8 @@ def collect(doc, repo):
                     verdict, detail = 'NEEDS-AI', 'missing, next to a negation: decide whether the absence is intended'
                 elif ELSEWHERE_RE.search(clause) or ELSEWHERE_RE.search(suffix):
                     verdict, detail = 'UNRESOLVED', 'absent here; the text places it on a deploy target'
-            add('path', line_no, raw, verdict, detail)
+            # The same path can have different meanings in separate clauses on this line.
+            add('path', line_no, raw, verdict, detail, identity=m.start('path'))
 
         for m in EXAMPLE_RE.finditer(line):
             found = git_has(repo, m.group('example'))
@@ -583,7 +608,7 @@ def collect(doc, repo):
                     'TRUE' if found else 'IMPRECISE',
                     'present in git log' if found else 'no commit with this message in history; fine if illustrative')
 
-        if not in_fence(line_no, blocks):
+        if not fenced:
             if PROCESS_RE.search(line):
                 add('process', line_no, line, 'UNRESOLVED', 'corroborate against docs/ or code')
             for m in CONFIG_RE.finditer(line):

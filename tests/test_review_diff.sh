@@ -118,6 +118,22 @@ case "$out" in
 esac
 rm -rf "$repo"
 
+# Duplicate method names in one file are counts, too: removing one of two definitions still
+# leaves a possible stale call and should keep the advisory warning active.
+repo=$(mktemp -d)
+git -C "$repo" init -q .
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name Test
+mkdir -p "$repo/pkg"
+printf 'class Widget:\n    def refreshV2(self): return 1\n    def refreshV2(self): return 2\n' > "$repo/pkg/a.py"
+printf 'class Special(Widget):\n    def use(self): return self.refreshV2()\n' > "$repo/pkg/b.py"
+git -C "$repo" add -A
+git -C "$repo" commit -qm base
+git -C "$repo" branch -q baseline
+printf 'class Widget:\n    def refreshV2(self): return 1\n' > "$repo/pkg/a.py"
+expect_method_warning "$repo" refreshV2 'removing one of duplicate definitions warns'
+rm -rf "$repo"
+
 # A call on any other receiver may be a library object (sqlite3's `connection.close()`), so with
 # the last definition gone it warns, including `self.` and `cls.` receivers.
 repo=$(new_repo)
