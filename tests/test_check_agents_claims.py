@@ -111,6 +111,34 @@ class ClaimCheckerTests(unittest.TestCase):
         )
         self.assertEqual(1, code)
 
+    def test_backslash_escaped_markdown_destinations_are_unescaped(self):
+        (self.repo / "docs" / "guide(old).md").write_text("", encoding="utf-8")
+        (self.repo / "docs" / "guide?draft.md").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            r'[missing](docs/missing\(old\).md) '
+            r'[existing](docs/guide\(old\).md) '
+            r'[angle](<docs/guide\(old\).md>) '
+            r'[query](docs/guide\?draft.md#preview)' + "\n"
+            r'[reference]: docs/guide\(old\).md' + "\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", r"docs/missing\(old\).md")])
+        self.assertEqual("TRUE", verdicts[("path", r"docs/guide\(old\).md")])
+        self.assertEqual("TRUE", verdicts[("path", r"docs/guide\?draft.md")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
+        valid_links = self.verdicts(
+            r'[existing](docs/guide\(old\).md) [query](docs/guide\?draft.md)' + "\n"
+        )
+        self.assertEqual("TRUE", valid_links[("path", r"docs/guide\(old\).md")])
+        self.assertEqual("TRUE", valid_links[("path", r"docs/guide\?draft.md")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
+
     def test_deployment_context_stops_at_sentence_boundary(self):
         verdicts = self.verdicts("Read `docs/missing.md`. Deploy to production afterwards.\n")
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
@@ -157,6 +185,16 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual(1, len(blocks))
         self.assertEqual(("python", 1, 6), blocks[0][:3])
         self.assertIn("from pkg.missing import X", blocks[0][3])
+
+    def test_four_space_indented_fence_text_is_not_an_active_fence(self):
+        text = "    ```python\n    from pkg.missing import X\n    ```\n"
+        self.assertEqual([], list(check_agents_claims.fenced_blocks(text)))
+        verdicts = self.verdicts(text)
+        self.assertNotIn(("import", "from pkg.missing import"), verdicts)
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
 
     def test_backtick_fence_info_cannot_contain_backticks(self):
         self.assertEqual([], list(check_agents_claims.fenced_blocks("```python `example`\n")))
@@ -712,6 +750,11 @@ class ClaimCheckerTests(unittest.TestCase):
             "```python\n"
             "import json, pkg.gone as gone, pkg.store\n"
             "```\n"
+            "2. Nested example:\n"
+            "\n"
+            "    ```python\n"
+            "    from pkg.nested_missing import X\n"
+            "    ```\n"
             "```python3\n"
             "import pkg.absent\n"
             "```\n"
@@ -719,6 +762,7 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import pkg.gone")])
         self.assertEqual("TRUE", verdicts[("import", "import pkg.store")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.nested_missing import")])
         self.assertNotIn(("import", "import json"), verdicts)
         self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import pkg.absent")])
 

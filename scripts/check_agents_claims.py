@@ -31,6 +31,7 @@ import importlib.util
 import json
 import os
 import re
+import string
 import subprocess
 import sys
 import textwrap
@@ -43,6 +44,7 @@ from urllib.parse import unquote
 # dot-prefixed first segment (.github/) is a path like any other
 _EXT = r'py|md|mjs|js|json|toml|txt|ya?ml|sh'
 _PARENTS = r'(?:\.{1,2}/)*\.?'
+MARKDOWN_ESCAPE_RE = re.compile(r'\\([%s])' % re.escape(string.punctuation))
 # General extensions require a slash; bare domains and version strings are not file claims.
 PATH_RE = re.compile(
     rf'`(?P<path>{_PARENTS}[\w][\w ./-]*(?:\.(?:{_EXT})|/)'
@@ -52,14 +54,16 @@ PATH_RE = re.compile(
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 # Angle-wrapped destinations must close before the optional title; the brackets are not path data.
 _LINK_TARGET = (
-    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w%](?(angle)[^<>?#\n]*|[\w./()%-]*))'
+    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}(?:[\w%]|\\[^\n])(?(angle)(?:\\[^\n]|[^<>?#\n])*|(?:\\[^\n]|[\w./()%-])*))'
     r'(?:\?(?(angle)[^<>#\n]*|[^)\s<>#]*))?'
     r'(?:#(?(angle)[^<>\n]*|[^)\s<>]*))?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'|\([^\n)]*\)))?'
 )
 LINK_RE = re.compile(rf'\]\({_LINK_TARGET}\)')
 REFERENCE_RE = re.compile(rf'^[ \t]{{0,3}}\[[^\]\n]+\]:[ \t]+{_LINK_TARGET}[ \t]*$')
-# a fence may be indented, e.g. inside a list item
-FENCE_RE = re.compile(r'^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$')
+# Only simple list containers are tracked; uncontained four-space indentation is a literal code
+# block, not a fence. Deeper CommonMark constructs stay outside this basic scanner.
+LIST_ITEM_RE = re.compile(r'^(?P<indent> {0,3})(?P<marker>[-+*]|[0-9]{1,9}[.)])(?P<gap> {1,4})\S')
+FENCE_RE = re.compile(r'^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$')
 PYTHON_LANGS = {'python', 'py', 'python3'}
 # claims that name a config knob and a value
 CONFIG_RE = re.compile(r'`(?P<key>[\w-]+)`\s*(?:=|is|:)\s*`?(?P<value>[\w.-]+)`?')
@@ -88,22 +92,46 @@ def fenced_blocks(text):
     open_at = None
     lang = ''
     fence = ''
+    container_indent = None
     for i, line in enumerate(lines, start=1):
         m = FENCE_RE.match(line)
         if not m:
             continue
         marker, info = m.group('fence'), m.group('info').strip()
+        indent = len(m.group('indent').expandtabs(4))
         if open_at is None:
             if marker[0] == '`' and '`' in info:
                 continue
+            container_indent = fence_container_indent(lines, i - 1, indent)
+            if container_indent is None:
+                continue
             open_at, fence = i, marker
             lang = info.split()[0] if info else ''
-        elif marker[0] == fence[0] and len(marker) >= len(fence) and not info:
+        elif (marker[0] == fence[0] and len(marker) >= len(fence) and not info
+              and container_indent <= indent <= container_indent + 3):
             yield lang, open_at, i, '\n'.join(lines[open_at:i - 1])
             open_at = None
+            container_indent = None
 
     if open_at is not None:
         yield lang, open_at, len(lines) + 1, '\n'.join(lines[open_at:])
+
+
+def fence_container_indent(lines, line_index, indent):
+    """Return 0 for shallow fences or the content column of a nearby simple list item."""
+    if indent <= 3:
+        return 0
+    for line in reversed(lines[:line_index]):
+        if not line.strip():
+            continue
+        match = LIST_ITEM_RE.match(line)
+        if match:
+            base = (len(match.group('indent')) + len(match.group('marker'))
+                    + len(match.group('gap')))
+            return base if base <= indent <= base + 3 else None
+        if not line.startswith((' ', '\t')):
+            return None
+    return None
 
 
 def in_fence(line_no, blocks):
@@ -173,7 +201,7 @@ def resolve_path(repo, doc_dir, raw, explicit=False):
     document's own directory first.
     """
     if explicit:
-        raw = unquote(raw)
+        raw = unquote(MARKDOWN_ESCAPE_RE.sub(r'\1', raw))
     repo_abs = repo.resolve()
     root_relative = raw.startswith('/')
     bare = raw.lstrip('/')
@@ -488,7 +516,14 @@ def git_has(repo, needle):
 def balanced_parentheses(value):
     """Whether unwrapped Markdown destination parentheses are properly paired."""
     depth = 0
+    escaped = False
     for char in value:
+        if escaped:
+            escaped = False
+            continue
+        if char == '\\':
+            escaped = True
+            continue
         if char == '(':
             depth += 1
         elif char == ')':
