@@ -690,6 +690,42 @@ class ClaimCheckerTests(unittest.TestCase):
         code, _, _ = run_main(str(doc), "--repo", str(self.repo), "--fail-on-breaks")
         self.assertEqual(0, code)
 
+    def test_html_comments_are_not_claims_and_hide_comment_fences(self):
+        tick = chr(96)
+        fence = tick * 3
+        verdicts = self.verdicts(
+            "<!-- Read [missing](docs/inline.md). -->\n"
+            "<!--\n"
+            "Read " + tick + "docs/commented.md" + tick + " and [missing][ref].\n"
+            "[ref]: docs/reference.md\n"
+            "Migrations run on every deploy; the " + tick + "timeout" + tick + " is "
+            + tick + "30" + tick + "; for example " + tick + "fix(core): hidden" + tick + ".\n"
+            + fence + "python\nfrom pkg.missing import Thing\n" + fence + "\n"
+            "-->\n"
+            "Read [guide](docs/guide.md).\n"
+        )
+        for hidden in ("docs/inline.md", "docs/commented.md",
+                       "docs/reference.md", "from pkg.missing import"):
+            self.assertFalse(any(hidden in quote for _, quote in verdicts))
+        self.assertFalse(any(kind == "process" for kind, _ in verdicts))
+        self.assertFalse(any(kind == "config" and "timeout" in quote
+                             for kind, quote in verdicts))
+        self.assertFalse(any(kind == "example" and "fix(core)" in quote
+                             for kind, quote in verdicts))
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide.md")])
+        guide = next(claim for claim in collect(self.repo / "AGENTS.md", self.repo)
+                     if claim["kind"] == "path" and claim["quote"] == "docs/guide.md")
+        self.assertEqual(10, guide["line"])
+
+    def test_html_comment_marker_inside_fence_does_not_hide_following_markdown(self):
+        tick = chr(96)
+        fence = tick * 3
+        verdicts = self.verdicts(
+            fence + "python\nvalue = '<!--'\n" + fence + "\n"
+            "Read [missing](docs/visible.md).\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/visible.md")])
+
     def test_commit_examples_are_checked_against_history(self):
         self.git("init", "-q")
         self.git("-c", "user.email=t@example.com", "-c", "user.name=T",
@@ -1051,3 +1087,4 @@ class ClaimCheckerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

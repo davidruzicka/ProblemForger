@@ -138,6 +138,55 @@ def in_fence(line_no, blocks):
     return any(start < line_no < end for _, start, end, _ in blocks)
 
 
+def mask_markdown_comments(text):
+    '''Mask HTML comments in Markdown while preserving fenced code and line numbers.'''
+    source_lines = text.splitlines(keepends=True)
+    masked = text
+    while True:
+        blocks = list(fenced_blocks(masked))
+        fenced_lines = {
+            line_no
+            for _, start, end, _ in blocks
+            for line_no in range(start, end + 1)
+        }
+        lines = []
+        in_comment = False
+        for line_no, line in enumerate(source_lines, start=1):
+            if not in_comment and line_no in fenced_lines:
+                lines.append(line)
+                continue
+            body_end = len(line.rstrip("\r\n"))
+            chars = list(line)
+            cursor = 0
+            while cursor < body_end:
+                if in_comment:
+                    close = line.find("-->", cursor, body_end)
+                    stop = body_end if close < 0 else close + 3
+                    chars[cursor:stop] = " " * (stop - cursor)
+                    if close < 0:
+                        cursor = body_end
+                    else:
+                        in_comment = False
+                        cursor = stop
+                else:
+                    opening = line.find("<!--", cursor, body_end)
+                    if opening < 0:
+                        break
+                    close = line.find("-->", opening + 4, body_end)
+                    stop = body_end if close < 0 else close + 3
+                    chars[opening:stop] = " " * (stop - opening)
+                    if close < 0:
+                        in_comment = True
+                        cursor = body_end
+                    else:
+                        cursor = stop
+            lines.append("".join(chars))
+        updated = "".join(lines)
+        if updated == masked:
+            return updated
+        masked = updated
+
+
 @functools.lru_cache(maxsize=None)
 def name_index(repo):
     """
@@ -534,7 +583,8 @@ def balanced_parentheses(value):
 
 
 def collect(doc, repo):
-    text = doc.read_text(encoding='utf-8', errors='replace')
+    source = doc.read_text(encoding='utf-8', errors='replace')
+    text = mask_markdown_comments(source)
     blocks = list(fenced_blocks(text))
     claims = []
 
@@ -721,3 +771,4 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
