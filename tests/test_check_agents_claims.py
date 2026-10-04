@@ -828,6 +828,8 @@ class ClaimCheckerTests(unittest.TestCase):
 
     def test_top_level_modules_are_first_party_import_roots(self):
         (self.repo / "helper.py").write_text("", encoding="utf-8")
+        # A sibling module cannot satisfy a submodule of helper.py.
+        (self.repo / "missing.py").write_text("", encoding="utf-8")
         fence = chr(96) * 3
         verdicts = self.verdicts(
             fence + "python\nimport helper\nimport helper.missing\n" + fence + "\n"

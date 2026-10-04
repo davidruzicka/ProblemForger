@@ -497,7 +497,7 @@ def first_party_roots(repo):
             return
         for child in children:
             if child.is_file() and child.suffix == '.py' and exists_here(repo, child):
-                add(child.stem, repo)
+                add(child.stem, child)
 
     configured = configured_package_roots(repo)
     if configured is not None:
@@ -548,6 +548,10 @@ def absolute_import_verdict(repo, dotted, roots):
     locations = roots[prefix]
 
     for package_root, _ in locations:
+        if package_root.is_file():
+            if not remainder and exists_here(repo, package_root):
+                return 'TRUE', f'module path {dotted}'
+            continue
         module = (package_root / tail).with_suffix('.py')
         package = package_root / tail
         if ((exists_here(repo, module) and module.is_file())
@@ -555,7 +559,8 @@ def absolute_import_verdict(repo, dotted, roots):
             return 'TRUE', f'module path {dotted}'
 
     if any(git_ignores(repo, str((package_root / tail).relative_to(repo)) + suffix)
-           for package_root, _ in locations for suffix in ('.py', '/')):
+           for package_root, _ in locations if package_root.is_dir()
+           for suffix in ('.py', '/')):
         return 'UNRESOLVED', f'{dotted} is gitignored: generated at build or run time; absent by design'
     existing_roots = [package_root for package_root, _ in locations
                       if exists_here(repo, package_root) and package_root.is_dir()]
