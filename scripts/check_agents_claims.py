@@ -36,6 +36,7 @@ import sys
 import textwrap
 import tomllib
 from pathlib import Path
+from urllib.parse import unquote
 
 # backticked path with a file extension, or a directory path ending in /; leading ./ and ../ are
 # kept so resolve_path can check them, including whether they escape the repository, and a
@@ -51,7 +52,7 @@ PATH_RE = re.compile(
 # and any character in it must be accepted, or a dot in the anchor hides the file claim entirely
 # Angle-wrapped destinations must close before the optional title; the brackets are not path data.
 _LINK_TARGET = (
-    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w](?(angle)[^<>?#\n]*|[\w./()-]*))'
+    rf'(?P<angle><)?(?![A-Za-z][A-Za-z0-9+.-]*:)(?P<path>/?{_PARENTS}[\w%](?(angle)[^<>?#\n]*|[\w./()%-]*))'
     r'(?:\?(?(angle)[^<>#\n]*|[^)\s<>#]*))?'
     r'(?:#(?(angle)[^<>\n]*|[^)\s<>]*))?(?(angle)>)(?:\s+(?:"[^"\n]*"|\'[^\'\n]*\'|\([^\n)]*\)))?'
 )
@@ -171,6 +172,8 @@ def resolve_path(repo, doc_dir, raw, explicit=False):
     that module, not to the repo root. A leading slash marks a repo-root path; other forms try the
     document's own directory first.
     """
+    if explicit:
+        raw = unquote(raw)
     repo_abs = repo.resolve()
     root_relative = raw.startswith('/')
     bare = raw.lstrip('/')

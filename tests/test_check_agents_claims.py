@@ -238,6 +238,38 @@ class ClaimCheckerTests(unittest.TestCase):
         )
         self.assertEqual(0, code)
 
+    def test_percent_encoded_markdown_destinations_are_decoded(self):
+        (self.repo / "docs" / "guide with space.md").write_text("", encoding="utf-8")
+        verdicts = self.verdicts(
+            '[missing](docs/missing%20guide.md) '
+            '[space](docs/guide%20with%20space.md?raw=1#preview) '
+            '[encoded first character](%64ocs/guide%20with%20space.md) '
+            '[encoded separator](docs%2Fguide%20with%20space.md) '
+            '[angle space](<docs/guide%20with%20space.md>)\n'
+            '[reference][missing-ref]\n'
+            '[missing-ref]: docs/missing%20reference.md\n'
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing%20guide.md")])
+        self.assertEqual("TRUE", verdicts[("path", "docs/guide%20with%20space.md")])
+        self.assertEqual("TRUE", verdicts[("path", "%64ocs/guide%20with%20space.md")])
+        self.assertEqual("TRUE", verdicts[("path", "docs%2Fguide%20with%20space.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing%20reference.md")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
+        valid_links = self.verdicts(
+            '[space](docs/guide%20with%20space.md) '
+            '[angle](<docs/guide%20with%20space.md>)\n'
+            '[reference]: docs/guide%20with%20space.md\n'
+        )
+        self.assertEqual("TRUE", valid_links["path", "docs/guide%20with%20space.md"])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
+
     def test_reference_link_definitions_are_checked(self):
         verdicts = self.verdicts(
             '[the guide][guide] and [existing][present].\n'
@@ -551,9 +583,12 @@ class ClaimCheckerTests(unittest.TestCase):
         outside = self.repo.parent / "outside.md"
         outside.write_text("", encoding="utf-8")
         self.addCleanup(outside.unlink)
-        verdicts = self.verdicts("See `docs/../../outside.md` and `../outside.md`.\n")
+        verdicts = self.verdicts(
+            "See `docs/../../outside.md`, `../outside.md`, and [encoded](../outside%2Emd).\n"
+        )
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/../../outside.md")])
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../outside.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "../outside%2Emd")])
 
     def test_bare_file_names_and_shorthand_paths(self):
         verdicts = self.verdicts("Edit `store.py`, `pkg/store.py`, `hidden.md`, and `nowhere.py`.\n")
