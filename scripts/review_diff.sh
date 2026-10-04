@@ -182,12 +182,29 @@ check_orphan_references() {
 }
 
 check_conflict_markers() {
-    local hits
+    local hits path line_number line attr_path attr_name current_path marker_size marker_re
     # A bare ======= is deliberately excluded: it is a heading underline in docs and docstrings.
     # Every text file is searched (-I skips binaries); an extension list missed requirements.txt
     # and .gitignore.
-    # Attributes can increase conflict-marker-size; labels are optional.
-    hits=$(git grep --untracked -I -nE '^(<{7,}|>{7,})( |$)')
+    # Git permits per-path marker sizes; use seven when no positive numeric attribute applies.
+    # Probe every possible marker start, then filter candidates against Git's resolved attribute.
+    hits=''
+    current_path=''
+    while IFS= read -r -d '' path && IFS= read -r -d '' line_number && IFS= read -r line; do
+        if [ "$path" != "$current_path" ]; then
+            current_path=$path
+            marker_size=''
+            while IFS= read -r -d '' attr_path && IFS= read -r -d '' attr_name \
+                    && IFS= read -r -d '' marker_size; do
+                :
+            done < <(printf '%s\0' "$path" | git check-attr -z --stdin conflict-marker-size)
+            [[ $marker_size =~ ^0*[1-9][0-9]*$ ]] || marker_size=7
+            marker_re="^(<{${marker_size},}|>{${marker_size},})( |$)"
+        fi
+        if [[ $line =~ $marker_re ]]; then
+            hits+="$path:$line_number:$line"$'\n'
+        fi
+    done < <(git grep --untracked -I -n -z -E '^(<+|>+)( |$)' || true)
     if [ -n "$hits" ]; then
         centered_text "Conflict markers in tracked files"
         echo "$hits"

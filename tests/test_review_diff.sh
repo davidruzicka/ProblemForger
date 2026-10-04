@@ -228,6 +228,18 @@ for marker in '<<<<<<<<<< HEAD' '>>>>>>>>>> other' '<<<<<<<<<<' '>>>>>>>>>>'; do
 done
 rm -rf "$repo"
 
+# Git also permits conflict markers shorter than the default seven characters.
+repo=$(new_repo)
+printf 'pkg/notes.md conflict-marker-size=5\n' > "$repo/.gitattributes"
+for marker in '<<<<< HEAD' '>>>>> other' '<<<<<' '>>>>>'; do
+    printf 'Intro.\n%s\n' "$marker" > "$repo/pkg/notes.md"
+    expect_exit 1 "$(run_gate "$repo" --check conflict-markers)" "short configured conflict marker: $marker"
+done
+printf 'Intro.\n' > "$repo/pkg/notes.md"
+printf 'Intro.\n<<<<<< HEAD\n' > "$repo/pkg/default.md"
+expect_exit 0 "$(run_gate "$repo" --check conflict-markers)" 'default marker length remains seven'
+rm -rf "$repo"
+
 # A false path claim in AGENTS.md fails both the full run and the CI check.
 repo=$(new_repo)
 mkdir -p "$repo/scripts"
