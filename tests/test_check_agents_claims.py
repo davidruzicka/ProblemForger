@@ -726,6 +726,25 @@ class ClaimCheckerTests(unittest.TestCase):
         )
         self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/visible.md")])
 
+    def test_html_comment_markers_in_code_do_not_hide_later_claims(self):
+        tick = chr(96)
+        verdicts = self.verdicts(
+            "The marker is " + tick + "<!--" + tick
+            + "; read [required](docs/inline-missing.md).\n"
+            + "The marker is " + tick * 2 + "<!--" + tick * 2
+            + "; read [required](docs/double-missing.md).\n"
+            + "    Literal <!-- and [hidden](docs/indented-hidden.md).\n"
+            + "Read [required](docs/after-indented.md).\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/inline-missing.md")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/double-missing.md")])
+        self.assertNotIn(("path", "docs/indented-hidden.md"), verdicts)
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/after-indented.md")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
     def test_commit_examples_are_checked_against_history(self):
         self.git("init", "-q")
         self.git("-c", "user.email=t@example.com", "-c", "user.name=T",
@@ -806,6 +825,19 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual("TRUE", verdicts[("import", "from pkg.store import")])
         # an ignored build/ directory is not a first-party package, so `build` stays third-party
         self.assertNotIn(("import", "import build"), verdicts)
+
+    def test_top_level_modules_are_first_party_import_roots(self):
+        (self.repo / "helper.py").write_text("", encoding="utf-8")
+        fence = chr(96) * 3
+        verdicts = self.verdicts(
+            fence + "python\nimport helper\nimport helper.missing\n" + fence + "\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "import helper")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import helper.missing")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
 
     def test_imports_in_indented_fences_lists_and_python3_blocks(self):
         verdicts = self.verdicts(
@@ -1087,4 +1119,3 @@ class ClaimCheckerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

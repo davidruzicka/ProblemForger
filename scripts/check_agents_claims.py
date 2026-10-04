@@ -138,9 +138,46 @@ def in_fence(line_no, blocks):
     return any(start < line_no < end for _, start, end, _ in blocks)
 
 
+def is_indented_code(line):
+    """Whether a line starts a basic Markdown indented code block."""
+    return line.startswith(('    ', '\t'))
+
+
+def inline_code_span_end(line, start, body_end):
+    """Return the end of a same-line code span, or None when the delimiter is unmatched."""
+    tick = chr(96)
+    if start >= body_end or line[start] != tick:
+        return None
+    backslashes = 0
+    cursor = start - 1
+    while cursor >= 0 and line[cursor] == '\\':
+        backslashes += 1
+        cursor -= 1
+    if backslashes % 2:
+        return None
+
+    opener_end = start + 1
+    while opener_end < body_end and line[opener_end] == tick:
+        opener_end += 1
+    delimiter_size = opener_end - start
+    cursor = opener_end
+    while cursor < body_end:
+        closing = line.find(tick, cursor, body_end)
+        if closing < 0:
+            return None
+        closing_end = closing + 1
+        while closing_end < body_end and line[closing_end] == tick:
+            closing_end += 1
+        if closing_end - closing == delimiter_size:
+            return closing_end
+        cursor = closing_end
+    return None
+
+
 def mask_markdown_comments(text):
-    '''Mask HTML comments in Markdown while preserving fenced code and line numbers.'''
+    """Mask HTML comments while preserving Markdown code and source line positions."""
     source_lines = text.splitlines(keepends=True)
+    tick = chr(96)
     masked = text
     while True:
         blocks = list(fenced_blocks(masked))
@@ -152,7 +189,7 @@ def mask_markdown_comments(text):
         lines = []
         in_comment = False
         for line_no, line in enumerate(source_lines, start=1):
-            if not in_comment and line_no in fenced_lines:
+            if not in_comment and (line_no in fenced_lines or is_indented_code(line)):
                 lines.append(line)
                 continue
             body_end = len(line.rstrip("\r\n"))
@@ -170,16 +207,30 @@ def mask_markdown_comments(text):
                         cursor = stop
                 else:
                     opening = line.find("<!--", cursor, body_end)
-                    if opening < 0:
+                    inline_start = line.find(tick, cursor, body_end)
+                    inline_end = None
+                    while inline_start >= 0:
+                        inline_end = inline_code_span_end(line, inline_start, body_end)
+                        if inline_end is not None:
+                            break
+                        run_end = inline_start + 1
+                        while run_end < body_end and line[run_end] == tick:
+                            run_end += 1
+                        inline_start = line.find(tick, run_end, body_end)
+
+                    if inline_end is not None and (opening < 0 or inline_start < opening):
+                        cursor = inline_end
+                    elif opening < 0:
                         break
-                    close = line.find("-->", opening + 4, body_end)
-                    stop = body_end if close < 0 else close + 3
-                    chars[opening:stop] = " " * (stop - opening)
-                    if close < 0:
-                        in_comment = True
-                        cursor = body_end
                     else:
-                        cursor = stop
+                        close = line.find("-->", opening + 4, body_end)
+                        stop = body_end if close < 0 else close + 3
+                        chars[opening:stop] = " " * (stop - opening)
+                        if close < 0:
+                            in_comment = True
+                            cursor = body_end
+                        else:
+                            cursor = stop
             lines.append("".join(chars))
         updated = "".join(lines)
         if updated == masked:
@@ -439,6 +490,15 @@ def first_party_roots(repo):
         return any(child.is_file() and exists_here(repo, child)
                    for child in path.rglob('*.py'))
 
+    def add_top_level_modules():
+        try:
+            children = list(repo.iterdir())
+        except OSError:
+            return
+        for child in children:
+            if child.is_file() and child.suffix == '.py' and exists_here(repo, child):
+                add(child.stem, repo)
+
     configured = configured_package_roots(repo)
     if configured is not None:
         roots.update(configured)
@@ -450,6 +510,7 @@ def first_party_roots(repo):
                 context = ((exists_here(repo, initializer) and initializer.is_file())
                            or has_python(child))
                 add(child.name, child, context)
+        add_top_level_modules()
         return roots
 
     top_level = directories(repo)
@@ -472,6 +533,7 @@ def first_party_roots(repo):
             context = ((exists_here(repo, initializer) and initializer.is_file())
                        or has_python(child))
             add(child.name, child, context)
+    add_top_level_modules()
     return roots
 
 
@@ -603,10 +665,11 @@ def collect(doc, repo):
     for line_no, line in enumerate(text.splitlines(), start=1):
         # Explicit destinations take precedence when a backticked label names the same path.
         fenced = in_fence(line_no, blocks)
-        links = list(LINK_RE.finditer(line)) if not fenced else []
-        references = list(REFERENCE_RE.finditer(line)) if not fenced else []
+        literal = fenced or is_indented_code(line)
+        links = list(LINK_RE.finditer(line)) if not literal else []
+        references = list(REFERENCE_RE.finditer(line)) if not literal else []
         matches = links + references
-        if not fenced:
+        if not literal:
             for path_match in PATH_RE.finditer(line):
                 start, end = path_match.span()
                 raw = path_match.group('path')
@@ -649,16 +712,17 @@ def collect(doc, repo):
             # The same path can have different meanings in separate clauses on this line.
             add('path', line_no, raw, verdict, detail, identity=m.start('path'))
 
-        for m in EXAMPLE_RE.finditer(line):
-            found = git_has(repo, m.group('example'))
-            if found is None:
-                add('example', line_no, m.group('example'), 'UNRESOLVED', 'git log unavailable')
-            else:
-                add('example', line_no, m.group('example'),
-                    'TRUE' if found else 'IMPRECISE',
-                    'present in git log' if found else 'no commit with this message in history; fine if illustrative')
+        if not literal:
+            for m in EXAMPLE_RE.finditer(line):
+                found = git_has(repo, m.group('example'))
+                if found is None:
+                    add('example', line_no, m.group('example'), 'UNRESOLVED', 'git log unavailable')
+                else:
+                    add('example', line_no, m.group('example'),
+                        'TRUE' if found else 'IMPRECISE',
+                        'present in git log' if found else 'no commit with this message in history; fine if illustrative')
 
-        if not fenced:
+        if not literal:
             if PROCESS_RE.search(line):
                 add('process', line_no, line, 'UNRESOLVED', 'corroborate against docs/ or code')
             for m in CONFIG_RE.finditer(line):
@@ -771,4 +835,3 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
-

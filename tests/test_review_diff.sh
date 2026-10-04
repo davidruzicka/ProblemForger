@@ -78,6 +78,16 @@ git -C "$repo" commit -qam removed
 expect_method_warning "$repo" refreshV2 'orphaned reference after commit'
 rm -rf "$repo"
 
+# Optional whitespace before call parentheses is valid Python and must keep the warning visible.
+repo=$(new_repo)
+printf 'class Special(Widget):\n    def use(self): return self.refreshV2 ()\n' > "$repo/pkg/b.py"
+git -C "$repo" add -A
+git -C "$repo" commit -qm 'add spaced call'
+git -C "$repo" branch -f baseline
+printf 'class Widget:\n    pass\n' > "$repo/pkg/a.py"
+expect_method_warning "$repo" refreshV2 'method call with whitespace before parentheses'
+rm -rf "$repo"
+
 # An async method must survive name extraction. It must exist at baseline already - a method
 # added and removed inside the range never appears in the net diff, and that is correct.
 repo=$(mktemp -d)

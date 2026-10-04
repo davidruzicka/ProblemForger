@@ -167,7 +167,7 @@ check_orphan_references() {
         if [ "$after" -ge "$before" ]; then
             continue
         fi
-        hits=$(git grep --untracked -nE "\.$name\(" -- '*.py')
+        hits=$(git grep --untracked -nE "\.$name[[:space:]]*\(" -- '*.py')
         [ -z "$hits" ] && continue
         # Names alone cannot resolve a receiver, including self/cls inheriting library methods.
         centered_text "Possible reference to removed method $name"
