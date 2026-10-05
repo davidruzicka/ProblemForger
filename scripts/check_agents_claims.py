@@ -64,6 +64,7 @@ REFERENCE_RE = re.compile(rf'^[ \t]{{0,3}}\[[^\]\n]+\]:[ \t]+{_LINK_TARGET}[ \t]
 # block, not a fence. Deeper CommonMark constructs stay outside this basic scanner.
 LIST_ITEM_RE = re.compile(r'^(?P<indent> {0,3})(?P<marker>[-+*]|[0-9]{1,9}[.)])(?P<gap> {1,4})\S')
 FENCE_RE = re.compile(r'^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$')
+BLOCKQUOTE_PREFIX_RE = re.compile(r'^(?: {0,3}>[ \t]?)+')
 PYTHON_LANGS = {'python', 'py', 'python3'}
 # claims that name a config knob and a value
 CONFIG_RE = re.compile(r'`(?P<key>[\w-]+)`\s*(?:=|is|:)\s*`?(?P<value>[\w.-]+)`?')
@@ -88,35 +89,50 @@ SKIP_DIR_PARTS = {'node_modules', '__pycache__', '.git'}
 
 def fenced_blocks(text):
     """Yield (lang, start_line, end_line, body) for each fenced code block."""
-    lines = text.splitlines()
+    raw_lines = text.splitlines()
+    quote_prefixes = [BLOCKQUOTE_PREFIX_RE.match(line) for line in raw_lines]
+    lines = [line[match.end():] if match else line
+             for line, match in zip(raw_lines, quote_prefixes)]
     open_at = None
     lang = ''
     fence = ''
     container_indent = None
-    for i, line in enumerate(lines, start=1):
+    blockquoted = False
+    for i, raw_line in enumerate(raw_lines, start=1):
+        quoted = quote_prefixes[i - 1] is not None
+        if open_at is None:
+            line = lines[i - 1] if quoted else raw_line
+        elif blockquoted:
+            if not quoted:
+                continue
+            line = lines[i - 1]
+        else:
+            line = raw_line
         m = FENCE_RE.match(line)
         if not m:
             continue
         marker, info = m.group('fence'), m.group('info').strip()
         indent = len(m.group('indent').expandtabs(4))
         if open_at is None:
-            if marker[0] == '`' and '`' in info:
+            if marker[0] == chr(96) and chr(96) in info:
                 continue
             container_indent = fence_container_indent(lines, i - 1, indent)
             if container_indent is None:
                 continue
             open_at, fence = i, marker
             lang = info.split()[0] if info else ''
+            blockquoted = quoted
         elif (marker[0] == fence[0] and len(marker) >= len(fence) and not info
               and container_indent <= indent <= container_indent + 3):
-            yield lang, open_at, i, '\n'.join(lines[open_at:i - 1])
+            body_lines = lines if blockquoted else raw_lines
+            yield lang, open_at, i, '\n'.join(body_lines[open_at:i - 1])
             open_at = None
             container_indent = None
+            blockquoted = False
 
     if open_at is not None:
-        yield lang, open_at, len(lines) + 1, '\n'.join(lines[open_at:])
-
-
+        body_lines = lines if blockquoted else raw_lines
+        yield lang, open_at, len(raw_lines) + 1, '\n'.join(body_lines[open_at:])
 def fence_container_indent(lines, line_index, indent):
     """Return 0 for shallow fences or the content column of a nearby simple list item."""
     if indent <= 3:
@@ -438,6 +454,21 @@ def configured_package_roots(repo):
                 add(package, mapped, context=True)
             else:
                 add_from_base(mapped, context=True)
+
+    py_modules = setuptools.get('py-modules')
+    if isinstance(py_modules, list) and py_modules:
+        module_base = repo
+        if isinstance(package_dir, dict) and isinstance(package_dir.get(''), str):
+            module_base = (repo / package_dir['']).resolve()
+        declared = True
+        for name in py_modules:
+            if not isinstance(name, str) or not name or not all(
+                    part.isidentifier() for part in name.split('.')):
+                continue
+            module = module_base.joinpath(*name.split('.')).with_suffix('.py').resolve()
+            if (module.is_relative_to(module_base) and exists_here(repo, module)
+                    and module.is_file()):
+                add(name, module)
 
     packages = setuptools.get('packages', {})
     finder = packages.get('find', {}) if isinstance(packages, dict) else {}

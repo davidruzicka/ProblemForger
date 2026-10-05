@@ -1024,6 +1024,58 @@ class ClaimCheckerTests(unittest.TestCase):
         verdicts = self.verdicts("```python\nfrom pkg.sub.local import Thing\n```\n")
         self.assertEqual("TRUE", verdicts[("import", "from pkg.sub.local import")])
 
+    def test_blockquoted_fences_keep_markdown_examples_inert(self):
+        fence = chr(96) * 3
+        verdicts = self.verdicts(
+            f"> {fence}markdown\n"
+            "> [example](docs/does-not-exist.md)\n"
+            f"> {fence}\n"
+        )
+        self.assertNotIn(("path", "docs/does-not-exist.md"), verdicts)
+        self.assertEqual(
+            "UNRESOLVED", verdicts[("snippet", "markdown block, lines 1-3")]
+        )
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
+
+    def test_blockquoted_python_fences_still_validate_import_paths(self):
+        fence = chr(96) * 3
+        verdicts = self.verdicts(
+            f"> {fence}python\n"
+            "> from pkg.missing import Thing\n"
+            f"> {fence}\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "from pkg.missing import")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
+    def test_setuptools_py_modules_use_the_configured_source_root(self):
+        (self.repo / "pyproject.toml").write_text(
+            '[tool.setuptools]\n'
+            'package-dir = {"" = "src"}\n'
+            'py-modules = ["helper"]\n',
+            encoding="utf-8",
+        )
+        (self.repo / "src" / "helper.py").write_text("", encoding="utf-8")
+        (self.repo / "missing.py").write_text("", encoding="utf-8")
+        fence = chr(96) * 3
+        verdicts = self.verdicts(
+            f"{fence}python\n"
+            "import helper\n"
+            "import helper.missing\n"
+            f"{fence}\n"
+        )
+        self.assertEqual("TRUE", verdicts[("import", "import helper")])
+        self.assertEqual("BREAKS-ON-USE", verdicts[("import", "import helper.missing")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
     def test_python_imports_in_fenced_blocks(self):
         verdicts = self.verdicts(
             "```python\n"
