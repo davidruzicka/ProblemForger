@@ -30,6 +30,9 @@ _SENSITIVE_KEY_MARKERS = (
     "authorization",
 )
 _TOKEN_COUNT_ATTRIBUTE_KEYS = frozenset({"input_tokens", "output_tokens"})
+_RFC3339_UTC_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z"
+)
 _NON_EMPTY_LABEL_ATTRIBUTE_KEYS = frozenset(
     {
         "provider",
@@ -53,11 +56,14 @@ def _require_identifier(value: object, name: str) -> None:
 
 def _redact_sensitive_attributes(value: object, *, key: str | None = None) -> object:
     if key is not None:
-        normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
-        normalized = re.sub(r"_+", "_", normalized.casefold().replace("-", "_"))
+        normalized = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
+        normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", normalized)
+        normalized = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").casefold()
         sensitive = any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
         token_named = {"token", "tokens"}.intersection(normalized.split("_"))
-        sensitive = sensitive or bool(token_named and normalized not in _TOKEN_COUNT_ATTRIBUTE_KEYS)
+        sensitive = sensitive or bool(
+            token_named and normalized not in _TOKEN_COUNT_ATTRIBUTE_KEYS
+        )
         if sensitive:
             return "<redacted>"
     if type(value) is dict:
@@ -193,11 +199,8 @@ class TelemetryObservation:
                 f"(missing={missing}, unknown={unknown})"
             )
         timestamp = value["observed_at"]
-        if (
-            not isinstance(timestamp, str)
-            or len(timestamp) < 20
-            or timestamp[10] != "T"
-            or not timestamp.endswith("Z")
+        if not isinstance(timestamp, str) or not _RFC3339_UTC_TIMESTAMP.fullmatch(
+            timestamp
         ):
             raise ValueError("observed_at must be an RFC 3339 UTC timestamp ending in 'Z'")
         try:

@@ -41,6 +41,10 @@ def observation(*, journal_position=None):
                 "tokenValue": "secret-token",
                 "accessTokenValue": "secret-access-token",
                 "access_token_value": "secret-snake-token",
+                "IDToken": "secret-id-token",
+                "accessTOKENValue": "secret-acronym-token",
+                "access.token": "secret-dotted-token",
+                "access token": "secret-spaced-token",
                 "nested": {
                     "accessToken": "secret-token",
                     "password": "secret-password",
@@ -70,12 +74,30 @@ class TelemetryObservationTests(unittest.TestCase):
         self.assertEqual("<redacted>", value["attributes"]["tokenValue"])
         self.assertEqual("<redacted>", value["attributes"]["accessTokenValue"])
         self.assertEqual("<redacted>", value["attributes"]["access_token_value"])
+        self.assertEqual("<redacted>", value["attributes"]["IDToken"])
+        self.assertEqual("<redacted>", value["attributes"]["accessTOKENValue"])
+        self.assertEqual("<redacted>", value["attributes"]["access.token"])
+        self.assertEqual("<redacted>", value["attributes"]["access token"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["accessToken"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["password"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["token"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["items"][0]["private_key"])
         self.assertEqual(99, value["attributes"]["nested"]["items"][1]["input_tokens"])
         self.assertEqual(value, TelemetryObservation.from_value(value).to_value())
+
+    def test_timestamp_parser_accepts_only_lossless_rfc3339_utc_subset(self):
+        value = observation().to_value()
+        value["observed_at"] = "2026-10-10T17:00:00.123456Z"
+        self.assertEqual(value, TelemetryObservation.from_value(value).to_value())
+        for timestamp in (
+            "2026-W41-6T17:00:00Z",
+            "2026-10-10T17:00:00,123Z",
+            "2026-10-10T17:00:00.1234567Z",
+            "2026-10-10T170000Z",
+        ):
+            value["observed_at"] = timestamp
+            with self.subTest(timestamp=timestamp), self.assertRaises(ValueError):
+                TelemetryObservation.from_value(value)
 
     def test_standard_attributes_enforce_documented_types_and_ranges(self):
         for name, invalid in (

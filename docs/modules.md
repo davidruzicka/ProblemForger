@@ -211,6 +211,9 @@ Receives optional, non-authoritative observations. Its version 1 envelope is:
 `correlation_id`, and `causation_id` are nullable references; a journal position
 identifies an existing durable record and never appends one. `observed_at` is a
 timezone-aware timestamp normalized to UTC and serialized as RFC 3339 with `Z`.
+The parser accepts full calendar dates only and allows at most six fractional
+second digits, matching Python `datetime` precision; unsupported forms and
+precision are rejected rather than normalized lossily.
 `attributes` is an immutable JSON object. Model observations may use `provider`,
 `model`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, and `status`;
 tool observations may use `tool_name`, `latency_ms`, and `status`; adapter
