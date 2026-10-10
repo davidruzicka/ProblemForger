@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 14888)
-Total output lines: 1055
-
 """Practical P0 document regression checks, not production-implementation tests."""
 
 from pathlib import Path
@@ -458,7 +455,143 @@ class SpecificationChecks(unittest.TestCase):
             "C run registration must bind the verified, non-null identities",
             "service rejects missing or `NONE` identities",
             "verifies loaded policy/configuration against the bound identity",
-   …2888 tokens truncated… same evaluator identity, producer-provenance, verifier-profile, producer-attestation, and retained-content checks only when a candidate evaluator was actually dispatched",
+        ):
+            with self.subTest(scope="recovery", phrase=phrase):
+                self.assertIn(phrase, protocol)
+
+    def test_preflight_and_missingness_do_not_substitute_tasks(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "There are no hidden reserves or post-hoc task substitutions",
+            "A task-specific setup failure is recorded with a reason",
+            "Continue independent preflight/measurement slots",
+            "shared setup failure before any measured slot starts",
+            "Preflight is an operational readiness check",
+            "MISSING_SETUP",
+            "PROVIDER_UNAVAILABLE",
+            "EVALUATION_INCOMPLETE",
+            "`BASELINE_VECTOR_VERIFIED`",
+            "`baseline_vector_ref`",
+            "`baseline_vector_sha256`",
+            "`baseline_raw_output_ref`",
+            "`baseline_raw_output_sha256`",
+            "exact per-test baseline vector and bounded raw setup output",
+            "every required `FAIL_TO_PASS` test fails through a valid completed test outcome",
+            "every required `PASS_TO_PASS` test passes",
+            "Infrastructure, missing-test, timeout, protocol, or sandbox errors do not satisfy",
+            "wrong baseline vector or baseline-condition failure is task-specific `MISSING_SETUP`",
+            "separate from the measured candidate-evaluation count",
+            "CANDIDATE_PATCH_INVALID",
+            "EVIDENCE_INCOMPLETE",
+            "INCOMPLETE_EVIDENCE",
+            "No reason code is silently converted into a favorable result",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_network_free_task_eligibility_is_frozen(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "network-free evaluator compatibility",
+            "required tests and task setup must be network-free",
+            "DNS, external sockets, loopback, local HTTP/DB/browser-driver services, or arbitrary IPC",
+            "Only `CANDIDATE_EVAL_IPC_V1` is allowed",
+            "every required test and fixture preserves the frozen required-test semantics through `CANDIDATE_EVAL_IPC_V1`",
+            "candidate code runs outside the trusted evaluator process",
+            "trusted side does not disclose hidden test or fixture code",
+            "candidate imports or monkeypatching inside the evaluator",
+            "evaluator adapter/source/runtime identity",
+            "before selecting the six tasks",
+            "If the predicate cannot be proved, the task is ineligible",
+            "recorded network-free compatibility and candidate/evaluator isolation compatibility",
+            "pinned task metadata",
+            "verify each selected task's recorded network-free compatibility",
+            "without executing a selected task",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+    def test_evaluator_identity_is_bound_for_every_execution(self):
+        raw_evaluation = read("docs/evaluation.md")
+        evaluation = " ".join(raw_evaluation.split())
+        manifest = " ".join(read("docs/evaluation.md").split("## Pre-P6 manifest\n", 1)[1].split(
+            "## Task selection and preflight\n", 1
+        )[0].split())
+        preflight = " ".join(raw_evaluation.split("### Preflight\n", 1)[1].split(
+            "## Execution controls\n", 1
+        )[0].split())
+        scoring = " ".join(raw_evaluation.split("Before a slot is scored", 1)[1].split(
+            "## Measured evaluation\n", 1
+        )[0].split())
+        measured = " ".join(raw_evaluation.split("## Measured evaluation\n", 1)[1].split(
+            "## Practical human decision\n", 1
+        )[0].split())
+        retained = " ".join(raw_evaluation.split("## Retained evidence and integrity rules\n", 1)[1].split())
+        for scope, text, phrases in (
+            ("manifest", manifest, (
+                "evaluator adapter/source/runtime identity is a content identity of the loaded adapter",
+                "evaluator-identity verification profile, frozen as `evaluator_verification_profile`",
+                "`verification_method`, `checker_version`, `verifier_command_identity`, and `effective_verifier_configuration`",
+                "complete verifier execution identity",
+                "retained checker executable/script bytes, its interpreter/runtime, and all transitive checker/helper dependency bytes",
+                "pinned image/archive containing them",
+                "fixed before manifest hashing",
+                "contain no `manifest_hash`, computed evaluator identity, or post-freeze evidence, invocation, or result references",
+                "neither depends on a future evidence digest",
+                "unsigned canonical payload that includes `producer_id` and `producer_provenance` and omits `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, and `producer_attestation_ref`",
+                "separate immutable `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope",
+                "envelope authenticates the trusted recorder and binds `producer_id` and `producer_provenance` to the exact `evaluator_identity_evidence_ref` and `evaluator_identity_evidence_sha256`",
+                "neither self-derived field is part of its own preimage",
+                "evidence reference and digest bind the complete V1 payload, including `producer_id` and `producer_provenance`",
+                "attestation reference is derived from the envelope with its own reference omitted, and the payload does not contain that reference",
+                "no manifest/evidence hash cycle",
+                "For every clean-baseline execution and candidate evaluator launch, the trusted runner persists an immutable `EVALUATOR_IDENTITY_VERIFIED` record",
+            )),
+            ("preflight", preflight, (
+                "Before each clean-baseline execution and before every candidate evaluator launch",
+                "computes the effective `evaluator_adapter_source_runtime_identity`",
+                "requires exact equality with the manifest's evaluator adapter/source/runtime identity",
+                "Checking mutable paths without binding loaded artifacts is insufficient",
+                "persists the trusted `EVALUATOR_IDENTITY_VERIFIED` record before the execution or launch",
+                "content-addressed `evaluator_identity_evidence_ref`",
+                "`evaluator_identity_evidence_sha256`",
+                "created from the artifacts actually loaded and pinned for that invocation",
+                "record's `producer_id`, `producer_provenance`, and `producer_attestation_ref` are retained from the authenticated trusted recorder",
+                "effective verifier configuration (including dependency roots, symlink policy, and transitive-content traversal rules)",
+                "exact test/command identity",
+                "referenced checker, interpreter/runtime, transitive dependency, and configuration content",
+                "For both baseline and candidate verification",
+                "observed by the trusted runner rather than copied from the manifest",
+                "Before setting `verification_result=VERIFIED`, require exact equality with the frozen profile",
+                "resolve `producer_attestation_ref` and verify the authenticated attestation binds the exact evidence reference and digest to `producer_id` and `producer_provenance`",
+                "exact test/command identity must match that frozen profile",
+                "A missing or mismatched identity, profile, evidence record, reference, digest, or referenced artifact is `EVIDENCE_INCOMPLETE`",
+            )),
+            ("scoring", scoring, (
+                "runtime/image, `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, `producer_attestation_ref`, evaluator-bundle/test-definition",
+                "Resolve `producer_attestation_ref` from that integrity-bound `BASELINE_VECTOR_VERIFIED` consumer record, verify it matches the retained V1 record metadata and the consumer's exact evidence reference and digest, then verify its authenticated `EVALUATOR_PRODUCER_ATTESTATION_V1` envelope binds that exact evidence reference and digest to the payload's `producer_id` and `producer_provenance`",
+                "Missing, unknown, unauthenticated, or mismatched producer provenance or attestation is `EVIDENCE_INCOMPLETE`",
+                "`EVALUATOR_IDENTITY_VERIFIED_V1` schema",
+                "every referenced immutable artifact",
+                "validate the complete `evaluator_verification_profile` against the frozen manifest",
+                "Resolve and digest-check its retained checker, interpreter/runtime, transitive checker/dependency, and configuration content",
+                "A changed checker helper, interpreter/runtime, or transitive dependency byte is a subject mismatch and produces `EVIDENCE_INCOMPLETE`",
+                "Missing, unreadable, corrupt, untrusted, or mismatched profile fields or referenced content produce `EVIDENCE_INCOMPLETE`",
+                "no candidate verification record is required when no candidate evaluator was dispatched",
+                "Require the bound `NETWORK_DENIAL_VERIFIED` record and its bounded diagnostics for every slot",
+                "If a candidate evaluator was actually dispatched",
+                "For `NO_PATCH` or `CANDIDATE_PATCH_INVALID` with `evaluator_invocation: NOT_DISPATCHED`, do not require a candidate evaluator invocation or measured sandbox",
+                "revalidate the retained preflight `NETWORK_DENIAL_VERIFIED` record and its policy identity and diagnostics against the manifest and candidate sandbox policy only",
+                                "revalidate the effective `evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`/`evaluator_identity_evidence_sha256`, and `producer_attestation_ref` from the integrity-bound evaluator `STARTED` or terminal result record against the manifest, the immutable verification record, the invocation's exact evidence reference and digest, and the loaded evaluator used for that invocation",
+                                "Resolve the attestation and verify its authenticated envelope binds that exact candidate evidence reference and digest to the candidate payload's producer fields",
+            )),
+            ("measured", measured, (
+                "invocation record binds the manifest hash",
+                "`evaluator_adapter_source_runtime_identity`, `evaluator_identity_evidence_ref`, `evaluator_identity_evidence_sha256`, `producer_attestation_ref`, evaluator bundle digest",
+                "terminal result record repeats that full invocation binding",
+                "`evaluator_identity_evidence_sha256`, `producer_attestation_ref`, `sandbox_policy_id`",
+                "Before reusing a completed baseline after restart, obtain its `producer_attestation_ref` from the integrity-bound `BASELINE_VECTOR_VERIFIED` consumer record and cross-check it against the retained V1 record and exact evidence reference/digest",
+                "For a candidate evaluation after restart, obtain `producer_attestation_ref` from the integrity-bound candidate `STARTED` or terminal result record and cross-check it against the retained V1 record and exact candidate evidence reference/digest; perform the same evaluator identity, producer-provenance, verifier-profile, producer-attestation, and retained-content checks only when a candidate evaluator was actually dispatched",
                 "do not require a candidate `EVALUATOR_IDENTITY_VERIFIED` record, evaluator invocation, or measured sandbox",
                 "revalidate the terminal outcome, its complete no-evaluation/patch-validation evidence, the explicit marker, and the mandatory baseline proof against the manifest and retained evidence",
                 "Apply the same scoring-time producer identity/provenance, verifier-profile, trusted producer-attestation and retained-content checks to the mandatory baseline proof and any dispatched candidate proof during read-only restart reconciliation",
