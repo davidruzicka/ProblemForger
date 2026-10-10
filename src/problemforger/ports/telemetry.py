@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import math
+import re
 from typing import Protocol, runtime_checkable
 
 from problemforger.core.journal import (
@@ -27,6 +29,17 @@ _SENSITIVE_KEY_MARKERS = (
     "secret",
     "authorization",
 )
+_TOKEN_COUNT_ATTRIBUTE_KEYS = frozenset({"input_tokens", "output_tokens"})
+_NON_EMPTY_LABEL_ATTRIBUTE_KEYS = frozenset(
+    {
+        "provider",
+        "model",
+        "status",
+        "tool_name",
+        "adapter_name",
+        "diagnostic_code",
+    }
+)
 
 
 def _require_identifier(value: object, name: str) -> None:
@@ -40,10 +53,11 @@ def _require_identifier(value: object, name: str) -> None:
 
 def _redact_sensitive_attributes(value: object, *, key: str | None = None) -> object:
     if key is not None:
-        normalized = key.lower().replace("-", "_")
+        normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+        normalized = re.sub(r"_+", "_", normalized.casefold().replace("-", "_"))
         sensitive = any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
-        sensitive = sensitive or normalized == "token" or normalized.startswith("token_")
-        sensitive = sensitive or normalized.endswith("_token") or normalized.endswith("token")
+        token_named = {"token", "tokens"}.intersection(normalized.split("_"))
+        sensitive = sensitive or bool(token_named and normalized not in _TOKEN_COUNT_ATTRIBUTE_KEYS)
         if sensitive:
             return "<redacted>"
     if type(value) is dict:
@@ -59,6 +73,30 @@ def _redact_sensitive_attributes(value: object, *, key: str | None = None) -> ob
 def _require_integer(value: object, name: str, *, minimum: int) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise ValueError(f"{name} must be an integer greater than or equal to {minimum}")
+
+
+def _require_non_negative_number(value: object, name: str) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or value < 0
+        or (isinstance(value, float) and not math.isfinite(value))
+    ):
+        raise ValueError(f"{name} must be a finite non-negative number")
+
+
+def _validate_standard_attributes(attributes: dict[str, object]) -> None:
+    for name in _TOKEN_COUNT_ATTRIBUTE_KEYS:
+        if name in attributes:
+            _require_integer(attributes[name], name, minimum=0)
+    for name in _NON_EMPTY_LABEL_ATTRIBUTE_KEYS:
+        if name in attributes and (
+            not isinstance(attributes[name], str) or not attributes[name].strip()
+        ):
+            raise ValueError(f"{name} must be a non-empty string")
+    for name in ("cost_usd", "latency_ms"):
+        if name in attributes:
+            _require_non_negative_number(attributes[name], name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,10 +145,12 @@ class TelemetryObservation:
         attributes = self.attributes.value
         if type(attributes) is not dict:
             raise ValueError("attributes must be a JSON object")
+        redacted_attributes = _redact_sensitive_attributes(attributes)
+        _validate_standard_attributes(redacted_attributes)
         object.__setattr__(
             self,
             "attributes",
-            JsonDocument.from_value(_redact_sensitive_attributes(attributes)),
+            JsonDocument.from_value(redacted_attributes),
         )
 
     def to_value(self) -> dict[str, object]:
@@ -205,3 +245,4 @@ class TelemetrySink(Protocol):
     def emit(self, observation: TelemetryObservation) -> None: ...
 
     def close(self) -> None: ...
+

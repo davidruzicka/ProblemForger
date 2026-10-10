@@ -38,6 +38,9 @@ def observation(*, journal_position=None):
                 "cost_usd": 0.003,
                 "latency_ms": 42,
                 "apiKey": "secret-key",
+                "tokenValue": "secret-token",
+                "accessTokenValue": "secret-access-token",
+                "access_token_value": "secret-snake-token",
                 "nested": {
                     "accessToken": "secret-token",
                     "password": "secret-password",
@@ -64,12 +67,37 @@ class TelemetryObservationTests(unittest.TestCase):
         self.assertEqual(12, value["attributes"]["input_tokens"])
         self.assertEqual(7, value["attributes"]["output_tokens"])
         self.assertEqual("<redacted>", value["attributes"]["apiKey"])
+        self.assertEqual("<redacted>", value["attributes"]["tokenValue"])
+        self.assertEqual("<redacted>", value["attributes"]["accessTokenValue"])
+        self.assertEqual("<redacted>", value["attributes"]["access_token_value"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["accessToken"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["password"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["token"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["items"][0]["private_key"])
         self.assertEqual(99, value["attributes"]["nested"]["items"][1]["input_tokens"])
         self.assertEqual(value, TelemetryObservation.from_value(value).to_value())
+
+    def test_standard_attributes_enforce_documented_types_and_ranges(self):
+        for name, invalid in (
+            ("input_tokens", -1),
+            ("output_tokens", True),
+            ("provider", ""),
+            ("model", " "),
+            ("status", 1),
+            ("tool_name", 42),
+            ("adapter_name", None),
+            ("diagnostic_code", []),
+            ("cost_usd", True),
+            ("cost_usd", -0.01),
+            ("latency_ms", False),
+            ("latency_ms", -1),
+        ):
+            value = observation().to_value()
+            value["attributes"][name] = invalid
+            with self.subTest(name=name, value=invalid), self.assertRaises(
+                (TypeError, ValueError)
+            ):
+                TelemetryObservation.from_value(value)
 
     def test_envelope_rejects_unknown_or_unsupported_shapes(self):
         value = observation().to_value()
@@ -194,3 +222,4 @@ class TelemetryObservationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

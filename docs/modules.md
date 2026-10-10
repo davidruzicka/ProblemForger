@@ -215,15 +215,17 @@ timezone-aware timestamp normalized to UTC and serialized as RFC 3339 with `Z`.
 `model`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, and `status`;
 tool observations may use `tool_name`, `latency_ms`, and `status`; adapter
 diagnostics may use `adapter_name`, `diagnostic_code`, and `status`. Token
-counts are non-negative integers, `cost_usd` is a provider-reported USD estimate,
-and `latency_ms` is elapsed milliseconds; labels are non-empty strings. These
-attribute names are provider-neutral conventions; version 1 does not fix a
-provider-specific event vocabulary or reject unrecognized JSON attributes.
+counts (`input_tokens` and `output_tokens`) are non-negative integers,
+`cost_usd` is a finite non-negative provider-reported USD estimate, and
+`latency_ms` is a finite non-negative elapsed-millisecond value; labels are
+non-empty strings. The sink validates these documented standard attributes but
+allows additional JSON attributes. These names are provider-neutral conventions;
+version 1 does not fix a provider-specific event vocabulary.
 
 Version 1 rejects unsupported schema versions and unknown envelope fields.
 Sensitive attribute values are recursively replaced with `<redacted>` when a
 key names an API/private key, password, credential, secret, authorization value,
-or token (including camel-case token fields). Usage counters such as
+or token (including camel-case token fields). The standard usage counters
 `input_tokens` and `output_tokens` remain visible. Key-based redaction is not
 content inspection: callers must omit credentials, prompts/responses, raw tool
 arguments/results, and other sensitive values under unrecognized keys.
@@ -410,3 +412,4 @@ with the durable transaction outcome. If reload fails, the provider rejects
 further operations until it is closed and reopened.
 
 Provider-specific tests may add performance/error cases but cannot replace the applicable common suites.
+
