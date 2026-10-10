@@ -123,6 +123,10 @@ class StoreClosedError(RuntimeError):
     """An operation was attempted after provider close."""
 
 
+class StoreCloseError(RuntimeError):
+    """The connection did not close; ownership remains held for retry."""
+
+
 class ForkedProviderError(RuntimeError):
     """A provider inherited across fork cannot be used in the child process."""
 
@@ -237,9 +241,14 @@ class SqliteEventStore(EventStoreState):
             self._verify_identity()
             self._runs = self._load_state()
             self._verify_identity()
-        except BaseException:
-            self._release_resources()
-            self._closed = True
+        except BaseException as error:
+            try:
+                self._release_resources()
+            except Exception as cleanup_error:
+                error.add_note(f"provider cleanup failed: {cleanup_error}")
+                self._closed = False
+            else:
+                self._closed = True
             raise
 
     def _create_secure_parent_directories(self) -> None:
@@ -685,12 +694,15 @@ class SqliteEventStore(EventStoreState):
                 pass
 
     def _release_resources(self) -> None:
-        connection, self._connection = self._connection, None
+        connection = self._connection
         if connection is not None:
             try:
                 connection.close()
-            except sqlite3.Error:
-                pass
+            except sqlite3.Error as error:
+                raise StoreCloseError(
+                    "SQLite connection close failed; store ownership remains held"
+                ) from error
+            self._connection = None
         with _PROVIDER_LIFECYCLE_LOCK:
             self._release_ownership()
             _OPEN_PROVIDERS.discard(self)
@@ -716,8 +728,8 @@ class SqliteEventStore(EventStoreState):
                 return
             if self._closed:
                 return
-            self._closed = True
             self._release_resources()
+            self._closed = True
 
     def __del__(self) -> None:
         # Explicit close remains preferred. GC must nevertheless release raw

@@ -24,7 +24,7 @@ The same core serves different harnesses; adapters translate the protocol withou
 
 ## Repository status
 
-This repository is in early P1 implementation. It has a Python 3.12+ package scaffold, an automated core dependency-boundary check, journal records, the EventStore port with in-memory and SQLite providers, and typed EventStore configuration with a `build_event_store` composition root; the versioned configuration loader and module registry, application use cases, and service behavior remain to be implemented through the ordered P1 issues. Claims about reliability improvements, calibration quality, routing efficiency, or benchmark gains remain hypotheses until supported by controlled experiments.
+This repository is in early P1 implementation. It now has a Python 3.12+ package with durable journal records, in-memory and SQLite EventStore providers, typed/versioned module configuration, an explicit provider registry and composition root, and optional telemetry sinks; the local service, transport, and graph behavior remain to be implemented through the ordered P1 issues. Claims about reliability improvements, calibration quality, routing efficiency, or benchmark gains remain hypotheses until supported by controlled experiments.
 
 ## Documentation
 

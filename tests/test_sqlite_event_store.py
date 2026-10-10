@@ -31,12 +31,13 @@ from problemforger.config.event_store import (
     MemoryEventStoreConfig,
     ServiceProfile,
     SqliteEventStoreConfig,
-    build_event_store,
 )
+from problemforger.config.registry import default_registry
 from problemforger.modules.persistence import (
     ForkedProviderError,
     MemoryEventStore,
     SqliteEventStore,
+    StoreCloseError,
     StoreClosedError,
     StoreIdentityChangedError,
     StoreInUseError,
@@ -51,6 +52,11 @@ from problemforger.ports.event_store import (
     StoreDurability,
     StoreErrorCode,
 )
+
+
+def build_configured_event_store(config, *, profile=ServiceProfile.NORMAL):
+    provider = "memory" if isinstance(config, MemoryEventStoreConfig) else "sqlite"
+    return default_registry().build("event_store", provider, config, profile=profile)
 
 
 LINUX = sys.platform.startswith("linux")
@@ -787,6 +793,34 @@ class SqliteEventStoreTests(unittest.TestCase):
         with self.assertRaises(StoreClosedError):
             store.__enter__()
 
+    @unittest.skipUnless(LINUX, "SQLite owner uses Linux flock")
+    def test_close_failure_retains_ownership_until_connection_close_succeeds(self):
+        store = self.open_store()
+        real_connection = store._connection
+        self.assertIsNotNone(real_connection)
+
+        class CloseOnceConnection:
+            def __init__(self, connection):
+                self.connection = connection
+                self.attempts = 0
+
+            def close(self):
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise sqlite3.OperationalError("close failed")
+                return self.connection.close()
+
+        store._connection = CloseOnceConnection(real_connection)
+        with self.assertRaisesRegex(StoreCloseError, "ownership remains held"):
+            store.close()
+        self.assertFalse(store._closed)
+        with self.assertRaises(StoreInUseError):
+            self.open_store()
+
+        store.close()
+        with self.open_store():
+            pass
+
     def test_insecure_file_permissions_are_rejected(self):
         # Test existing database file with group/world read permissions (0o644)
         insecure_db_path = Path(self.temporary.name) / "insecure.db"
@@ -1115,17 +1149,19 @@ class SqliteEventStoreTests(unittest.TestCase):
                 connect.assert_not_called()
 
     def test_memory_provider_is_ephemeral_and_normal_profile_rejects_it(self):
-        memory = build_event_store(MemoryEventStoreConfig(), profile=ServiceProfile.EPHEMERAL_TEST)
+        memory = build_configured_event_store(
+            MemoryEventStoreConfig(), profile=ServiceProfile.EPHEMERAL_TEST
+        )
         self.assertIsInstance(memory, MemoryEventStore)
         self.assertEqual(StoreDurability.EPHEMERAL, memory.durability)
         memory.close()
         with self.assertRaisesRegex(ValueError, "requires a durable EventStore"):
-            build_event_store(MemoryEventStoreConfig())
+            build_configured_event_store(MemoryEventStoreConfig())
         with self.assertRaises(TypeError):
-            build_event_store(MemoryEventStoreConfig(), profile="normal")
+            build_configured_event_store(MemoryEventStoreConfig(), profile="normal")
 
     def test_typed_sqlite_composition_builds_durable_provider(self):
-        store = build_event_store(SqliteEventStoreConfig(self.path))
+        store = build_configured_event_store(SqliteEventStoreConfig(self.path))
         self.assertEqual(StoreDurability.DURABLE, store.durability)
         store.close()
 
