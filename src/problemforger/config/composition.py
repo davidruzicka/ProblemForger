@@ -26,10 +26,8 @@ class ComposedModules:
         try:
             self.telemetry.close()
         finally:
-            try:
-                self.event_store.close()
-            finally:
-                self._closed = True
+            self.event_store.close()
+        self._closed = True
 
 
 def compose(
