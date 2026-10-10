@@ -202,12 +202,12 @@ check_conflict_markers() {
                 :
             done < <(printf '%s\0' "$path" | git check-attr -z --stdin conflict-marker-size)
             [[ $marker_size =~ ^0*[1-9][0-9]*$ ]] || marker_size=7
-            marker_re="^(<{${marker_size},}|>{${marker_size},})( |$)"
+            marker_re="^(<{${marker_size},}|>{${marker_size},}|[|]{${marker_size},})( |$)"
         fi
         if [[ $line =~ $marker_re ]]; then
             hits+="$path:$line_number:$line"$'\n'
         fi
-    done < <(git grep --untracked -I -n -z -E '^(<+|>+)( |$)' || true)
+    done < <(git grep --untracked -I -n -z -E '^(<+|>+|[|]+)( |$)' || true)
     if [ -n "$hits" ]; then
         centered_text "Conflict markers in tracked files"
         echo "$hits"
