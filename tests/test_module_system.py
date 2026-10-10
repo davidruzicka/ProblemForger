@@ -1,9 +1,11 @@
 """Configuration, registry, and composition-root contract tests."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from problemforger.core.journal import JsonDocument
 from problemforger.config import (
     ComposedModules,
     EventStoreModuleConfig,
@@ -29,6 +31,7 @@ from problemforger.config.telemetry import telemetry_config_from_value
 from problemforger.modules.persistence import SqliteEventStore, StoreInUseError
 from problemforger.modules.telemetry import NullTelemetrySink
 from problemforger.ports.event_store import StoreDurability
+from problemforger.ports.telemetry import TelemetryObservation
 from problemforger.modules.telemetry import RecordingTelemetrySink
 
 
@@ -337,8 +340,18 @@ class CompositionRootTests(unittest.TestCase):
                 self.assertIsInstance(components.event_store, SqliteEventStore)
                 self.assertEqual(StoreDurability.DURABLE, components.event_store.durability)
                 self.assertIsInstance(components.telemetry, RecordingTelemetrySink)
-                components.telemetry.emit({"kind": "test"})
-                self.assertEqual(({"kind": "test"},), components.telemetry.observations)
+                components.telemetry.emit(
+                    TelemetryObservation(
+                        run_id="run-1",
+                        event_type="test",
+                        observed_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                        attributes=JsonDocument.from_value({"kind": "test"}),
+                    )
+                )
+                self.assertEqual(
+                    {"kind": "test"},
+                    components.telemetry.observations[0].attributes.value,
+                )
             finally:
                 components.close()
 
@@ -515,15 +528,41 @@ class TelemetryProviderTests(unittest.TestCase):
 
     def test_recording_and_null_sinks_have_lifecycle_contracts(self):
         null = NullTelemetrySink()
-        self.assertIsNone(null.emit({"ignored": True}))
+        self.assertIsNone(
+            null.emit(
+                TelemetryObservation(
+                    run_id="run-1",
+                    event_type="test",
+                    observed_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                )
+            )
+        )
         self.assertIsNone(null.close())
         sink = RecordingTelemetrySink(max_observations=1)
-        sink.emit({"kind": "one"})
+        sink.emit(
+            TelemetryObservation(
+                run_id="run-1",
+                event_type="test",
+                observed_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            )
+        )
         with self.assertRaises(OverflowError):
-            sink.emit({"kind": "two"})
+            sink.emit(
+                TelemetryObservation(
+                    run_id="run-1",
+                    event_type="test",
+                    observed_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                )
+            )
         sink.close()
         with self.assertRaises(RuntimeError):
-            sink.emit({"kind": "after-close"})
+            sink.emit(
+                TelemetryObservation(
+                    run_id="run-1",
+                    event_type="test",
+                    observed_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                )
+            )
 
 
 if __name__ == "__main__":

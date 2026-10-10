@@ -179,20 +179,67 @@ Requirements:
 
 Both providers are introduced in P1. `MemoryEventStore` exists for fast unit/contract tests and explicit ephemeral test harnesses only; it must not be used by the normal ProblemForger service. The composition root must reject an ephemeral EventStore for a normal service profile. SQLite is the first durable provider and must preserve the journal across close/reopen and process restart. Proposal processing is serialized by the service owner; multi-worker claims are deferred.
 
+<a id="spec-modules-telemetry-port"></a>
+<!-- spec-id: MODULES.TELEMETRY-PORT -->
 ### TelemetrySink
 
-Receives non-authoritative observations such as harness/model/tool events, cost/latency measurements, and diagnostics.
+Receives optional, non-authoritative observations. Its version 1 envelope is:
 
-Telemetry:
+```json
+{
+  "observation_schema_version": 1,
+  "run_id": "run-123",
+  "proposal_id": "proposal-456",
+  "journal_position": 7,
+  "correlation_id": "request-789",
+  "causation_id": "proposal-456",
+  "event_type": "model.response",
+  "observed_at": "2026-10-10T17:00:00Z",
+  "attributes": {
+    "provider": "provider-name",
+    "model": "model-id",
+    "input_tokens": 120,
+    "output_tokens": 35,
+    "cost_usd": 0.002,
+    "latency_ms": 420,
+    "status": "completed"
+  }
+}
+```
 
-- may reference durable journal records through correlation/causation IDs;
-- does not increment graph version;
-- is not required to reconstruct graph state or governance decisions;
-- can be disabled without changing domain correctness or auditability.
+`run_id` and `event_type` are required. `proposal_id`, `journal_position`,
+`correlation_id`, and `causation_id` are nullable references; a journal position
+identifies an existing durable record and never appends one. `observed_at` is a
+timezone-aware timestamp normalized to UTC and serialized as RFC 3339 with `Z`.
+The parser accepts full calendar dates only and allows at most six fractional
+second digits, matching Python `datetime` precision; unsupported forms and
+precision are rejected rather than normalized lossily.
+`attributes` is an immutable JSON object. Model observations may use `provider`,
+`model`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, and `status`;
+tool observations may use `tool_name`, `latency_ms`, and `status`; adapter
+diagnostics may use `adapter_name`, `diagnostic_code`, and `status`. Token
+counts (`input_tokens` and `output_tokens`) are non-negative integers,
+`cost_usd` is a finite non-negative provider-reported USD estimate, and
+`latency_ms` is a finite non-negative elapsed-millisecond value; labels are
+non-empty strings. The sink validates these documented standard attributes but
+allows additional JSON attributes. These names are provider-neutral conventions;
+version 1 does not fix a provider-specific event vocabulary.
 
-A null sink and bounded recording/in-memory sink may be used initially. The
-versioned observation envelope and richer telemetry semantics are defined by
-the follow-up telemetry issue.
+Version 1 rejects unsupported schema versions and unknown envelope fields.
+Sensitive attribute values are recursively replaced with `<redacted>` when a
+key names an API/private key, password, credential, secret, authorization value,
+or token (including case, acronym, and punctuation variants). Only the exact
+standard usage-counter keys `input_tokens` and `output_tokens` remain visible;
+other token-named keys are redacted. Key-based redaction is not content
+inspection: callers must omit credentials, prompts/responses, raw tool
+arguments/results, and other sensitive values under unrecognized keys.
+
+Telemetry may reference durable journal records through correlation/causation
+IDs, but it does not advance `journal_position` or `graph_version`, and is not
+required to reconstruct graph state or governance decisions. A null sink drops
+valid observations; a bounded recording sink preserves emission order in
+memory. Either sink may be disabled without changing domain correctness or
+auditability.
 
 ### Service clock / ID source
 

@@ -16,6 +16,7 @@ document is the only normative definition for each requirement.
 | --- | --- | --- |
 | `GRAPH.MODEL` | Problem-graph vocabulary and lifecycle | [Problem graph](problem-graph.md#spec-graph-model) |
 | `MODULES.EVENTSTORE-PORT` | EventStore port and provider contract | [Modules — EventStore](modules.md#spec-modules-eventstore-port) |
+| `MODULES.TELEMETRY-PORT` | Observation envelope and telemetry sink contract | [Modules — TelemetrySink](modules.md#spec-modules-telemetry-port) |
 | `PROTOCOL.PROPOSAL-RECOVERY` | Proposal identity, recovery, and terminal binding | [Protocol — proposal recovery](protocol.md#spec-protocol-proposal-recovery) |
 | `PROTOCOL.STORE-OWNER` | Exclusive durable-store ownership | [Protocol — STORE-OWNER](protocol.md#spec-protocol-store-owner) |
 | `PROTOCOL.PARALLEL-CLAIMS` | Deferred multi-worker claims | [Protocol — deferred parallel claims](protocol.md#spec-protocol-parallel-claims) |
