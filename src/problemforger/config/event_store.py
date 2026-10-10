@@ -1,18 +1,17 @@
-"""Typed EventStore settings and the explicit provider composition root."""
+"""Typed EventStore provider configuration."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
 import os
-from pathlib import Path
 
-from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
 from problemforger.modules.persistence._base import DEFAULT_MAX_JOURNAL_PAGE_SIZE
 from problemforger.modules.persistence.sqlite import (
     _normalize_timeout_seconds,
 )
-from problemforger.ports.event_store import EventStore
+
+from ._validation import reject_unknown_keys, require_mapping
 
 
 class ServiceProfile(str, Enum):
@@ -36,6 +35,23 @@ class MemoryEventStoreConfig:
                 f"{DEFAULT_MAX_JOURNAL_PAGE_SIZE}"
             )
 
+    @classmethod
+    def from_value(cls, value: object) -> MemoryEventStoreConfig:
+        config = require_mapping(value, "memory EventStore config")
+        reject_unknown_keys(
+            config,
+            frozenset({"max_journal_page_size"}),
+            "memory EventStore config",
+        )
+        return cls(
+            max_journal_page_size=config.get(
+                "max_journal_page_size", DEFAULT_MAX_JOURNAL_PAGE_SIZE
+            )
+        )
+
+    def to_value(self) -> dict[str, object]:
+        return {"max_journal_page_size": self.max_journal_page_size}
+
 
 @dataclass(frozen=True, slots=True)
 class SqliteEventStoreConfig:
@@ -44,7 +60,10 @@ class SqliteEventStoreConfig:
     timeout_seconds: float = 5.0
 
     def __post_init__(self) -> None:
-        if not os.fspath(self.path):
+        path = os.fspath(self.path)
+        if not isinstance(path, str):
+            raise TypeError("SQLite path must be a string")
+        if not path:
             raise ValueError("SQLite path is required")
         if (
             isinstance(self.max_journal_page_size, bool)
@@ -60,24 +79,38 @@ class SqliteEventStoreConfig:
             self, "timeout_seconds", _normalize_timeout_seconds(self.timeout_seconds)
         )
 
+    @classmethod
+    def from_value(cls, value: object) -> SqliteEventStoreConfig:
+        config = require_mapping(value, "SQLite EventStore config")
+        reject_unknown_keys(
+            config,
+            frozenset({"path", "max_journal_page_size", "timeout_seconds"}),
+            "SQLite EventStore config",
+        )
+        if "path" not in config:
+            raise ValueError("SQLite path is required")
+        return cls(
+            path=config["path"],
+            max_journal_page_size=config.get(
+                "max_journal_page_size", DEFAULT_MAX_JOURNAL_PAGE_SIZE
+            ),
+            timeout_seconds=config.get("timeout_seconds", 5.0),
+        )
+
+    def to_value(self) -> dict[str, object]:
+        return {
+            "path": os.fspath(self.path),
+            "max_journal_page_size": self.max_journal_page_size,
+            "timeout_seconds": self.timeout_seconds,
+        }
+
 
 EventStoreConfig = MemoryEventStoreConfig | SqliteEventStoreConfig
 
 
-def build_event_store(
-    config: EventStoreConfig, *, profile: ServiceProfile = ServiceProfile.NORMAL
-) -> EventStore:
-    """Construct one typed provider and enforce normal-service durability."""
-    if not isinstance(profile, ServiceProfile):
-        raise TypeError("profile must be a ServiceProfile")
-    if isinstance(config, MemoryEventStoreConfig):
-        if profile is ServiceProfile.NORMAL:
-            raise ValueError("normal service profile requires a durable EventStore")
-        return MemoryEventStore(max_journal_page_size=config.max_journal_page_size)
-    if isinstance(config, SqliteEventStoreConfig):
-        return SqliteEventStore(
-            Path(config.path),
-            max_journal_page_size=config.max_journal_page_size,
-            timeout_seconds=config.timeout_seconds,
-        )
-    raise TypeError("unsupported EventStore configuration")
+def event_store_config_from_value(provider: str, value: object) -> EventStoreConfig:
+    if provider == "memory":
+        return MemoryEventStoreConfig.from_value(value)
+    if provider == "sqlite":
+        return SqliteEventStoreConfig.from_value(value)
+    raise ValueError(f"unknown event_store provider {provider!r}")
