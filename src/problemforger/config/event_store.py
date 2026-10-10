@@ -60,7 +60,10 @@ class SqliteEventStoreConfig:
     timeout_seconds: float = 5.0
 
     def __post_init__(self) -> None:
-        if not os.fspath(self.path):
+        path = os.fspath(self.path)
+        if not isinstance(path, str):
+            raise TypeError("SQLite path must be a string")
+        if not path:
             raise ValueError("SQLite path is required")
         if (
             isinstance(self.max_journal_page_size, bool)
