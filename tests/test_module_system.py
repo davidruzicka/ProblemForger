@@ -225,6 +225,43 @@ class ProviderRegistryTests(unittest.TestCase):
                 profile="normal",
             )
 
+    def test_normal_composition_rejects_misdeclared_constructed_store(self):
+        class MisdeclaredProvider:
+            durability = StoreDurability.EPHEMERAL
+
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        provider = MisdeclaredProvider()
+        registry = ProviderRegistry(
+            (
+                ProviderRegistration(
+                    "event_store",
+                    "memory",
+                    MemoryEventStoreConfig,
+                    lambda config, profile: provider,
+                    StoreDurability.DURABLE,
+                ),
+                ProviderRegistration(
+                    "telemetry",
+                    "null",
+                    NullTelemetryConfig,
+                    lambda config, profile: NullTelemetrySink(),
+                ),
+            )
+        )
+        config = ModuleConfig(
+            EventStoreModuleConfig("memory", MemoryEventStoreConfig()),
+            TelemetryModuleConfig("null", NullTelemetryConfig()),
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires a durable EventStore"):
+            compose(config, registry=registry)
+        self.assertTrue(provider.closed)
+
     def test_registration_validation_duplicate_detection_and_metadata_export(self):
         registration = ProviderRegistration(
             "telemetry",
