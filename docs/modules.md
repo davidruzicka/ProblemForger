@@ -228,9 +228,10 @@ version 1 does not fix a provider-specific event vocabulary.
 Version 1 rejects unsupported schema versions and unknown envelope fields.
 Sensitive attribute values are recursively replaced with `<redacted>` when a
 key names an API/private key, password, credential, secret, authorization value,
-or token (including camel-case token fields). The standard usage counters
-`input_tokens` and `output_tokens` remain visible. Key-based redaction is not
-content inspection: callers must omit credentials, prompts/responses, raw tool
+or token (including case, acronym, and punctuation variants). Only the exact
+standard usage-counter keys `input_tokens` and `output_tokens` remain visible;
+other token-named keys are redacted. Key-based redaction is not content
+inspection: callers must omit credentials, prompts/responses, raw tool
 arguments/results, and other sensitive values under unrecognized keys.
 
 Telemetry may reference durable journal records through correlation/causation

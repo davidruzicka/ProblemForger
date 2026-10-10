@@ -60,9 +60,9 @@ def _redact_sensitive_attributes(value: object, *, key: str | None = None) -> ob
         normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", normalized)
         normalized = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").casefold()
         sensitive = any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
-        token_named = {"token", "tokens"}.intersection(normalized.split("_"))
+        token_named = "token" in normalized
         sensitive = sensitive or bool(
-            token_named and normalized not in _TOKEN_COUNT_ATTRIBUTE_KEYS
+            token_named and key not in _TOKEN_COUNT_ATTRIBUTE_KEYS
         )
         if sensitive:
             return "<redacted>"

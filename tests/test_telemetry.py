@@ -45,6 +45,9 @@ def observation(*, journal_position=None):
                 "accessTOKENValue": "secret-acronym-token",
                 "access.token": "secret-dotted-token",
                 "access token": "secret-spaced-token",
+                "ACCESSTOKEN": "secret-unsegmented-token",
+                "inputTokens": "secret-camel-counter",
+                "INPUT_TOKENS": "secret-upper-counter",
                 "nested": {
                     "accessToken": "secret-token",
                     "password": "secret-password",
@@ -78,6 +81,9 @@ class TelemetryObservationTests(unittest.TestCase):
         self.assertEqual("<redacted>", value["attributes"]["accessTOKENValue"])
         self.assertEqual("<redacted>", value["attributes"]["access.token"])
         self.assertEqual("<redacted>", value["attributes"]["access token"])
+        self.assertEqual("<redacted>", value["attributes"]["ACCESSTOKEN"])
+        self.assertEqual("<redacted>", value["attributes"]["inputTokens"])
+        self.assertEqual("<redacted>", value["attributes"]["INPUT_TOKENS"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["accessToken"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["password"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["token"])
