@@ -186,6 +186,41 @@ class ClaimCheckerTests(unittest.TestCase):
         self.assertEqual(("python", 1, 6), blocks[0][:3])
         self.assertIn("from pkg.missing import X", blocks[0][3])
 
+    def test_links_in_fence_opening_info_are_inert(self):
+        fence = chr(96) * 3
+        verdicts = self.verdicts(
+            f'{fence}markdown [example](docs/missing.md)\n'
+            'An illustrative fenced example.\n'
+            f'{fence}\n'
+        )
+        self.assertNotIn(("path", "docs/missing.md"), verdicts)
+        self.assertEqual("UNRESOLVED", verdicts[("snippet", "markdown block, lines 1-3")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
+
+    def test_list_item_continuations_are_scanned_but_nested_code_is_not(self):
+        verdicts = self.verdicts(
+            "- Requirement:\n"
+            "    Read [guide](docs/missing.md).\n"
+        )
+        self.assertEqual("BREAKS-ON-USE", verdicts[("path", "docs/missing.md")])
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(1, code)
+
+        verdicts = self.verdicts(
+            "- Requirement:\n"
+            "      [example](docs/hidden.md)\n"
+        )
+        self.assertNotIn(("path", "docs/hidden.md"), verdicts)
+        code, _, _ = run_main(
+            str(self.repo / "AGENTS.md"), "--repo", str(self.repo), "--fail-on-breaks"
+        )
+        self.assertEqual(0, code)
+
     def test_four_space_indented_fence_text_is_not_an_active_fence(self):
         text = "    ```python\n    from pkg.missing import X\n    ```\n"
         self.assertEqual([], list(check_agents_claims.fenced_blocks(text)))

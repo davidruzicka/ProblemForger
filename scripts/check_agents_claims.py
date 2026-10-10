@@ -151,12 +151,38 @@ def fence_container_indent(lines, line_index, indent):
 
 
 def in_fence(line_no, blocks):
-    return any(start < line_no < end for _, start, end, _ in blocks)
+    # The opening info string and closing delimiter are part of the fenced block too.
+    return any(start <= line_no <= end for _, start, end, _ in blocks)
 
 
-def is_indented_code(line):
-    """Whether a line starts a basic Markdown indented code block."""
-    return line.startswith(('    ', '\t'))
+def indented_code_lines(lines):
+    """Return lines in basic indented code blocks, respecting simple list containers."""
+    code_lines = set()
+    list_items = []
+    for line_no, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+
+        item = LIST_ITEM_RE.match(line)
+        if item:
+            marker_indent = len(item.group('indent').expandtabs(4))
+            while list_items and list_items[-1][0] >= marker_indent:
+                list_items.pop()
+            content_indent = (marker_indent + len(item.group('marker'))
+                              + len(item.group('gap')))
+            list_items.append((marker_indent, content_indent))
+            continue
+
+        leading = line[:len(line) - len(line.lstrip(' \t'))]
+        indent = len(leading.expandtabs(4))
+        while list_items and indent < list_items[-1][1]:
+            list_items.pop()
+        if list_items:
+            if indent >= list_items[-1][1] + 4:
+                code_lines.add(line_no)
+        elif indent >= 4:
+            code_lines.add(line_no)
+    return code_lines
 
 
 def inline_code_span_end(line, start, body_end):
@@ -193,6 +219,7 @@ def inline_code_span_end(line, start, body_end):
 def mask_markdown_comments(text):
     """Mask HTML comments while preserving Markdown code and source line positions."""
     source_lines = text.splitlines(keepends=True)
+    indented_code = indented_code_lines(source_lines)
     tick = chr(96)
     masked = text
     while True:
@@ -205,7 +232,7 @@ def mask_markdown_comments(text):
         lines = []
         in_comment = False
         for line_no, line in enumerate(source_lines, start=1):
-            if not in_comment and (line_no in fenced_lines or is_indented_code(line)):
+            if not in_comment and (line_no in fenced_lines or line_no in indented_code):
                 lines.append(line)
                 continue
             body_end = len(line.rstrip("\r\n"))
@@ -698,10 +725,12 @@ def collect(doc, repo):
             'verdict': verdict, 'evidence': evidence,
         })
 
-    for line_no, line in enumerate(text.splitlines(), start=1):
+    lines = text.splitlines()
+    indented_code = indented_code_lines(lines)
+    for line_no, line in enumerate(lines, start=1):
         # Explicit destinations take precedence when a backticked label names the same path.
         fenced = in_fence(line_no, blocks)
-        literal = fenced or is_indented_code(line)
+        literal = fenced or line_no in indented_code
         links = list(LINK_RE.finditer(line)) if not literal else []
         references = list(REFERENCE_RE.finditer(line)) if not literal else []
         matches = links + references
