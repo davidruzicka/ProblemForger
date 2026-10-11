@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,11 +27,14 @@ PROTECTED_NAMES = (
 
 def _worker_code() -> str:
     return r'''
-import json, socket, sys
+import importlib.util, json, socket, sys
 from pathlib import Path
-from spikes.transport.transport_spike import UnixClient, _request
 
-socket_path, admin_path, *protected = sys.argv[1:]
+module_path, socket_path, admin_path, *protected = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("transport_spike", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+UnixClient, _request = module.UnixClient, module._request
 client = UnixClient(socket_path, timeout=2)
 try:
     for method in ("admin.evidence_ingest", "admin.policy.update", "journal.append", "store.owner.acquire", "credentials.read"):
@@ -68,6 +72,9 @@ def main() -> int:
         socket_dir = root / "socket"
         private_dir = root / "private"
         worker_dir = root / "worker"
+        shared_server = root / "transport_spike.py"
+        shutil.copyfile(ROOT / "spikes/transport/transport_spike.py", shared_server)
+        os.chmod(shared_server, 0o644)
         socket_dir.mkdir()
         private_dir.mkdir()
         worker_dir.mkdir()
@@ -87,18 +94,17 @@ def main() -> int:
         socket_path = socket_dir / "worker.sock"
         command = [
             python_executable,
-            "-m",
-            "spikes.transport.transport_spike",
+            str(shared_server),
             "serve-unix",
             "--socket",
             str(socket_path),
             "--socket-mode",
             "660",
         ]
-        service_environment = {**os.environ, "PYTHONPATH": str(ROOT), "HOME": str(private_dir)}
+        service_environment = {**os.environ, "HOME": str(private_dir)}
         server = subprocess.Popen(
             command,
-            cwd=ROOT,
+            cwd=root,
             env=service_environment,
             text=True,
             stdout=subprocess.PIPE,
@@ -115,7 +121,7 @@ def main() -> int:
                 raise RuntimeError(f"worker service failed to start: {error}")
             os.chmod(socket_path, 0o660)
             worker = subprocess.run(
-                [python_executable, "-c", _worker_code(), str(socket_path), str(private_dir / "admin.sock"), *(str(path) for path in protected)],
+                [python_executable, "-c", _worker_code(), str(shared_server), str(socket_path), str(private_dir / "admin.sock"), *(str(path) for path in protected)],
                 cwd=worker_dir,
                 env={**service_environment, "HOME": str(worker_dir)},
                 text=True,
