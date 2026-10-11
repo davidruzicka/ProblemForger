@@ -1,6 +1,6 @@
 # ADR 0010: Use a Unix-domain socket for the local service transport
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-11
 
 ## Context
@@ -15,12 +15,12 @@ JSON Lines over a Unix-domain stream socket. Both implement the same versioned
 request/response envelope and worker method allowlist. A Python and TypeScript
 client exercise both candidates.
 
-## Proposed decision
+## Decision
 
-Use a Unix-domain stream socket carrying UTF-8 JSON Lines for the initial local
-worker service. Keep application request, response, and observation types
-independent of the transport. Use a versioned envelope and cap each encoded
-request and response frame at 4 MiB.
+For the initial Linux deployment, use a Unix-domain stream socket carrying
+UTF-8 JSON Lines for the local worker service. Keep application request,
+response, and observation types independent of the transport. Use a versioned
+envelope and cap each encoded request and response frame at 4 MiB.
 
 Deploy the service under its own unprivileged UID. Place the worker socket in a
 service-owned directory whose group permissions grant access to the worker
@@ -85,19 +85,13 @@ inaccessible to the worker.
   avoids adding a caller token to the prototype.
 - The wire format and application contract remain transport-neutral; a later
   HTTP adapter can reuse them if remote clients become necessary.
-- The socket prototype uses Python `asyncio` Unix-socket APIs and Node's Unix
-  IPC paths. macOS supports that path, but this spike has only been exercised in
+- macOS supports the socket APIs, but this spike has only been exercised in
   Linux CI. Windows has OS-level `AF_UNIX` support, while Python's asyncio
   Unix-socket server APIs are Unix-only and Node uses named pipes for Windows
-  IPC. Supporting Windows would need a platform adapter plus a Windows ACL
-  isolation design; the POSIX UID/group permission proof does not establish
-  that boundary.
+  IPC. Windows support is deferred; it would need a platform adapter plus a
+  Windows ACL isolation design. The POSIX UID/group permission proof does not
+  establish that boundary.
 - Remote deployment requires a separate transport and security decision.
 - The demonstration does not claim isolation from a worker with unrestricted
   host privileges. Production authentication/TLS, remote deployment, and the
   full graph API remain out of scope.
-
-## Decision required
-
-This ADR is proposed because HTTP and Unix-domain sockets each have valid use
-cases. Accept this choice only after human review of the evidence and tradeoffs.

@@ -96,8 +96,8 @@ One Ubuntu 24.04 GitHub Actions run (Python 3.12.3) measured:
 | 64-KiB JSON encode/decode (ms) | 0.249 | 0.257 |
 
 This run also passed 299 Python tests at 92% total coverage and the separate-UID
-permission demonstration. The result supports a proposed Unix-socket choice for
-the local worker boundary; see [ADR 0010](../../docs/adr/0010-local-service-transport.md).
+permission demonstration. The result supports the accepted Unix-socket choice
+for the initial Linux worker boundary; see [ADR 0010](../../docs/adr/0010-local-service-transport.md).
 The measured latency difference is small in absolute terms, and the result is
 from one shared CI runner. It is not a substitute for application-level profiling.
 
@@ -115,5 +115,4 @@ node --experimental-strip-types spikes/transport/client.ts unix /tmp/pf-worker.s
 
 The Python tests exercise both clients and streams. The CI test prints the
 measured table; refresh the decision record if a later run materially changes
-the evidence. HTTP and UDS JSONL remain technically viable; the proposed choice
-and its tradeoffs are recorded in the ADR.
+the evidence. ADR 0010 records the accepted Linux transport and its tradeoffs.
