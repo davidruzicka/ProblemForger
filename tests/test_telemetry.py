@@ -1,6 +1,6 @@
 """Provider-neutral observation envelope and sink contract tests."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import unittest
 
 from event_store_contract import decision, receipt, request
@@ -51,6 +51,8 @@ def observation(*, journal_position=None):
                 "nested": {
                     "accessToken": "secret-token",
                     "password": "secret-password",
+                    "credential": "secret-credential",
+                    "secret": "secret-value",
                     "authorization": "Bearer secret",
                     "token": "secret-token",
                     "items": [{"private_key": "secret-private"}, {"input_tokens": 99}],
@@ -86,6 +88,9 @@ class TelemetryObservationTests(unittest.TestCase):
         self.assertEqual("<redacted>", value["attributes"]["INPUT_TOKENS"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["accessToken"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["password"])
+        self.assertEqual("<redacted>", value["attributes"]["nested"]["credential"])
+        self.assertEqual("<redacted>", value["attributes"]["nested"]["secret"])
+        self.assertEqual("<redacted>", value["attributes"]["nested"]["authorization"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["token"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["items"][0]["private_key"])
         self.assertEqual(99, value["attributes"]["nested"]["items"][1]["input_tokens"])
@@ -164,6 +169,17 @@ class TelemetryObservationTests(unittest.TestCase):
     def test_direct_observation_requires_timezone_and_immutable_json_attributes(self):
         with self.assertRaises(ValueError):
             TelemetryObservation(run_id="run-1", event_type="test", observed_at=datetime(2026, 1, 1))
+        offset_observation = TelemetryObservation(
+            run_id="run-1",
+            event_type="test",
+            observed_at=datetime(
+                2026, 1, 1, 2, 30, tzinfo=timezone(timedelta(hours=2))
+            ),
+        )
+        self.assertEqual(
+            "2026-01-01T00:30:00Z",
+            offset_observation.to_value()["observed_at"],
+        )
         with self.assertRaises(TypeError):
             TelemetryObservation(
                 run_id="run-1",
