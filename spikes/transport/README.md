@@ -82,6 +82,25 @@ claim. Results are informational; tests assert correctness, not a performance
 threshold. The HTTP server and client both set `TCP_NODELAY`; the setting is
 included in the benchmark environment report.
 
+## CI observation
+
+One Ubuntu 24.04 GitHub Actions run (Python 3.12.3) measured:
+
+| Measurement | HTTP loopback | JSONL over Unix socket |
+| --- | ---: | ---: |
+| Startup (ms) | 73.304 | 73.462 |
+| 256-byte round trip p50 (ms) | 0.274 | 0.096 |
+| 256-byte round trip p95 (ms) | 0.332 | 0.126 |
+| 64-KiB round trip p50 (ms) | 0.809 | 0.740 |
+| 64-KiB round trip p95 (ms) | 0.836 | 0.802 |
+| 64-KiB JSON encode/decode (ms) | 0.249 | 0.257 |
+
+This run also passed 299 Python tests at 92% total coverage and the separate-UID
+permission demonstration. The result supports a proposed Unix-socket choice for
+the local worker boundary; see [ADR 0010](../../docs/adr/0010-local-service-transport.md).
+The measured latency difference is small in absolute terms, and the result is
+from one shared CI runner. It is not a substitute for application-level profiling.
+
 Manual TypeScript smoke checks against running servers:
 
 ```sh
@@ -95,6 +114,6 @@ node --experimental-strip-types spikes/transport/client.ts unix /tmp/pf-worker.s
 ```
 
 The Python tests exercise both clients and streams. The CI test prints the
-measured table; copy those exact results into the transport decision record
-before accepting an ADR. HTTP and UDS JSONL remain technically viable; the
-security and measured-latency evidence should drive the final choice.
+measured table; refresh the decision record if a later run materially changes
+the evidence. HTTP and UDS JSONL remain technically viable; the proposed choice
+and its tradeoffs are recorded in the ADR.
