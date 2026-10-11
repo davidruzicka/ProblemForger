@@ -38,6 +38,12 @@ def observation(*, journal_position=None):
                 "cost_usd": 0.003,
                 "latency_ms": 42,
                 "apiKey": "secret-key",
+                "tOKEN": "secret-irregular-token",
+                "ToKeN": "secret-mixed-token",
+                "aPIKey": "secret-irregular-api-key",
+                "pASSWORD": "secret-irregular-password",
+                "t.o.k.e.n": "secret-punctuated-token",
+                "a.p.i.k.e.y": "secret-punctuated-api-key",
                 "tokenValue": "secret-token",
                 "accessTokenValue": "secret-access-token",
                 "access_token_value": "secret-snake-token",
@@ -48,6 +54,7 @@ def observation(*, journal_position=None):
                 "ACCESSTOKEN": "secret-unsegmented-token",
                 "inputTokens": "secret-camel-counter",
                 "INPUT_TOKENS": "secret-upper-counter",
+                "input-tokens": "secret-punctuated-counter",
                 "nested": {
                     "accessToken": "secret-token",
                     "password": "secret-password",
@@ -76,6 +83,12 @@ class TelemetryObservationTests(unittest.TestCase):
         self.assertEqual(12, value["attributes"]["input_tokens"])
         self.assertEqual(7, value["attributes"]["output_tokens"])
         self.assertEqual("<redacted>", value["attributes"]["apiKey"])
+        self.assertEqual("<redacted>", value["attributes"]["tOKEN"])
+        self.assertEqual("<redacted>", value["attributes"]["ToKeN"])
+        self.assertEqual("<redacted>", value["attributes"]["aPIKey"])
+        self.assertEqual("<redacted>", value["attributes"]["pASSWORD"])
+        self.assertEqual("<redacted>", value["attributes"]["t.o.k.e.n"])
+        self.assertEqual("<redacted>", value["attributes"]["a.p.i.k.e.y"])
         self.assertEqual("<redacted>", value["attributes"]["tokenValue"])
         self.assertEqual("<redacted>", value["attributes"]["accessTokenValue"])
         self.assertEqual("<redacted>", value["attributes"]["access_token_value"])
@@ -86,6 +99,7 @@ class TelemetryObservationTests(unittest.TestCase):
         self.assertEqual("<redacted>", value["attributes"]["ACCESSTOKEN"])
         self.assertEqual("<redacted>", value["attributes"]["inputTokens"])
         self.assertEqual("<redacted>", value["attributes"]["INPUT_TOKENS"])
+        self.assertEqual("<redacted>", value["attributes"]["input-tokens"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["accessToken"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["password"])
         self.assertEqual("<redacted>", value["attributes"]["nested"]["credential"])

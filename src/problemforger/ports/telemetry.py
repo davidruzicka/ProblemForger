@@ -56,10 +56,11 @@ def _require_identifier(value: object, name: str) -> None:
 
 def _redact_sensitive_attributes(value: object, *, key: str | None = None) -> object:
     if key is not None:
-        normalized = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
-        normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", normalized)
-        normalized = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").casefold()
-        sensitive = any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
+        normalized = re.sub(r"[^a-z0-9]+", "", key.casefold())
+        sensitive = any(
+            marker.replace("_", "") in normalized
+            for marker in _SENSITIVE_KEY_MARKERS
+        )
         token_named = "token" in normalized
         sensitive = sensitive or bool(
             token_named and key not in _TOKEN_COUNT_ATTRIBUTE_KEYS
