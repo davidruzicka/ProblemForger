@@ -1,4 +1,5 @@
 import { createConnection } from 'node:net';
+import { StringDecoder } from 'node:string_decoder';
 
 type Request = {
   protocol_version: 1;
@@ -37,18 +38,8 @@ const request: Request = {
   params: methodText === 'echo' ? { payload: 'x'.repeat(size) } : { count: 3 },
 };
 
-function parseSse(text: string): { events: Response[]; response?: Response } {
-  const events: Response[] = [];
-  let response: Response | undefined;
-  for (const block of text.split('\n\n')) {
-    const eventName = block.split('\n').find((line) => line.startsWith('event: '))?.slice(7);
-    const data = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
-    if (!data) continue;
-    const message = JSON.parse(data) as Response;
-    if (eventName === 'observation') events.push(message);
-    if (eventName === 'complete') response = message;
-  }
-  return { events, response };
+function onObservation(message: Response): void {
+  console.log(JSON.stringify({ observation: message }));
 }
 
 async function callHttp(): Promise<{ events: Response[]; response: Response }> {
@@ -61,15 +52,44 @@ async function callHttp(): Promise<{ events: Response[]; response: Response }> {
   });
   if (!result.ok) throw new Error(`HTTP ${result.status}`);
   if (!streaming) return { events: [], response: await result.json() as Response };
-  const parsed = parseSse(await result.text());
-  if (!parsed.response) throw new Error('HTTP stream closed without completion');
-  return { events: parsed.events, response: parsed.response };
+  if (!result.body) throw new Error('HTTP stream has no body');
+  const reader = result.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const events: Response[] = [];
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      while (buffer.includes('\n\n')) {
+        const end = buffer.indexOf('\n\n');
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        if (Buffer.byteLength(block) > 4 * 1024 * 1024) throw new Error('response frame exceeds 4 MiB');
+        const data = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
+        if (!data) continue;
+        const message = JSON.parse(data) as Response;
+        if (block.startsWith('event: observation\n')) {
+          events.push(message);
+          onObservation(message);
+        } else if (block.startsWith('event: complete\n')) {
+          return { events, response: message };
+        }
+      }
+      if (Buffer.byteLength(buffer) > 4 * 1024 * 1024) throw new Error('response frame exceeds 4 MiB');
+      if (done) throw new Error('HTTP stream closed without completion');
+    }
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
+  }
 }
 
 function callUnix(): Promise<{ events: Response[]; response: Response }> {
   return new Promise((resolve, reject) => {
     const socket = createConnection(target);
     let buffer = '';
+    const decoder = new StringDecoder('utf8');
     const events: Response[] = [];
     const timer = setTimeout(() => socket.destroy(new Error('TIMEOUT')), 2000);
     socket.once('error', (error) => {
@@ -78,15 +98,20 @@ function callUnix(): Promise<{ events: Response[]; response: Response }> {
     });
     socket.once('connect', () => socket.write(`${JSON.stringify(request)}\n`));
     socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString('utf8');
+      buffer += decoder.write(chunk);
       while (buffer.includes('\n')) {
         const end = buffer.indexOf('\n');
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 1);
+        if (Buffer.byteLength(line) > 4 * 1024 * 1024) {
+          socket.destroy(new Error('response frame exceeds 4 MiB'));
+          return;
+        }
         if (!line) continue;
         const message = JSON.parse(line) as Response;
         if (message.kind === 'event') {
           events.push(message);
+          onObservation(message);
           continue;
         }
         if (message.kind !== 'response' || message.request_id !== request.request_id) {
@@ -96,7 +121,13 @@ function callUnix(): Promise<{ events: Response[]; response: Response }> {
         clearTimeout(timer);
         socket.end();
         resolve({ events, response: message });
+        return;
       }
+      if (Buffer.byteLength(buffer) > 4 * 1024 * 1024) socket.destroy(new Error('response frame exceeds 4 MiB'));
+    });
+    socket.once('end', () => {
+      clearTimeout(timer);
+      reject(new Error('Unix stream closed without completion'));
     });
   });
 }

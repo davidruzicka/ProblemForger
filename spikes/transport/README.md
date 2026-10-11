@@ -113,6 +113,14 @@ python3 -m spikes.transport.transport_spike serve-unix --socket /tmp/pf-worker.s
 node --experimental-strip-types spikes/transport/client.ts unix /tmp/pf-worker.sock 256 stream_observations
 ```
 
+Python clients accept `on_observation` callbacks; the TypeScript demo prints each
+observation immediately. Gated-server tests withhold completion until the caller
+consumes an observation, covering both languages and transports.
+
+The privilege proof exits 77 when Python cannot run under either dropped UID;
+the test reports that prerequisite as skipped. Noninteractive sudo access is
+checked before attempting the proof on non-root hosts.
+
 The Python tests exercise both clients and streams. The CI test prints the
 measured table; refresh the decision record if a later run materially changes
 the evidence. ADR 0010 records the accepted Linux transport and its tradeoffs.

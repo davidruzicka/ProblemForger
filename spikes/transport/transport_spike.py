@@ -18,7 +18,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 
@@ -266,7 +266,7 @@ class HttpClient:
             raise ValueError("timeout must be positive")
         self.connection = _NoDelayHTTPConnection(host, port, timeout=timeout)
 
-    def call(self, request: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def call(self, request: dict[str, Any], on_observation: Callable[[dict[str, Any]], None] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         body = _json_bytes(request)
         if len(body) > MAX_MESSAGE_BYTES:
             raise ValueError("request exceeds the 4 MiB limit")
@@ -274,25 +274,39 @@ class HttpClient:
         path = "/v1/observations" if streaming else "/v1/request"
         self.connection.request("POST", path, body, {"Content-Type": "application/json"})
         response = self.connection.getresponse()
-        raw = response.read(MAX_MESSAGE_BYTES + 1)
-        if len(raw) > MAX_MESSAGE_BYTES:
-            raise ValueError("response exceeds the 4 MiB limit")
         if not streaming:
+            raw = response.read(MAX_MESSAGE_BYTES + 1)
+            if len(raw) > MAX_MESSAGE_BYTES:
+                raise ValueError("response exceeds the 4 MiB limit")
             return [], json.loads(raw)
         events: list[dict[str, Any]] = []
         completion: dict[str, Any] | None = None
-        for block in raw.decode("utf-8").split("\n\n"):
+        while True:
+            block = bytearray()
+            while True:
+                line = response.readline(MAX_MESSAGE_BYTES + 1 - len(block))
+                if not line or line == b"\n":
+                    break
+                block.extend(line)
+                if len(block) > MAX_MESSAGE_BYTES:
+                    raise ValueError("response frame exceeds the 4 MiB limit")
+            if not block:
+                break
             event_name = ""
             data = ""
-            for line in block.splitlines():
+            for line in block.decode("utf-8").splitlines():
                 if line.startswith("event: "):
                     event_name = line[7:]
                 elif line.startswith("data: "):
                     data = line[6:]
             if event_name == "observation" and data:
-                events.append(json.loads(data))
+                event = json.loads(data)
+                events.append(event)
+                if on_observation is not None:
+                    on_observation(event)
             elif event_name == "complete" and data:
                 completion = json.loads(data)
+                break
         if completion is None:
             raise ConnectionError("HTTP observation stream closed without completion")
         return events, completion
@@ -314,7 +328,7 @@ class UnixClient:
             raise
         self.reader = self.socket.makefile("rb")
 
-    def call(self, request: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def call(self, request: dict[str, Any], on_observation: Callable[[dict[str, Any]], None] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         body = _json_bytes(request)
         if len(body) > MAX_MESSAGE_BYTES:
             raise ValueError("request exceeds the 4 MiB limit")
@@ -329,6 +343,8 @@ class UnixClient:
             response = json.loads(line)
             if response.get("kind") == "event":
                 events.append(response)
+                if on_observation is not None:
+                    on_observation(response)
                 continue
             if response.get("kind") != "response" or response.get("request_id") != request.get("request_id"):
                 raise ValueError("response id or kind does not match the request")

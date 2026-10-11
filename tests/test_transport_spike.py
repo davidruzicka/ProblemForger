@@ -8,10 +8,92 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from spikes.transport import transport_spike as spike
+from spikes.transport import security_demo
+
+
+class TransportRegressionTests(unittest.TestCase):
+    def test_clients_deliver_observation_while_completion_is_withheld(self) -> None:
+        request = spike._request("typescript-demo-1", "stream_observations", {"count": 1})
+        events, response = spike._dispatch(request)
+        for transport in ("http", "unix"):
+            for language in ("python", "typescript"):
+                with self.subTest(transport=transport, language=language), tempfile.TemporaryDirectory() as temporary:
+                    listener = socket.socket(socket.AF_INET if transport == "http" else socket.AF_UNIX)
+                    listener.settimeout(5)
+                    target = ("127.0.0.1", 0) if transport == "http" else str(Path(temporary) / "stream.sock")
+                    listener.bind(target)
+                    listener.listen()
+                    observed = threading.Event()
+                    failures = []
+
+                    def serve() -> None:
+                        try:
+                            with listener.accept()[0] as connection:
+                                connection.settimeout(5)
+                                reader = connection.makefile("rb")
+                                with reader:
+                                    if transport == "http":
+                                        reader.readline()
+                                        length = 0
+                                        while (line := reader.readline()) != b"\r\n":
+                                            if line.lower().startswith(b"content-length:"):
+                                                length = int(line.split(b":", 1)[1])
+                                        reader.read(length)
+                                        connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n")
+                                        event_frame = b"event: observation\ndata: " + spike._json_bytes(events[0]) + b"\n\n"
+                                        final_frame = b"event: complete\ndata: " + spike._json_bytes(response) + b"\n\n"
+                                    else:
+                                        reader.readline()
+                                        event_frame = spike._json_bytes(events[0]) + b"\n"
+                                        final_frame = spike._json_bytes(response) + b"\n"
+                                    connection.sendall(event_frame)
+                                    if not observed.wait(3):
+                                        raise AssertionError("client withheld observation until completion")
+                                    connection.sendall(final_frame)
+                        except Exception as error:
+                            failures.append(error)
+
+                    server = threading.Thread(target=serve)
+                    server.start()
+                    try:
+                        if language == "python":
+                            client = spike.HttpClient(*listener.getsockname()) if transport == "http" else spike.UnixClient(target)
+                            try:
+                                delivered, final = client.call(request, lambda event: observed.set())
+                                self.assertEqual(delivered, events)
+                                self.assertEqual(final, response)
+                            finally:
+                                client.close()
+                        else:
+                            address = f"http://127.0.0.1:{listener.getsockname()[1]}" if transport == "http" else target
+                            with subprocess.Popen(["node", "--experimental-strip-types", "spikes/transport/client.ts", transport, address, "0", "stream_observations"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+                                first = process.stdout.readline()
+                                self.assertEqual(json.loads(first)["observation"], events[0])
+                                observed.set()
+                                stdout, stderr = process.communicate(timeout=5)
+                                self.assertEqual(process.returncode, 0, stderr or stdout)
+                    finally:
+                        observed.set()
+                        server.join(timeout=6)
+                        listener.close()
+                    self.assertFalse(server.is_alive())
+                    self.assertEqual(failures, [])
+
+    def test_sudo_without_noninteractive_access_skips_proof(self) -> None:
+        with patch("os.geteuid", return_value=1000), patch("shutil.which", return_value="/usr/bin/sudo"), patch("subprocess.run", return_value=subprocess.CompletedProcess([], 1)) as run:
+            with self.assertRaises(unittest.SkipTest):
+                TransportSpikeTests("test_unix_permission_and_capability_demo").test_unix_permission_and_capability_demo()
+            self.assertEqual(run.call_args.args[0], ["/usr/bin/sudo", "-n", "true"])
+
+    def test_private_interpreter_reports_prerequisite_failure(self) -> None:
+        with patch("os.geteuid", return_value=0), patch.object(security_demo.subprocess, "run", side_effect=PermissionError("private interpreter")):
+            self.assertEqual(security_demo.main(), 77)
 
 
 class TransportSpikeTests(unittest.TestCase):
@@ -178,10 +260,12 @@ class TransportSpikeTests(unittest.TestCase):
             command = [sys.executable, str(demo)]
         else:
             sudo = shutil.which("sudo")
-            if sudo is None:
+            if sudo is None or subprocess.run([sudo, "-n", "true"], capture_output=True, timeout=5, check=False).returncode != 0:
                 self.skipTest("run the permission proof as root or with passwordless sudo")
             command = [sudo, "-n", sys.executable, str(demo)]
         result = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
+        if result.returncode == 77:
+            self.skipTest(result.stderr.strip())
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         print("TRANSPORT_SECURITY_DEMO", result.stdout.strip())
 

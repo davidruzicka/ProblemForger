@@ -66,6 +66,16 @@ print("worker capability and filesystem checks passed")
 def main() -> int:
     if not sys.platform.startswith("linux") or os.geteuid() != 0:
         raise SystemExit("run this demonstration as root on Linux so it can start separate service and worker UIDs")
+    python_executable = str(Path(sys.executable).resolve())
+    for uid in (SERVICE_UID, WORKER_UID):
+        try:
+            probe = subprocess.run([python_executable, "-I", "-c", "pass"], cwd="/", user=uid, group=WORKER_GID, extra_groups=[], capture_output=True, timeout=5, check=False)
+        except OSError as error:
+            print(f"permission proof prerequisite: Python unavailable to UID {uid}: {error}", file=sys.stderr)
+            return 77
+        if probe.returncode != 0:
+            print(f"permission proof prerequisite: Python failed for UID {uid}: {probe.stderr.decode().strip()}", file=sys.stderr)
+            return 77
     with tempfile.TemporaryDirectory(prefix="pf-trust-") as temporary:
         root = Path(temporary)
         os.chmod(root, 0o755)
@@ -90,7 +100,6 @@ def main() -> int:
             os.chown(path, SERVICE_UID, SERVICE_UID)
             os.chmod(path, 0o600)
         before = {path.name: path.read_bytes() for path in protected}
-        python_executable = str(Path(sys.executable).resolve())
         socket_path = socket_dir / "worker.sock"
         command = [
             python_executable,
