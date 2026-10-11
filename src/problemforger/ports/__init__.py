@@ -1,6 +1,6 @@
 """Provider-neutral capability interfaces."""
 
 from .event_store import EventStore
-from .telemetry import TelemetrySink
+from .telemetry import TelemetryObservation, TelemetrySink
 
-__all__ = ["EventStore", "TelemetrySink"]
+__all__ = ["EventStore", "TelemetryObservation", "TelemetrySink"]

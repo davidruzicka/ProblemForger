@@ -927,6 +927,7 @@ class SpecificationChecks(unittest.TestCase):
         expected = {
             "GRAPH.MODEL": "docs/problem-graph.md",
             "MODULES.EVENTSTORE-PORT": "docs/modules.md",
+            "MODULES.TELEMETRY-PORT": "docs/modules.md",
             "PROTOCOL.STORE-OWNER": "docs/protocol.md",
             "PROTOCOL.PARALLEL-CLAIMS": "docs/protocol.md",
             "PROTOCOL.PROPOSAL-RECOVERY": "docs/protocol.md",
