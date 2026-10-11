@@ -84,16 +84,16 @@ included in the benchmark environment report.
 
 ## CI observation
 
-One Ubuntu 24.04 GitHub Actions run (Python 3.12.3) measured:
+GitHub Actions run #212 on Ubuntu 24.04 (Python 3.12.3) measured:
 
 | Measurement | HTTP loopback | JSONL over Unix socket |
 | --- | ---: | ---: |
-| Startup (ms) | 73.304 | 73.462 |
-| 256-byte round trip p50 (ms) | 0.274 | 0.096 |
-| 256-byte round trip p95 (ms) | 0.332 | 0.126 |
-| 64-KiB round trip p50 (ms) | 0.809 | 0.740 |
-| 64-KiB round trip p95 (ms) | 0.836 | 0.802 |
-| 64-KiB JSON encode/decode (ms) | 0.249 | 0.257 |
+| Startup (ms) | 63.814 | 63.346 |
+| 256-byte round trip p50 (ms) | 0.208 | 0.076 |
+| 256-byte round trip p95 (ms) | 0.227 | 0.111 |
+| 64-KiB round trip p50 (ms) | 0.756 | 0.723 |
+| 64-KiB round trip p95 (ms) | 0.774 | 0.793 |
+| 64-KiB JSON encode/decode (ms) | 0.253 | 0.254 |
 
 This run also passed 299 Python tests at 92% total coverage and the separate-UID
 permission demonstration. The result supports the accepted Unix-socket choice

@@ -38,15 +38,16 @@ Observation events are JSONL frames followed by a final response frame.
 
 ## Evidence
 
-One Ubuntu 24.04 GitHub Actions run, with Python 3.12.3 and TCP_NODELAY enabled
-on both HTTP peers, measured warm echo round trips and JSON cost as follows:
+GitHub Actions run #212 on Ubuntu 24.04, with Python 3.12.3 and TCP_NODELAY
+enabled on both HTTP peers, measured warm echo round trips and JSON cost as
+follows:
 
 | Measurement | HTTP loopback | JSONL over Unix socket |
 | --- | ---: | ---: |
-| Startup (ms) | 73.304 | 73.462 |
-| 256-byte round trip p50 / p95 (ms) | 0.274 / 0.332 | 0.096 / 0.126 |
-| 64-KiB round trip p50 / p95 (ms) | 0.809 / 0.836 | 0.740 / 0.802 |
-| 64-KiB JSON encode/decode (ms) | 0.249 | 0.257 |
+| Startup (ms) | 63.814 | 63.346 |
+| 256-byte round trip p50 / p95 (ms) | 0.208 / 0.227 | 0.076 / 0.111 |
+| 64-KiB round trip p50 / p95 (ms) | 0.756 / 0.774 | 0.723 / 0.793 |
+| 64-KiB JSON encode/decode (ms) | 0.253 | 0.254 |
 
 The run passed all 299 Python tests with 92% total coverage, including Python
 and TypeScript client paths, streaming, invalid and oversized messages, timeout
@@ -57,8 +58,8 @@ admin/store methods, or read or change four protected sentinel files.
 
 The benchmark is a single shared CI runner observation, not an application
 latency or throughput claim. Startup and JSON costs are effectively the same;
-Unix sockets were faster in these round trips, especially for the small request.
-Both candidates remain technically viable.
+Unix sockets were faster in the small-request sample, while large-request p95
+was 0.019 ms slower. Both candidates remain technically viable.
 
 ## Alternatives considered
 
