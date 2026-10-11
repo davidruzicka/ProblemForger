@@ -85,9 +85,14 @@ inaccessible to the worker.
   avoids adding a caller token to the prototype.
 - The wire format and application contract remain transport-neutral; a later
   HTTP adapter can reuse them if remote clients become necessary.
-- Unix-domain sockets and the demonstrated UID/group model are POSIX-specific.
-  Windows support or remote deployment requires a separate deployment and
-  transport decision.
+- The socket prototype uses Python `asyncio` Unix-socket APIs and Node's Unix
+  IPC paths. macOS supports that path, but this spike has only been exercised in
+  Linux CI. Windows has OS-level `AF_UNIX` support, while Python's asyncio
+  Unix-socket server APIs are Unix-only and Node uses named pipes for Windows
+  IPC. Supporting Windows would need a platform adapter plus a Windows ACL
+  isolation design; the POSIX UID/group permission proof does not establish
+  that boundary.
+- Remote deployment requires a separate transport and security decision.
 - The demonstration does not claim isolation from a worker with unrestricted
   host privileges. Production authentication/TLS, remote deployment, and the
   full graph API remain out of scope.
