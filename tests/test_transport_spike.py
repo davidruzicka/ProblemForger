@@ -31,6 +31,10 @@ class TransportSpikeTests(unittest.TestCase):
         cls.unix_process.terminate()
         cls.http_process.wait(timeout=5)
         cls.unix_process.wait(timeout=5)
+        for process in (cls.http_process, cls.unix_process):
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
         cls.temporary.cleanup()
 
     def test_versioned_echo_works_over_both_transports(self) -> None:
@@ -119,16 +123,21 @@ class TransportSpikeTests(unittest.TestCase):
                 process, ready, _ = spike._start(transport, directory)
                 process.terminate()
                 process.wait(timeout=5)
-                if transport == "http":
-                    client = spike.HttpClient(ready["host"], ready["port"], timeout=0.2)
-                    try:
-                        with self.assertRaises(OSError):
-                            client.call(spike._request("after-exit", "echo", {"payload": "x"}))
-                    finally:
-                        client.close()
-                else:
-                    with self.assertRaises(FileNotFoundError):
-                        spike.UnixClient(ready["socket"], timeout=0.2)
+                try:
+                    if transport == "http":
+                        client = spike.HttpClient(ready["host"], ready["port"], timeout=0.2)
+                        try:
+                            with self.assertRaises(OSError):
+                                client.call(spike._request("after-exit", "echo", {"payload": "x"}))
+                        finally:
+                            client.close()
+                    else:
+                        with self.assertRaises(FileNotFoundError):
+                            spike.UnixClient(ready["socket"], timeout=0.2)
+                finally:
+                    for stream in (process.stdout, process.stderr):
+                        if stream is not None:
+                            stream.close()
 
     def test_percentile_and_benchmark_report(self) -> None:
         self.assertEqual(spike._percentile([4.0, 1.0, 3.0, 2.0], 0.95), 3.0)

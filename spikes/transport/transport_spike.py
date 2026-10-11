@@ -159,7 +159,7 @@ class _HttpHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(400, _error(request["request_id"], "INVALID_ROUTE", "method does not match endpoint"), close=True)
             return
         events, response = _dispatch(request)
-        if not events:
+        if not wants_stream:
             self._send_json(200, response)
             return
         self.send_response(200)
@@ -173,13 +173,21 @@ class _HttpHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"event: complete\ndata: " + _json_bytes(response) + b"\n\n")
 
 
+class _HttpServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def get_request(self) -> tuple[socket.socket, Any]:
+        connection, address = super().get_request()
+        connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        return connection, address
+
+
 def _body_error() -> dict[str, Any]:
     return _error(None, "PAYLOAD_TOO_LARGE", "message exceeds the 4 MiB limit")
 
 
 def _serve_http(port: int) -> None:
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _HttpHandler)
-    server.daemon_threads = True
+    server = _HttpServer(("127.0.0.1", port), _HttpHandler)
     serving = threading.Thread(target=server.serve_forever, daemon=True)
     serving.start()
     stopped = threading.Event()
@@ -245,11 +253,18 @@ async def _serve_unix(path_text: str, socket_mode: int) -> None:
     path.unlink(missing_ok=True)
 
 
+class _NoDelayHTTPConnection(http.client.HTTPConnection):
+    def connect(self) -> None:
+        super().connect()
+        if self.sock is not None:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+
 class HttpClient:
     def __init__(self, host: str, port: int, timeout: float = 2.0) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
-        self.connection = http.client.HTTPConnection(host, port, timeout=timeout)
+        self.connection = _NoDelayHTTPConnection(host, port, timeout=timeout)
 
     def call(self, request: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         body = _json_bytes(request)
@@ -292,7 +307,11 @@ class UnixClient:
             raise ValueError("timeout must be positive")
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.socket.settimeout(timeout)
-        self.socket.connect(path)
+        try:
+            self.socket.connect(path)
+        except OSError:
+            self.socket.close()
+            raise
         self.reader = self.socket.makefile("rb")
 
     def call(self, request: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -406,7 +425,7 @@ def benchmark(iterations: int, large_iterations: int) -> dict[str, Any]:
                 if process.stderr is not None:
                     process.stderr.close()
     return {
-        "environment": {"python": platform.python_version(), "platform": platform.platform()},
+        "environment": {"python": platform.python_version(), "platform": platform.platform(), "tcp_nodelay": True},
         "transports": reports,
     }
 

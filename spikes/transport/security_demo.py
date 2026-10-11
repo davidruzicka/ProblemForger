@@ -83,9 +83,10 @@ def main() -> int:
             os.chown(path, SERVICE_UID, SERVICE_UID)
             os.chmod(path, 0o600)
         before = {path.name: path.read_bytes() for path in protected}
+        python_executable = str(Path(sys.executable).resolve())
         socket_path = socket_dir / "worker.sock"
         command = [
-            sys.executable,
+            python_executable,
             "-m",
             "spikes.transport.transport_spike",
             "serve-unix",
@@ -114,7 +115,7 @@ def main() -> int:
                 raise RuntimeError(f"worker service failed to start: {error}")
             os.chmod(socket_path, 0o660)
             worker = subprocess.run(
-                [sys.executable, "-c", _worker_code(), str(socket_path), str(private_dir / "admin.sock"), *(str(path) for path in protected)],
+                [python_executable, "-c", _worker_code(), str(socket_path), str(private_dir / "admin.sock"), *(str(path) for path in protected)],
                 cwd=worker_dir,
                 env={**service_environment, "HOME": str(worker_dir)},
                 text=True,

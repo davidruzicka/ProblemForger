@@ -79,7 +79,8 @@ and 64-KiB payloads, and JSON encode/decode time for the 64-KiB payload. It
 prints Python and platform details. These are loopback/Unix-socket echo
 measurements on one runner, not application latency or a production capacity
 claim. Results are informational; tests assert correctness, not a performance
-threshold.
+threshold. The HTTP server and client both set `TCP_NODELAY`; the setting is
+included in the benchmark environment report.
 
 Manual TypeScript smoke checks against running servers:
 
