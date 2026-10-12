@@ -120,9 +120,20 @@ Use an explicit typed provider registry/factory first.
 
 ### Service-boundary overhead
 
-A separate process keeps Pi/HarnessX integration symmetric but introduces serialization, process lifecycle, and failure handling.
+A separate process keeps Claude Code/HarnessX integration symmetric but introduces serialization, process lifecycle, and failure handling.
 
 Mitigation: benchmark the local boundary, keep protocol payloads bounded, and choose the transport through a focused P1 spike.
+
+### Claude Code integration limits
+
+Claude Code updates, disabled hooks, subscription rate limits, and incomplete
+trajectory access can change integration behavior or invalidate comparisons.
+
+Mitigation: verify capabilities on a pinned release during P5, keep auth and
+credentials in unmodified Claude Code, and freeze/report the observable limits
+in the separate P11 experiment. Hooks provide integration behavior, not an
+independent evidence-trust or durable-store security boundary. Required hook
+absence must be visible; it cannot authorize a graph mutation outside the service.
 
 ## Specification maintenance
 

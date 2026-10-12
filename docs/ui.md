@@ -4,7 +4,7 @@
 
 UI is not part of the correctness path.
 
-The authoritative interface is the event/state model. Native HarnessX/Pi UI and a later web observer consume the same information.
+The authoritative interface is the event/state model. Native HarnessX/Claude Code UI and a later web observer consume the same information.
 
 ## Primary questions
 
@@ -49,4 +49,8 @@ Because the graph is event-sourced, the UI should eventually support:
 
 ## Harness UI
 
-Pi may expose a compact TUI status. HarnessX may expose a compact native view. Neither should become the only full observer implementation.
+The Claude Code plugin may expose compact status when supported by the pinned release. HarnessX may expose a compact native view. Neither should become the only full observer implementation.
+
+Initial Claude support targets the CLI on Linux. Local Claude Code sessions
+in Desktop require a later compatibility check; Desktop chat is a separate
+optional MCP client, not a substitute for the harness hooks/capability checks.

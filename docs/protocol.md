@@ -2,7 +2,7 @@
 
 ## Purpose
 
-HarnessX and Pi must use the same ProblemForger core/service. Their adapters translate native lifecycle events and agent tool calls into a stable, versioned protocol.
+HarnessX and Claude Code must use the same ProblemForger core/service. Their adapters translate native lifecycle events and agent tool calls into a stable, versioned protocol. [ADR 0011](adr/0011-claude-code-plugin-harness.md) selects the Claude Code plugin integration.
 
 The protocol is independent from provider implementations and from the transport used to carry it.
 
@@ -348,13 +348,36 @@ Configuration C uses the same tool/API/prompt surface but additionally applies d
 
 This design minimizes B→C confounding.
 
+## Claude Code adapter
+
+The plugin exposes the public command/query operations as MCP tools. A thin
+local MCP bridge translates them into the existing application messages over
+the worker Unix socket. Tools retain explicit `run_id`, proposal identity,
+expected graph version, bounded queries, and public response projections.
+The bridge has worker authority only; it cannot call trusted ingestion/admin
+operations. Uncertain mutation responses follow the existing proposal
+retry/replay contract, rather than bypassing governance.
+
+Minimal graph-use instructions explain the tools and governor outcomes.
+Session hooks may supply an explicitly registered run ID as context, but must
+not infer or override a tool's target run. `PreToolUse` may enforce supported
+actions; post-tool and session hooks may emit optional observations. These
+hooks neither commit graph mutations directly nor turn tool success into
+trusted evidence. Service policy and producer validation remain authoritative.
+
+P5 smoke tests demonstrate each claimed capability on the pinned Claude Code
+release, including behavior with missing/disabled hooks and an unavailable
+service. Document unsupported capabilities rather than assuming parity with
+HarnessX. Record trajectory-capture limits; optional telemetry is not a complete
+native trajectory archive.
+
 ## Service boundary
 
 ProblemForger runs as a separate local process/service during the PoC.
 
 Reasons:
 
-- Pi is TypeScript while the core is Python;
+- clients and bridges can use different languages without importing the Python core;
 - HarnessX is Python, but using the same process boundary keeps the two integrations structurally comparable;
 - the core can evolve independently from harness runtime dependencies;
 - observer/UI clients can later consume the same public boundary.

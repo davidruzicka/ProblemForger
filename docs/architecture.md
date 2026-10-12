@@ -20,7 +20,7 @@ flowchart TD
 
 The worker/harness may propose changes. It does not own authoritative graph state. Local enforcement follows [STORE-OWNER](protocol.md#spec-protocol-store-owner) and [EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust); a separate process alone is not a security boundary.
 
-ProblemForger runs as a separate local process/service for the PoC. HarnessX and Pi use thin clients/adapters against the same service contract. This preserves a symmetric integration boundary even though HarnessX and the core are both Python.
+ProblemForger runs as a separate local process/service for the PoC. HarnessX and Claude Code use thin clients/adapters against the same service contract. This preserves a symmetric integration boundary even though HarnessX and the core are both Python. [ADR 0011](adr/0011-claude-code-plugin-harness.md) selects a Claude Code plugin whose MCP bridge calls the existing worker service.
 
 ## Durable journal and observation plane
 
@@ -64,7 +64,7 @@ Contains:
 
 It must not depend on persistence providers (including SQLite, PostgreSQL,
 `dbm`, or `shelve`), service transports (including `http.server`,
-`socketserver`, or `wsgiref`), a specific model API, HarnessX, Pi, UI frameworks
+`socketserver`, or `wsgiref`), a specific model API, HarnessX, Claude Code, UI frameworks
 (including `tkinter` or `curses`), or provider-specific settings.
 
 The core also does **not** own model inference in the initial PoC. Model execution remains a harness responsibility. Later routing asks the harness to select a model; it does not move inference into the core.
@@ -96,7 +96,7 @@ Concrete providers and their configuration are specified in [Modules](modules.md
 Harness integrations are adapters to the service protocol, not provider modules
 inside the core.
 
-Harness-specific **raw trajectory archives** used for experiment reproducibility are also adapter/evaluation concerns, not core concerns. HarnessX and Pi may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
+Harness-specific **raw trajectory archives** used for experiment reproducibility are also adapter/evaluation concerns, not core concerns. HarnessX and Claude Code may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
 
 Provider-specific configuration belongs to the provider module.
 
@@ -163,11 +163,15 @@ Adapters must not contain graph/governance policy.
 
 Adapter capabilities are checked against pinned harness revisions during P4/P5 preparation; [Related work](related-work.md) provides background rather than a capability contract.
 
+For Claude Code, [Protocol](protocol.md#claude-code-adapter) owns the MCP/hook
+mapping. Claude Code owns subscription/API authentication and inference;
+ProblemForger handles neither Claude credentials nor session tokens.
+
 ## Runtime language
 
 - ProblemForger core/service: Python 3.12+.
 - HarnessX adapter: Python client/processor.
-- Pi adapter: TypeScript extension/client.
+- Claude Code adapter: plugin with a thin MCP bridge and required hooks; reuse existing Python/TypeScript clients as appropriate.
 
 For the initial Linux service, [ADR 0010](adr/0010-local-service-transport.md)
 selects JSON Lines over a Unix-domain socket. Changing transport must not

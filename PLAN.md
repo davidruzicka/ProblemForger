@@ -80,11 +80,12 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
   - observation telemetry;
   - no ProblemForger domain logic in the adapter.
 
-- [ ] **P5 — Pi adapter preparation**
+- [ ] **P5 — Claude Code plugin preparation**
   - adapter preparation and protocol smoke checks only; portability validation belongs to P11;
   - same ProblemForger service/protocol;
-  - thin TypeScript extension/client;
-  - minimal native TUI status only.
+  - thin MCP bridge, graph-use instructions, and required hooks under [ADR 0011](docs/adr/0011-claude-code-plugin-harness.md);
+  - user authentication stays in unmodified Claude Code; support subscription and API accounts;
+  - verify declared capabilities on a pinned release; native status is optional.
 
 P5 completion is not a dependency blocking P6; the initial evaluation uses HarnessX.
 
@@ -119,7 +120,7 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
   - graph visualization remains secondary to causal/provenance inspection.
 
 - [ ] **P11 — Full ablation and portability study**
-  - independently validate portability through the Pi adapter prepared in P5;
+  - independently validate portability through the Claude Code plugin prepared in P5;
   - baseline;
   - + problem graph;
   - + deterministic governance;
@@ -127,14 +128,14 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
   - + calibration/abstention;
   - + routing;
   - run the separate frozen harness-comparison experiment in `docs/evaluation.md` and never pool it with P6;
-  - repeat across HarnessX and Pi where technically comparable;
+  - repeat across HarnessX and Claude Code where technically comparable;
   - re-audit and freeze an independent external-validity benchmark.
 
 ## Definition of done for the PoC
 
 The PoC is complete when:
 
-- the same core/service runs through at least HarnessX and Pi adapters;
+- the same core/service runs through at least HarnessX and Claude Code adapters;
 - authoritative graph state is replayable from graph-changing durable journal records;
 - every governance proposal/outcome needed for audit/evaluation survives restart;
 - harness telemetry is not required for graph replay or governance audit;
