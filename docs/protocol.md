@@ -38,7 +38,89 @@ to a newly created run; reopening never resets a non-empty journal or graph
 version. No operation implicitly creates a run from an arbitrary ID; unknown
 runs return `NOT_FOUND`.
 
-The exact wire schema is finalized in P1.
+P1.7 defines the v1 application message shapes below. The service carries one
+complete UTF-8 JSON message per JSONL frame under ADR 0010; the application
+schema does not depend on that framing.
+
+### Version 1 request and response schema
+
+Every request is a closed JSON object with these fields:
+
+```json
+{
+  "protocol_schema_version": 1,
+  "request_id": "request-123",
+  "operation": "get_run",
+  "params": {"run_id": "run-123"}
+}
+```
+
+`request_id` and identifiers are non-empty UTF-8 strings. `operation` is one of
+`create_run`, `get_run`, `get_graph`, `propose_mutation`, `get_proposal`, or
+`get_audit_timeline`. Unknown envelope or operation fields are rejected in v1.
+Every operation, including `create_run`, carries an explicit `run_id`.
+
+| Operation | Required `params` | Optional `params` |
+| --- | --- | --- |
+| `create_run` | `run_id`, `run_metadata` | — |
+| `get_run` | `run_id` | — |
+| `get_graph` | `run_id`, `limit` | `selection`, `after_cursor` |
+| `propose_mutation` | `run_id`, `proposal_id`, `request_schema_version`, `expected_graph_version`, `operations`, `evidence` | — |
+| `get_proposal` | `run_id`, `proposal_id` | — |
+| `get_audit_timeline` | `run_id`, `limit` | `after_journal_position` |
+
+`run_metadata` is `{ "metadata_schema_version": 1, "data": <JSON object> }`.
+Mutation `operations` and `evidence` are ordered arrays of JSON objects and
+`request_schema_version` is 1. The service computes the canonical request hash
+after normalization; clients send the proposal ID and request, not a
+client-computed hash. The hash binds the expected graph version, operations,
+and immutable evidence identities described in
+[PROPOSAL-RECOVERY](#spec-protocol-proposal-recovery).
+
+All protocol integers are non-negative JSON safe integers (at most
+`2^53 - 1`), except `limit`, which is a positive safe integer from 1 through
+100. Graph results contain explicit `nodes` and `edges` arrays, a
+`graph_schema_version`, the current `graph_version`, and bounded continuation
+metadata. `selection` is a JSON object whose meaning is defined by the graph
+schema; this P1 contract does not finalize the P2 node/edge ontology.
+Audit-timeline records are returned in ascending `journal_position` order and
+use an exclusive cursor.
+
+Every successful response is a closed object with
+`protocol_schema_version`, the matching `request_id`, the matching `operation`,
+and an operation-specific `result`. Run results contain `run_id`,
+`run_metadata`, `metadata_hash`, `graph_version`, `last_journal_position`, and
+`created`. Graph results contain `run_id`, `graph_schema_version`,
+`graph_version`, `nodes`, `edges`, `next_cursor`, and `has_more`. Proposal
+results contain `run_id`, `proposal_id`, `status`, service-computed
+`request_hash`, nullable `reason_code`, nullable `resulting_graph_version`,
+and `journal_position`. Proposal `status` is `PENDING`, `ABANDONED`, `COMMIT`,
+`REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; `PENDING` is not an outcome,
+`ABANDONED` is operational recovery status, and `RETRY` ends the current
+proposal attempt. A semantic retry uses a new proposal ID.
+
+Audit results contain `run_id`, a bounded `records` array,
+`next_after_journal_position`, and `has_more`. Each public record contains only
+`journal_position`, `record_type`, `run_id`, and optional proposal/lifecycle,
+outcome/reason, and graph-version metadata. Unknown result fields are rejected;
+normalized operations, evidence content, raw outputs, credentials, and internal
+recovery inputs are never part of public proposal or audit results.
+
+Protocol errors use `{ "protocol_schema_version": 1, "request_id": "...",
+"error": { "code": "...", "message": "..." } }`. Error codes include
+`PROTOCOL_ERROR`, `UNSUPPORTED_PROTOCOL_VERSION`, `UNAUTHORIZED`, `NOT_FOUND`,
+`RUN_METADATA_CONFLICT`, `IDEMPOTENCY_CONFLICT`, `INVALID_LIMIT`, and
+`PAYLOAD_TOO_LARGE`. The process-startup `STORE_IN_USE` error has a null
+`request_id` and is not a proposal/governance result. Transport failures produce
+no protocol response. `CONFLICT` remains a durable governance status, distinct
+from `REJECT` and from transport failure.
+
+Each encoded request and response is capped at 4 MiB; `run_metadata` and the
+normalized mutation request are each capped at 1 MiB. Graph and audit pages are
+capped at 100 records and 4 MiB. A client must split or reference larger
+evidence rather than exceed these limits. Python and TypeScript v1 codecs share
+the same fixture set and reject malformed shapes, unsupported versions,
+non-finite values, and unsafe integers.
 
 ### Observation plane
 
