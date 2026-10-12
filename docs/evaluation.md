@@ -38,7 +38,7 @@ count can exceed twelve and must be reported separately from the planned slot
 count. These counts describe an operational pilot, not statistical precision.
 
 Out of scope for P6: holdout/calibration data, fallback-model chains,
-population-level uncertainty, automatic routing, Pi portability, and a full
+population-level uncertainty, automatic routing, cross-harness portability, and a full
 A/B/C ablation. Those require their own measured question and manifest.
 
 <a id="spec-evaluation-model"></a>
@@ -977,6 +977,23 @@ limitation, not hidden behind an image digest.
 The optional B diagnostic or a second harness must use a new manifest and must
 not be pooled with P6-AC. This keeps the pilot useful for engineering while
 leaving stronger causal and external-validity questions for later work.
+
+For the later Claude Code portability experiment selected by
+[ADR 0011](adr/0011-claude-code-plugin-harness.md), freeze the Claude Code
+release/runtime, plugin and MCP bridge identities, effective hook/permission
+configuration, graph-use instructions, authentication mode (subscription or
+API), account-plan limits when observable, and requested/observed model
+metadata and generation settings. Retain no credentials or session tokens.
+Use `UNKNOWN` for unavailable settings, provider metadata, usage limits, or
+attributable inference cost; subscription usage is not zero-cost API usage.
+Report rate-limit interruptions and capability/trajectory gaps. Matched
+comparisons use the same auth mode and observable settings within each
+harness's baseline/treatment pair. The Claude Code baseline disables the
+ProblemForger plugin and does not start its service; treatment enables the
+frozen plugin/service for the selected configuration. A cross-harness
+difference is not attributed solely to ProblemForger. Trusted experiment
+artifacts and configuration remain
+outside worker/candidate authority under the existing isolation contract.
 
 <a id="p6-resource-budget"></a>
 ### Resource budget record

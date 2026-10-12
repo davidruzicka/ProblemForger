@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-10-11
 
+[ADR 0011](0011-claude-code-plugin-harness.md) replaces the Pi target with
+Claude Code. Its MCP bridge uses this worker socket; the transport decision
+and the spike evidence below remain in force.
+
 ## Context
 
 ADR 0009 requires HarnessX and Pi to use the same local Python service boundary,

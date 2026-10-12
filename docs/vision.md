@@ -31,6 +31,6 @@ Different model runs may take different trajectories. They need not produce iden
 
 ## Positioning
 
-ProblemForger is a research prototype and reliability layer, not a replacement for Pi, HarnessX, or other agent harnesses.
+ProblemForger is a research prototype and reliability layer, not a replacement for Claude Code, HarnessX, or other agent harnesses.
 
 Avoid claims such as "solves nondeterminism", "first", "novel architecture", or "makes agents reliable" unless supported by evidence and a completed novelty review.

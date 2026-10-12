@@ -14,7 +14,7 @@ See ADR 0003 and ADR 0006.
 - keep provider-specific dependencies and configuration isolated;
 - support provider-independent contract tests;
 - record effective experiment configuration with secrets redacted;
-- avoid coupling the core to HarnessX, Pi, SQLite, PostgreSQL, or a model vendor.
+- avoid coupling the core to HarnessX, Claude Code, SQLite, PostgreSQL, or a model vendor.
 
 ## Non-goals
 
