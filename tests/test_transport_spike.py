@@ -18,6 +18,11 @@ from spikes.transport import security_demo
 
 
 class TransportRegressionTests(unittest.TestCase):
+    def test_worker_environment_excludes_parent_credentials(self) -> None:
+        with patch.dict(os.environ, {"PF_TEST_PRODUCER_SECRET": "secret", "PATH": "/private/bin"}):
+            environment = security_demo._worker_environment(Path("/worker"))
+        self.assertEqual(environment, {"HOME": "/worker", "PATH": os.defpath})
+
     def test_unix_service_refuses_an_occupied_socket_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             first, ready, _ = spike._start("unix", temporary)

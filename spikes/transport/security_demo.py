@@ -63,6 +63,10 @@ print("worker capability and filesystem checks passed")
 '''
 
 
+def _worker_environment(worker_dir: Path) -> dict[str, str]:
+    return {"HOME": str(worker_dir), "PATH": os.defpath}
+
+
 def main() -> int:
     if not sys.platform.startswith("linux") or os.geteuid() != 0:
         raise SystemExit("run this demonstration as root on Linux so it can start separate service and worker UIDs")
@@ -132,7 +136,7 @@ def main() -> int:
             worker = subprocess.run(
                 [python_executable, "-c", _worker_code(), str(shared_server), str(socket_path), str(private_dir / "admin.sock"), *(str(path) for path in protected)],
                 cwd=worker_dir,
-                env={**service_environment, "HOME": str(worker_dir)},
+                env=_worker_environment(worker_dir),
                 text=True,
                 capture_output=True,
                 timeout=10,
