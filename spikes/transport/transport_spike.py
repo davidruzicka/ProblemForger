@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import http.client
 import http.server
 import json
@@ -281,10 +282,118 @@ def _unlink_owned_socket(path: Path, identity: tuple[int, int]) -> None:
         path.unlink()
 
 
+class _CallDeadline:
+    def __init__(self, timeout: float) -> None:
+        self.expires_at = time.monotonic() + timeout
+
+    def remaining(self) -> float:
+        remaining = self.expires_at - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("client deadline exceeded")
+        return remaining
+
+
+class _DeadlineReader:
+    """Unbuffered socket reader that reapplies the remaining call budget per recv."""
+
+    def __init__(self, connection: socket.socket, deadline: _CallDeadline) -> None:
+        self.connection = connection
+        self.deadline = deadline
+        self.raw = connection.makefile("rb", buffering=0)
+        self.buffer = bytearray()
+        self.eof = False
+        self.closed = False
+
+    def _receive(self) -> None:
+        self.connection.settimeout(self.deadline.remaining())
+        try:
+            data = self.raw.read(64 * 1024)
+        except socket.timeout as error:
+            raise TimeoutError("client deadline exceeded") from error
+        if data:
+            self.buffer.extend(data)
+        else:
+            self.eof = True
+
+    def readline(self, limit: int = -1) -> bytes:
+        if self.closed or limit == 0:
+            return b""
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0 and (limit < 0 or newline + 1 <= limit):
+                size = newline + 1
+                break
+            if limit >= 0 and len(self.buffer) >= limit:
+                size = limit
+                break
+            if self.eof:
+                size = len(self.buffer)
+                break
+            self._receive()
+        result = bytes(self.buffer[:size])
+        del self.buffer[:size]
+        return result
+
+    def read(self, size: int = -1) -> bytes:
+        if self.closed:
+            return b""
+        if size < 0:
+            while not self.eof:
+                self._receive()
+            size = len(self.buffer)
+        else:
+            while len(self.buffer) < size and not self.eof:
+                self._receive()
+            size = min(size, len(self.buffer))
+        result = bytes(self.buffer[:size])
+        del self.buffer[:size]
+        return result
+
+    def readinto(self, target: bytearray | memoryview) -> int:
+        data = self.read(len(target))
+        target[:len(data)] = data
+        return len(data)
+
+    def flush(self) -> None:
+        return
+
+    def close(self) -> None:
+        if not self.closed:
+            self.raw.close()
+            self.closed = True
+
+
+class _DeadlineHTTPResponse(http.client.HTTPResponse):
+    def __init__(
+        self,
+        sock: socket.socket,
+        debuglevel: int = 0,
+        method: str | None = None,
+        deadline: _CallDeadline | None = None,
+    ) -> None:
+        if deadline is None:
+            raise ValueError("HTTP response requires a call deadline")
+        super().__init__(sock, debuglevel, method)
+        self.fp.close()
+        self.fp = _DeadlineReader(sock, deadline)
+
+
 class _NoDelayHTTPConnection(http.client.HTTPConnection):
+    def apply_deadline(self, deadline: _CallDeadline) -> None:
+        self.deadline = deadline
+        self.timeout = deadline.remaining()
+        if self.sock is not None:
+            self.sock.settimeout(self.timeout)
+        self.response_class = functools.partial(_DeadlineHTTPResponse, deadline=deadline)
+
     def connect(self) -> None:
+        deadline = getattr(self, "deadline", None)
+        if deadline is not None:
+            self.timeout = deadline.remaining()
         super().connect()
         if self.sock is not None:
+            if deadline is not None:
+                self.sock.settimeout(deadline.remaining())
             self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
 
@@ -292,52 +401,63 @@ class HttpClient:
     def __init__(self, host: str, port: int, timeout: float = 2.0) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
+        self.timeout = timeout
         self.connection = _NoDelayHTTPConnection(host, port, timeout=timeout)
 
     def call(self, request: dict[str, Any], on_observation: Callable[[dict[str, Any]], None] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        deadline = _CallDeadline(self.timeout)
         body = _json_bytes(request)
         if len(body) > MAX_MESSAGE_BYTES:
             raise ValueError("request exceeds the 4 MiB limit")
         streaming = request.get("method") == "stream_observations"
         path = "/v1/observations" if streaming else "/v1/request"
-        self.connection.request("POST", path, body, {"Content-Type": "application/json"})
-        response = self.connection.getresponse()
-        if not streaming:
-            raw = response.read(MAX_MESSAGE_BYTES + 1)
-            if len(raw) > MAX_MESSAGE_BYTES:
-                raise ValueError("response exceeds the 4 MiB limit")
-            return [], json.loads(raw)
-        events: list[dict[str, Any]] = []
-        completion: dict[str, Any] | None = None
-        while True:
-            block = bytearray()
+        response = None
+        try:
+            self.connection.apply_deadline(deadline)
+            self.connection.request("POST", path, body, {"Content-Type": "application/json"})
+            response = self.connection.getresponse()
+            if not streaming:
+                raw = response.read(MAX_MESSAGE_BYTES + 1)
+                if len(raw) > MAX_MESSAGE_BYTES:
+                    raise ValueError("response exceeds the 4 MiB limit")
+                return [], json.loads(raw)
+            events: list[dict[str, Any]] = []
+            completion: dict[str, Any] | None = None
             while True:
-                line = response.readline(MAX_MESSAGE_BYTES + 1 - len(block))
-                if not line or line == b"\n":
+                block = bytearray()
+                while True:
+                    line = response.readline(MAX_MESSAGE_BYTES + 1 - len(block))
+                    if not line or line == b"\n":
+                        break
+                    block.extend(line)
+                    if len(block) > MAX_MESSAGE_BYTES:
+                        raise ValueError("response frame exceeds the 4 MiB limit")
+                if not block:
                     break
-                block.extend(line)
-                if len(block) > MAX_MESSAGE_BYTES:
-                    raise ValueError("response frame exceeds the 4 MiB limit")
-            if not block:
-                break
-            event_name = ""
-            data = ""
-            for line in block.decode("utf-8").splitlines():
-                if line.startswith("event: "):
-                    event_name = line[7:]
-                elif line.startswith("data: "):
-                    data = line[6:]
-            if event_name == "observation" and data:
-                event = json.loads(data)
-                events.append(event)
-                if on_observation is not None:
-                    on_observation(event)
-            elif event_name == "complete" and data:
-                completion = json.loads(data)
-                break
-        if completion is None:
-            raise ConnectionError("HTTP observation stream closed without completion")
-        return events, completion
+                event_name = ""
+                data = ""
+                for line in block.decode("utf-8").splitlines():
+                    if line.startswith("event: "):
+                        event_name = line[7:]
+                    elif line.startswith("data: "):
+                        data = line[6:]
+                if event_name == "observation" and data:
+                    event = json.loads(data)
+                    events.append(event)
+                    if on_observation is not None:
+                        on_observation(event)
+                elif event_name == "complete" and data:
+                    completion = json.loads(data)
+                    break
+            if completion is None:
+                raise ConnectionError("HTTP observation stream closed without completion")
+            return events, completion
+        except TimeoutError:
+            self.connection.close()
+            raise
+        finally:
+            if response is not None:
+                response.close()
 
     def close(self) -> None:
         self.connection.close()
@@ -347,6 +467,7 @@ class UnixClient:
     def __init__(self, path: str, timeout: float = 2.0) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
+        self.timeout = timeout
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.socket.settimeout(timeout)
         try:
@@ -354,32 +475,39 @@ class UnixClient:
         except OSError:
             self.socket.close()
             raise
-        self.reader = self.socket.makefile("rb")
 
     def call(self, request: dict[str, Any], on_observation: Callable[[dict[str, Any]], None] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        deadline = _CallDeadline(self.timeout)
         body = _json_bytes(request)
         if len(body) > MAX_MESSAGE_BYTES:
             raise ValueError("request exceeds the 4 MiB limit")
-        self.socket.sendall(body + b"\n")
-        events: list[dict[str, Any]] = []
-        while True:
-            line = self.reader.readline(MAX_MESSAGE_BYTES + 2)
-            if not line:
-                raise ConnectionError("Unix service closed before a response")
-            if len(line) > MAX_MESSAGE_BYTES + 1 or not line.endswith(b"\n"):
-                raise ValueError("response frame exceeds the 4 MiB limit or lacks a newline")
-            response = json.loads(line)
-            if response.get("kind") == "event":
-                events.append(response)
-                if on_observation is not None:
-                    on_observation(response)
-                continue
-            if response.get("kind") != "response" or response.get("request_id") != request.get("request_id"):
-                raise ValueError("response id or kind does not match the request")
-            return events, response
+        reader = _DeadlineReader(self.socket, deadline)
+        try:
+            self.socket.settimeout(deadline.remaining())
+            self.socket.sendall(body + b"\n")
+            events: list[dict[str, Any]] = []
+            while True:
+                line = reader.readline(MAX_MESSAGE_BYTES + 2)
+                if not line:
+                    raise ConnectionError("Unix service closed before a response")
+                if len(line) > MAX_MESSAGE_BYTES + 1 or not line.endswith(b"\n"):
+                    raise ValueError("response frame exceeds the 4 MiB limit or lacks a newline")
+                response = json.loads(line)
+                if response.get("kind") == "event":
+                    events.append(response)
+                    if on_observation is not None:
+                        on_observation(response)
+                    continue
+                if response.get("kind") != "response" or response.get("request_id") != request.get("request_id"):
+                    raise ValueError("response id or kind does not match the request")
+                return events, response
+        except TimeoutError:
+            self.close()
+            raise
+        finally:
+            reader.close()
 
     def close(self) -> None:
-        self.reader.close()
         self.socket.close()
 
 

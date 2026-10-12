@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -18,6 +19,111 @@ from spikes.transport import security_demo
 
 
 class TransportRegressionTests(unittest.TestCase):
+    def test_python_clients_enforce_absolute_deadlines_under_drip_feed(self) -> None:
+        timeout = 0.15
+        for transport in ("http", "unix"):
+            for method in ("echo", "stream_observations"):
+                with self.subTest(transport=transport, method=method), tempfile.TemporaryDirectory() as temporary:
+                    request_id = "deadline"
+                    request = spike._request(
+                        request_id,
+                        method,
+                        {"payload": "x"} if method == "echo" else {"count": 1},
+                    )
+                    events, response = spike._dispatch(request)
+                    listener = socket.socket(
+                        socket.AF_INET if transport == "http" else socket.AF_UNIX,
+                        socket.SOCK_STREAM,
+                    )
+                    listener.settimeout(3)
+                    target = ("127.0.0.1", 0) if transport == "http" else str(Path(temporary) / "deadline.sock")
+                    listener.bind(target)
+                    listener.listen()
+                    observation_seen = threading.Event()
+                    response_started = threading.Event()
+                    stop = threading.Event()
+                    failures = []
+
+                    def serve() -> None:
+                        try:
+                            with listener.accept()[0] as connection:
+                                connection.settimeout(3)
+                                reader = connection.makefile("rb")
+                                with reader:
+                                    if transport == "http":
+                                        reader.readline()
+                                        length = 0
+                                        while (line := reader.readline()) != b"\r\n":
+                                            if line.lower().startswith(b"content-length:"):
+                                                length = int(line.split(b":", 1)[1])
+                                        reader.read(length)
+                                    else:
+                                        reader.readline()
+
+                                    if method == "stream_observations":
+                                        if transport == "http":
+                                            prefix = b"event: observation\ndata: " + spike._json_bytes(events[0]) + b"\n\n"
+                                            suffix = b"event: complete\ndata: " + spike._json_bytes(response) + b"\n\n"
+                                            headers = (
+                                                "HTTP/1.1 200 OK\r\n"
+                                                "Connection: close\r\n"
+                                                f"Content-Length: {len(prefix) + len(suffix)}\r\n\r\n"
+                                            )
+                                            connection.sendall(headers.encode())
+                                        else:
+                                            prefix = spike._json_bytes(events[0]) + b"\n"
+                                            suffix = spike._json_bytes(response) + b"\n"
+                                        connection.sendall(prefix)
+                                        response_started.set()
+                                        if not observation_seen.wait(1):
+                                            raise AssertionError("client did not deliver the first observation")
+                                    else:
+                                        suffix = spike._json_bytes(response)
+                                        if transport == "http":
+                                            headers = (
+                                                "HTTP/1.1 200 OK\r\n"
+                                                "Connection: close\r\n"
+                                                f"Content-Length: {len(suffix)}\r\n\r\n"
+                                            )
+                                            connection.sendall(headers.encode())
+                                        else:
+                                            suffix += b"\n"
+
+                                    for byte in suffix:
+                                        if stop.wait(0.01):
+                                            return
+                                        connection.sendall(bytes((byte,)))
+                                        response_started.set()
+                        except Exception as error:
+                            if not stop.is_set():
+                                failures.append(error)
+
+                    server = threading.Thread(target=serve)
+                    server.start()
+                    client = (
+                        spike.HttpClient(*listener.getsockname(), timeout=timeout)
+                        if transport == "http"
+                        else spike.UnixClient(target, timeout=timeout)
+                    )
+                    started = time.monotonic()
+                    try:
+                        callback = (lambda _event: observation_seen.set()) if method == "stream_observations" else None
+                        with self.assertRaises(TimeoutError):
+                            client.call(request, callback)
+                        elapsed = time.monotonic() - started
+                        self.assertGreaterEqual(elapsed, timeout * 0.75)
+                        self.assertLess(elapsed, timeout * 4)
+                        self.assertTrue(response_started.is_set())
+                        if method == "stream_observations":
+                            self.assertTrue(observation_seen.is_set())
+                    finally:
+                        stop.set()
+                        client.close()
+                        listener.close()
+                        server.join(timeout=3)
+                    self.assertFalse(server.is_alive())
+                    self.assertEqual(failures, [])
+
     def test_worker_environment_excludes_parent_credentials(self) -> None:
         with patch.dict(os.environ, {"PF_TEST_PRODUCER_SECRET": "secret", "PATH": "/private/bin"}):
             environment = security_demo._worker_environment(Path("/worker"))
