@@ -11,6 +11,7 @@ import os
 import platform
 import signal
 import socket
+import stat
 import statistics
 import subprocess
 import sys
@@ -237,20 +238,47 @@ async def _handle_unix(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
 async def _serve_unix(path_text: str, socket_mode: int) -> None:
     path = Path(path_text)
     path.parent.mkdir(parents=True, exist_ok=True)
-    server = await asyncio.start_unix_server(_handle_unix, path=path, limit=MAX_MESSAGE_BYTES + 2)
-    os.chmod(path, socket_mode)
-    stopped = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for stop_signal in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(stop_signal, stopped.set)
-        except NotImplementedError:
-            signal.signal(stop_signal, lambda _signum, _frame: loop.call_soon_threadsafe(stopped.set))
-    print(json.dumps({"ready": "unix", "socket": str(path)}), flush=True)
-    await stopped.wait()
-    server.close()
-    await server.wait_closed()
-    path.unlink(missing_ok=True)
+    if os.path.lexists(path):
+        raise FileExistsError(f"Unix socket path already exists: {path}")
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server: asyncio.AbstractServer | None = None
+    identity: tuple[int, int] | None = None
+    try:
+        listener.bind(path)
+        socket_stat = path.lstat()
+        identity = socket_stat.st_dev, socket_stat.st_ino
+        listener.listen(socket.SOMAXCONN)
+        listener.setblocking(False)
+        server = await asyncio.start_unix_server(
+            _handle_unix, sock=listener, limit=MAX_MESSAGE_BYTES + 2
+        )
+        os.chmod(path, socket_mode)
+        stopped = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for stop_signal in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(stop_signal, stopped.set)
+            except NotImplementedError:
+                signal.signal(stop_signal, lambda _signum, _frame: loop.call_soon_threadsafe(stopped.set))
+        print(json.dumps({"ready": "unix", "socket": str(path)}), flush=True)
+        await stopped.wait()
+    finally:
+        if server is not None:
+            server.close()
+            await server.wait_closed()
+        else:
+            listener.close()
+        if identity is not None:
+            _unlink_owned_socket(path, identity)
+
+
+def _unlink_owned_socket(path: Path, identity: tuple[int, int]) -> None:
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISSOCK(current.st_mode) and (current.st_dev, current.st_ino) == identity:
+        path.unlink()
 
 
 class _NoDelayHTTPConnection(http.client.HTTPConnection):

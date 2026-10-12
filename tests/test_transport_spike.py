@@ -18,6 +18,47 @@ from spikes.transport import security_demo
 
 
 class TransportRegressionTests(unittest.TestCase):
+    def test_unix_service_refuses_an_occupied_socket_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            first, ready, _ = spike._start("unix", temporary)
+            second = None
+            try:
+                second = subprocess.Popen(
+                    [sys.executable, "-m", "spikes.transport.transport_spike", "serve-unix", "--socket", ready["socket"]],
+                    cwd=Path(__file__).resolve().parents[1],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                assert second.stdout is not None
+                self.assertEqual(second.stdout.readline(), "")
+                _, error = second.communicate(timeout=5)
+                self.assertIn("Unix socket path already exists", error)
+                client = spike.UnixClient(ready["socket"])
+                try:
+                    _, response = client.call(spike._request("still-live", "echo", {"payload": "ok"}))
+                    self.assertEqual(response["result"]["payload"], "ok")
+                finally:
+                    client.close()
+            finally:
+                if second is not None and second.poll() is None:
+                    second.terminate()
+                    second.wait(timeout=5)
+                first.terminate()
+                first.wait(timeout=5)
+
+    def test_unix_shutdown_preserves_a_replacement_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            process, ready, _ = spike._start("unix", temporary)
+            path = Path(ready["socket"])
+            try:
+                path.unlink()
+                path.write_text("replacement owner", encoding="utf-8")
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+            self.assertEqual(path.read_text(encoding="utf-8"), "replacement owner")
+
     def test_clients_deliver_observation_while_completion_is_withheld(self) -> None:
         request = spike._request("typescript-demo-1", "stream_observations", {"count": 1})
         events, response = spike._dispatch(request)
