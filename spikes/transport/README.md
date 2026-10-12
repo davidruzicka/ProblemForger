@@ -1,8 +1,9 @@
 # P1.6 local transport spike
 
-Status: bounded comparison in progress. This spike does not add a production
-service or graph API. It compares two standard-library paths around the same
-versioned echo/observation contract:
+Status: comparison complete; [ADR 0010](../../docs/adr/0010-local-service-transport.md)
+accepts JSON Lines over a Unix-domain socket for the initial Linux deployment.
+This spike does not add a production service or graph API. It compares two
+standard-library paths around the same versioned echo/observation contract:
 
 1. HTTP/1.1 with JSON over `127.0.0.1`; observations use Server-Sent Events.
 2. JSON Lines over a Unix-domain stream socket; observations use event frames.
