@@ -244,7 +244,7 @@ async def _serve_unix(path_text: str, socket_mode: int) -> None:
     server: asyncio.AbstractServer | None = None
     identity: tuple[int, int] | None = None
     try:
-        listener.bind(path)
+        listener.bind(os.fspath(path))
         socket_stat = path.lstat()
         identity = socket_stat.st_dev, socket_stat.st_ino
         listener.listen(socket.SOMAXCONN)
