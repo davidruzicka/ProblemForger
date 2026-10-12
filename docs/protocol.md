@@ -365,7 +365,9 @@ The local service boundary must also enforce [EVIDENCE-TRUST](verification.md#sp
 
 ## Transport
 
-P1 must choose and document the smallest local transport satisfying:
+The initial Linux service uses the transport selected in
+[ADR 0010](adr/0010-local-service-transport.md): JSON Lines over a Unix-domain
+stream socket. Its request/response and observation contract satisfies:
 
 - practical Python and TypeScript clients;
 - request/response commands and queries;
@@ -374,8 +376,6 @@ P1 must choose and document the smallest local transport satisfying:
 - bounded payloads;
 - clear process lifecycle and error semantics;
 - future observation streaming without changing domain contracts.
-
-Candidates may include local HTTP or a framed/line-oriented RPC protocol. The choice must be captured in an ADR after a small implementation spike.
 
 Transport is replaceable; protocol semantics are not transport-specific.
 

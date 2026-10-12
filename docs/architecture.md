@@ -169,7 +169,9 @@ Adapter capabilities are checked against pinned harness revisions during P4/P5 p
 - HarnessX adapter: Python client/processor.
 - Pi adapter: TypeScript extension/client.
 
-The transport is intentionally left for a bounded P1 decision. Changing transport must not change the domain/application protocol.
+For the initial Linux service, [ADR 0010](adr/0010-local-service-transport.md)
+selects JSON Lines over a Unix-domain socket. Changing transport must not
+change the domain/application protocol.
 
 See [ADR 0009](adr/0009-separate-local-process-service-boundary.md).
 
