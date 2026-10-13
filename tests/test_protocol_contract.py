@@ -221,6 +221,33 @@ class ProtocolContractTests(unittest.TestCase):
             with self.subTest(label=label), self.assertRaises(ProtocolValidationError):
                 encode_request(message)
 
+    def test_invalid_audit_limits_use_invalid_limit_error_code(self) -> None:
+        template = deepcopy(
+            next(
+                item["message"]
+                for item in self.fixtures["requests"]
+                if item["label"] == "get_audit_timeline"
+            )
+        )
+        invalid_requests = []
+        for limit in (0, 101, 1.5, True):
+            request = deepcopy(template)
+            request["params"]["limit"] = limit
+            invalid_requests.append((f"limit={limit!r}", request))
+        missing_limit = deepcopy(template)
+        del missing_limit["params"]["limit"]
+        invalid_requests.append(("missing limit", missing_limit))
+
+        for label, request in invalid_requests:
+            with self.subTest(label=label):
+                with self.assertRaises(ProtocolValidationError) as error:
+                    encode_request(request)
+                self.assertEqual(error.exception.code, "INVALID_LIMIT")
+
+        with self.assertRaises(ProtocolValidationError) as decode_error:
+            decode_request(json.dumps(invalid_requests[0][1]))
+        self.assertEqual(decode_error.exception.code, "INVALID_LIMIT")
+
     def test_response_validators_reject_invalid_statuses_pages_and_error_envelopes(self) -> None:
         responses = {fixture["label"]: fixture["message"] for fixture in self.fixtures["responses"]}
         graph = responses["get_graph"]

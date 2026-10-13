@@ -328,13 +328,21 @@ def _identifier(value: Any, name: str) -> None:
         raise ProtocolValidationError(f"{name} must be valid UTF-8") from error
 
 
-def _integer(value: Any, name: str, *, minimum: int = 0, maximum: int = MAX_SAFE_JSON_INTEGER) -> None:
+def _integer(
+    value: Any,
+    name: str,
+    *,
+    minimum: int = 0,
+    maximum: int = MAX_SAFE_JSON_INTEGER,
+    error_code: str = "PROTOCOL_ERROR",
+) -> None:
     integer_value = value
     if type(value) is float and value.is_integer():
         integer_value = int(value)
     if type(integer_value) is not int or not minimum <= integer_value <= maximum:
         raise ProtocolValidationError(
-            f"{name} must be a JSON safe integer from {minimum} through {maximum}"
+            f"{name} must be a JSON safe integer from {minimum} through {maximum}",
+            code=error_code,
         )
 
 
@@ -503,6 +511,17 @@ def validate_request(value: Any) -> ProtocolRequest:
         _identifier(params["run_id"], "run_id")
         _identifier(params["proposal_id"], "proposal_id")
     else:
+        if "limit" not in params:
+            raise ProtocolValidationError(
+                "get_audit_timeline requires limit", code="INVALID_LIMIT"
+            )
+        _integer(
+            params["limit"],
+            "limit",
+            minimum=1,
+            maximum=MAX_PROTOCOL_PAGE_SIZE,
+            error_code="INVALID_LIMIT",
+        )
         _fields(
             params,
             {"run_id", "limit"},
@@ -510,7 +529,6 @@ def validate_request(value: Any) -> ProtocolRequest:
             "get_audit_timeline params",
         )
         _identifier(params["run_id"], "run_id")
-        _integer(params["limit"], "limit", minimum=1, maximum=MAX_PROTOCOL_PAGE_SIZE)
         if "after_journal_position" in params:
             _integer(params["after_journal_position"], "after_journal_position")
 
