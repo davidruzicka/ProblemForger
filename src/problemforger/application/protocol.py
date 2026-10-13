@@ -555,7 +555,9 @@ def _validate_audit_record(value: Any, expected_run_id: str, previous_position: 
     return position
 
 
-def _validate_audit_result(value: Any) -> None:
+def _validate_audit_result(
+    value: Any, after_journal_position: int | None = None
+) -> None:
     result = _object(value, "audit timeline result")
     _fields(
         result,
@@ -566,14 +568,36 @@ def _validate_audit_result(value: Any) -> None:
     records = result["records"]
     if type(records) is not list or len(records) > MAX_PROTOCOL_PAGE_SIZE:
         raise ProtocolValidationError("audit records must fit the 100-record page limit", code="INVALID_LIMIT")
-    previous_position = 0
+    if after_journal_position is not None:
+        _integer(after_journal_position, "after_journal_position")
+    previous_position = after_journal_position or 0
     for record in records:
         previous_position = _validate_audit_record(record, result["run_id"], previous_position)
-    _integer(result["next_after_journal_position"], "next_after_journal_position")
+    next_position = result["next_after_journal_position"]
+    _integer(next_position, "next_after_journal_position")
     _boolean(result["has_more"], "has_more")
+    if records:
+        if next_position != previous_position:
+            raise ProtocolValidationError(
+                "next_after_journal_position must equal the last returned record"
+            )
+    else:
+        if after_journal_position is None:
+            raise ProtocolValidationError(
+                "validating an empty audit page requires its request cursor"
+            )
+        expected_position = after_journal_position
+        if next_position != expected_position:
+            raise ProtocolValidationError(
+                "empty audit page must preserve its supplied cursor"
+            )
+        if result["has_more"]:
+            raise ProtocolValidationError("empty audit page cannot have more records")
 
 
-def validate_response(value: Any) -> ProtocolResponse:
+def validate_response(
+    value: Any, request: ProtocolRequest | None = None
+) -> ProtocolResponse:
     """Validate success/error envelopes and the public operation result shape."""
     response = _object(value, "response")
     _json_tree(response, "response")
@@ -616,7 +640,20 @@ def validate_response(value: Any) -> ProtocolResponse:
     elif operation in {"propose_mutation", "get_proposal"}:
         _validate_proposal_result(result)
     else:
-        _validate_audit_result(result)
+        after_journal_position = None
+        if request is not None:
+            validate_request(request)
+            if request["operation"] != "get_audit_timeline":
+                raise ProtocolValidationError(
+                    "audit response context must be a get_audit_timeline request"
+                )
+            if request["request_id"] != response["request_id"]:
+                raise ProtocolValidationError("response request_id does not match request")
+            params = request["params"]
+            if _object(result, "audit timeline result").get("run_id") != params["run_id"]:
+                raise ProtocolValidationError("audit response run_id does not match request")
+            after_journal_position = params.get("after_journal_position", 0)
+        _validate_audit_result(result, after_journal_position)
     return cast(ProtocolResponse, response)
 
 
@@ -679,11 +716,18 @@ def decode_request(payload: str | bytes) -> ProtocolRequest:
     return cast(ProtocolRequest, _decode(payload, validate_request))
 
 
-def encode_response(value: ProtocolResponse) -> bytes:
+def encode_response(
+    value: ProtocolResponse, request: ProtocolRequest | None = None
+) -> bytes:
     """Validate and serialize one v1 response as compact UTF-8 JSON."""
-    return _encode(value, validate_response)
+    return _encode(value, lambda response: validate_response(response, request))
 
 
-def decode_response(payload: str | bytes) -> ProtocolResponse:
-    """Decode one v1 response, rejecting unknown fields and unsafe projections."""
-    return cast(ProtocolResponse, _decode(payload, validate_response))
+def decode_response(
+    payload: str | bytes, request: ProtocolRequest | None = None
+) -> ProtocolResponse:
+    """Decode a response; pass its request to validate an empty audit page cursor."""
+    return cast(
+        ProtocolResponse,
+        _decode(payload, lambda response: validate_response(response, request)),
+    )

@@ -3,6 +3,8 @@
 export const CURRENT_PROTOCOL_SCHEMA_VERSION = 1 as const;
 export const CURRENT_REQUEST_SCHEMA_VERSION = 1 as const;
 export const MAX_PROTOCOL_MESSAGE_BYTES = 4 * 1024 * 1024;
+export const MAX_RUN_METADATA_BYTES = 1024 * 1024;
+export const MAX_NORMALIZED_REQUEST_BYTES = 1024 * 1024;
 export const MAX_PROTOCOL_PAGE_SIZE = 100;
 export const MAX_SAFE_JSON_INTEGER = Number.MAX_SAFE_INTEGER;
 
@@ -202,10 +204,19 @@ function metadata(value: unknown): asserts value is RunMetadata {
   integer(runMetadata.metadata_schema_version, 'metadata_schema_version', 1);
   if (runMetadata.metadata_schema_version !== 1) return fail('unsupported metadata_schema_version');
   jsonObject(runMetadata.data, 'run_metadata.data');
+  if (byteLength(canonicalJson(runMetadata as JsonValue)) > MAX_RUN_METADATA_BYTES) return fail('run_metadata exceeds 1 MiB');
 }
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
+}
+
+function canonicalJson(value: JsonValue): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) as string;
 }
 
 function hash(value: unknown, prefix: string, name: string): asserts value is string {
@@ -248,6 +259,13 @@ export function validateRequest(value: unknown): asserts value is ProtocolReques
     integer(params.expected_graph_version, 'expected_graph_version');
     if (!Array.isArray(params.operations) || !Array.isArray(params.evidence)) return fail('operations and evidence must be arrays');
     for (const item of [...params.operations, ...params.evidence]) jsonObject(item, 'operation/evidence item');
+    const normalizedRequest = {
+      request_schema_version: params.request_schema_version,
+      expected_graph_version: params.expected_graph_version,
+      operations: params.operations,
+      evidence: params.evidence,
+    };
+    if (byteLength(canonicalJson(normalizedRequest as JsonValue)) > MAX_NORMALIZED_REQUEST_BYTES) return fail('normalized mutation request exceeds 1 MiB');
   } else if (operation === 'get_proposal') {
     exactFields(params, ['run_id', 'proposal_id'], [], 'get_proposal params');
     identifier(params.run_id, 'run_id');
@@ -305,12 +323,12 @@ function validateProposalResult(value: unknown): void {
   }
 }
 
-function validateAuditResult(value: unknown): void {
+function validateAuditResult(value: unknown, afterJournalPosition?: number): void {
   const result = object(value, 'audit timeline result');
   exactFields(result, ['run_id', 'records', 'next_after_journal_position', 'has_more'], [], 'audit timeline result');
   identifier(result.run_id, 'run_id');
   if (!Array.isArray(result.records) || result.records.length > MAX_PROTOCOL_PAGE_SIZE) return fail('audit records must fit the 100-record page limit');
-  let previousPosition = 0;
+  let previousPosition = afterJournalPosition ?? 0;
   for (const value of result.records) {
     const record = object(value, 'audit record');
     exactFields(record, ['journal_position', 'record_type', 'run_id'], ['proposal_id', 'lifecycle_state', 'outcome', 'reason_code', 'graph_version'], 'audit record');
@@ -328,9 +346,17 @@ function validateAuditResult(value: unknown): void {
   }
   integer(result.next_after_journal_position, 'next_after_journal_position');
   if (typeof result.has_more !== 'boolean') return fail('has_more must be a boolean');
+  if (result.records.length > 0) {
+    if (result.next_after_journal_position !== previousPosition) return fail('next_after_journal_position must equal the last returned record');
+  } else {
+    if (afterJournalPosition === undefined) return fail('validating an empty audit page requires its request cursor');
+    const expectedPosition = afterJournalPosition;
+    if (result.next_after_journal_position !== expectedPosition) return fail('empty audit page must preserve its supplied cursor');
+    if (result.has_more) return fail('empty audit page cannot have more records');
+  }
 }
 
-export function validateResponse(value: unknown): asserts value is ProtocolResponse {
+export function validateResponse(value: unknown, request?: ProtocolRequest): asserts value is ProtocolResponse {
   const response = object(value, 'response');
   integer(response.protocol_schema_version, 'protocol_schema_version', 1);
   if (response.protocol_schema_version !== CURRENT_PROTOCOL_SCHEMA_VERSION) return fail('unsupported protocol_schema_version');
@@ -352,12 +378,104 @@ export function validateResponse(value: unknown): asserts value is ProtocolRespo
   if (operation === 'create_run' || operation === 'get_run') validateRunResult(response.result, `${operation} result`);
   else if (operation === 'get_graph') validateGraphResult(response.result);
   else if (operation === 'propose_mutation' || operation === 'get_proposal') validateProposalResult(response.result);
-  else validateAuditResult(response.result);
+  else {
+    let afterJournalPosition: number | undefined;
+    if (request !== undefined) {
+      validateRequest(request);
+      if (request.operation !== 'get_audit_timeline') return fail('audit response context must be a get_audit_timeline request');
+      if (request.request_id !== response.request_id) return fail('response request_id does not match request');
+      const result = object(response.result, 'audit timeline result');
+      if (result.run_id !== request.params.run_id) return fail('audit response run_id does not match request');
+      afterJournalPosition = request.params.after_journal_position ?? 0;
+    }
+    validateAuditResult(response.result, afterJournalPosition);
+  }
+}
+
+function rejectDuplicateKeys(text: string): void {
+  let offset = 0;
+  const whitespace = () => {
+    while (offset < text.length && /\s/.test(text[offset]!)) offset += 1;
+  };
+  const parseString = (): string => {
+    const start = offset;
+    offset += 1;
+    while (offset < text.length) {
+      const character = text[offset]!;
+      offset += 1;
+      if (character === '"') return JSON.parse(text.slice(start, offset)) as string;
+      if (character === '\\') offset += 1;
+    }
+    return fail('message is not valid JSON');
+  };
+  const parseValue = (): void => {
+    whitespace();
+    const character = text[offset];
+    if (character === '"') {
+      parseString();
+      return;
+    }
+    if (character === '{') {
+      offset += 1;
+      whitespace();
+      const keys = new Set<string>();
+      if (text[offset] === '}') {
+        offset += 1;
+        return;
+      }
+      while (offset < text.length) {
+        whitespace();
+        if (text[offset] !== '"') return fail('message is not valid JSON');
+        const key = parseString();
+        if (keys.has(key)) return fail(`duplicate JSON key: ${key}`);
+        keys.add(key);
+        whitespace();
+        if (text[offset] !== ':') return fail('message is not valid JSON');
+        offset += 1;
+        parseValue();
+        whitespace();
+        if (text[offset] === '}') {
+          offset += 1;
+          return;
+        }
+        if (text[offset] !== ',') return fail('message is not valid JSON');
+        offset += 1;
+      }
+      return fail('message is not valid JSON');
+    }
+    if (character === '[') {
+      offset += 1;
+      whitespace();
+      if (text[offset] === ']') {
+        offset += 1;
+        return;
+      }
+      while (offset < text.length) {
+        parseValue();
+        whitespace();
+        if (text[offset] === ']') {
+          offset += 1;
+          return;
+        }
+        if (text[offset] !== ',') return fail('message is not valid JSON');
+        offset += 1;
+      }
+      return fail('message is not valid JSON');
+    }
+    const start = offset;
+    while (offset < text.length && !/[\s,\]}]/.test(text[offset]!)) offset += 1;
+    if (offset === start) return fail('message is not valid JSON');
+  };
+
+  parseValue();
+  whitespace();
+  if (offset !== text.length) return fail('message is not valid JSON');
 }
 
 function decodeJson(serialized: string | Uint8Array): unknown {
   const text = typeof serialized === 'string' ? serialized : new TextDecoder('utf-8', { fatal: true }).decode(serialized);
   if (byteLength(text) > MAX_PROTOCOL_MESSAGE_BYTES) return fail('message exceeds 4 MiB');
+  rejectDuplicateKeys(text);
   return JSON.parse(text) as unknown;
 }
 
@@ -379,13 +497,13 @@ export function decodeRequest(serialized: string | Uint8Array): ProtocolRequest 
   return value;
 }
 
-export function encodeResponse(value: ProtocolResponse): string {
-  validateResponse(value);
+export function encodeResponse(value: ProtocolResponse, request?: ProtocolRequest): string {
+  validateResponse(value, request);
   return encodeJson(value);
 }
 
-export function decodeResponse(serialized: string | Uint8Array): ProtocolResponse {
+export function decodeResponse(serialized: string | Uint8Array, request?: ProtocolRequest): ProtocolResponse {
   const value = decodeJson(serialized);
-  validateResponse(value);
+  validateResponse(value, request);
   return value;
 }

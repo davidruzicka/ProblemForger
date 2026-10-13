@@ -84,7 +84,11 @@ All protocol integers are non-negative JSON safe integers (at most
 metadata. `selection` is a JSON object whose meaning is defined by the graph
 schema; this P1 contract does not finalize the P2 node/edge ontology.
 Audit-timeline records are returned in ascending `journal_position` order and
-use an exclusive cursor.
+use an exclusive cursor. For a non-empty page,
+`next_after_journal_position` equals the final record's position; for an empty
+page, it remains equal to the supplied cursor, defaulting to 0, and
+`has_more` is false. Clients validate empty pages against the originating
+request so a non-zero cursor is preserved.
 
 Every successful response is a closed object with
 `protocol_schema_version`, the matching `request_id`, the matching `operation`,
@@ -119,8 +123,8 @@ Each encoded request and response is capped at 4 MiB; `run_metadata` and the
 normalized mutation request are each capped at 1 MiB. Graph and audit pages are
 capped at 100 records and 4 MiB. A client must split or reference larger
 evidence rather than exceed these limits. Python and TypeScript v1 codecs share
-the same fixture set and reject malformed shapes, unsupported versions,
-non-finite values, and unsafe integers.
+the same fixture set and reject malformed shapes, duplicate JSON object keys,
+unsupported versions, non-finite values, and unsafe integers.
 
 ### Observation plane
 

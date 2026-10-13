@@ -152,6 +152,68 @@ class ProtocolContractTests(unittest.TestCase):
             with self.subTest(label=label), self.assertRaises(ProtocolValidationError):
                 encode_response(message)
 
+    def test_audit_cursor_matches_last_record_and_supplied_request_cursor(self) -> None:
+        response = next(
+            item["message"] for item in self.fixtures["responses"] if item["label"] == "get_audit_timeline"
+        )
+        invalid = deepcopy(response)
+        invalid["result"]["next_after_journal_position"] = 99
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(invalid)
+
+        empty = deepcopy(response)
+        empty["result"]["records"] = []
+        empty["result"]["next_after_journal_position"] = 5
+        empty["result"]["has_more"] = False
+        request = deepcopy(next(
+            item["message"] for item in self.fixtures["requests"] if item["label"] == "get_audit_timeline"
+        ))
+        request["params"]["after_journal_position"] = 4
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(empty, request)
+
+        empty["result"]["next_after_journal_position"] = 4
+        self.assertEqual(decode_response(encode_response(empty, request), request), empty)
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(empty)
+
+        from_start = deepcopy(empty)
+        from_start["result"]["next_after_journal_position"] = 0
+        initial_request = deepcopy(request)
+        initial_request["params"].pop("after_journal_position")
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(from_start)
+        self.assertEqual(
+            decode_response(encode_response(from_start, initial_request), initial_request),
+            from_start,
+        )
+
+        empty["result"]["has_more"] = True
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(empty, request)
+        empty["result"]["has_more"] = False
+
+        wrong_request = deepcopy(request)
+        wrong_request["request_id"] = "another-request"
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(empty, wrong_request)
+        wrong_request = deepcopy(request)
+        wrong_request["params"]["run_id"] = "another-run"
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(empty, wrong_request)
+        wrong_request = deepcopy(request)
+        wrong_request["operation"] = "get_run"
+        wrong_request["params"] = {"run_id": "run-1"}
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(empty, wrong_request)
+
+        before_cursor = deepcopy(response)
+        before_cursor["result"]["records"][0]["journal_position"] = 1
+        before_cursor["result"]["next_after_journal_position"] = 2
+        request["params"]["after_journal_position"] = 1
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(before_cursor, request)
+
     def test_codecs_reject_invalid_utf8_json_types_and_oversized_output(self) -> None:
         for payload in (b"\xff", b"not json", 42):
             with self.subTest(payload=payload), self.assertRaises(ProtocolValidationError):
