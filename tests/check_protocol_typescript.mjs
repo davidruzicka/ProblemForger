@@ -8,7 +8,8 @@ for (const { label, message } of fixture.requests) {
   assert.deepEqual(decodeRequest(encodeRequest(message)), message, `${label} request`);
 }
 for (const { label, message } of fixture.responses) {
-  assert.deepEqual(decodeResponse(encodeResponse(message)), message, `${label} response`);
+  const request = fixture.requests.find(({ message: candidate }) => candidate.request_id === message.request_id)?.message;
+  assert.deepEqual(decodeResponse(encodeResponse(message, request), request), message, `${label} response`);
 }
 for (const { label, message } of fixture.invalid_requests) {
   assert.throws(() => encodeRequest(message), undefined, `${label} request`);
@@ -24,6 +25,39 @@ assert.throws(() => encodeRequest(createRun), undefined, 'run metadata over 1 Mi
 const mutation = structuredClone(fixture.requests.find(({ label }) => label === 'propose_mutation').message);
 mutation.params.operations = [{ payload: 'x'.repeat(1024 * 1024) }];
 assert.throws(() => encodeRequest(mutation), undefined, 'normalized mutation over 1 MiB');
+
+const unsafeIntegerRequest = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
+unsafeIntegerRequest.params.run_metadata.data.nested = { value: 9007199254740993 };
+assert.throws(() => encodeRequest(unsafeIntegerRequest), undefined, 'unsafe integer in nested metadata');
+const safeIntegerRequest = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
+safeIntegerRequest.params.run_metadata.data.value = Number.MAX_SAFE_INTEGER;
+assert.doesNotThrow(() => encodeRequest(safeIntegerRequest), 'maximum safe JSON integer');
+assert.throws(
+  () => decodeRequest('{"protocol_schema_version":1,"request_id":"req","operation":"create_run","params":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"value":9007199254740993}}}}'),
+  undefined,
+  'unsafe integer in decoded metadata',
+);
+
+const invalidUnicodeRequest = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
+invalidUnicodeRequest.params.run_metadata.data.value = '\ud800';
+assert.throws(() => encodeRequest(invalidUnicodeRequest), undefined, 'lone surrogate in nested metadata value');
+delete invalidUnicodeRequest.params.run_metadata.data.value;
+invalidUnicodeRequest.params.run_metadata.data['key\ud800'] = 'value';
+assert.throws(() => encodeRequest(invalidUnicodeRequest), undefined, 'lone surrogate in nested metadata key');
+assert.throws(
+  () => decodeRequest('{"protocol_schema_version":1,"request_id":"req","operation":"create_run","params":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"value":"\\ud800"}}}}'),
+  undefined,
+  'lone surrogate in decoded metadata',
+);
+assert.throws(
+  () => decodeRequest('{"protocol_schema_version":1,"request_id":"req","operation":"create_run","params":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"\\ud800":"value"}}}}'),
+  undefined,
+  'lone surrogate in decoded metadata key',
+);
+
+const graphResponse = structuredClone(fixture.responses.find(({ label }) => label === 'get_graph').message);
+graphResponse.result.nodes = [{ value: 9007199254740993 }];
+assert.throws(() => encodeResponse(graphResponse), undefined, 'unsafe integer in response JSON');
 
 for (const duplicate of [
   '{"protocol_schema_version":1,"request_id":"first","request_id":"second","operation":"get_run","params":{"run_id":"run-1"}}',
@@ -88,6 +122,37 @@ assert.throws(
   }),
   undefined,
   'audit response context must be an audit request',
+);
+
+const createRunResponse = structuredClone(fixture.responses.find(({ label }) => label === 'create_run').message);
+const createRunRequest = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
+assert.throws(
+  () => encodeResponse(createRunResponse, { ...createRunRequest, request_id: 'another-request' }),
+  undefined,
+  'create_run response must match request id',
+);
+assert.throws(
+  () => encodeResponse(createRunResponse, { ...createRunRequest, operation: 'get_run', params: { run_id: 'run-1' } }),
+  undefined,
+  'create_run response must match request operation',
+);
+assert.throws(
+  () => encodeResponse(createRunResponse, { ...createRunRequest, params: { ...createRunRequest.params, run_id: 'another-run' } }),
+  undefined,
+  'create_run response must match request run id',
+);
+const proposalResponse = structuredClone(fixture.responses.find(({ label }) => label === 'propose_mutation_pending').message);
+const proposalRequest = structuredClone(fixture.requests.find(({ label }) => label === 'propose_mutation').message);
+assert.throws(
+  () => encodeResponse(proposalResponse, { ...proposalRequest, params: { ...proposalRequest.params, proposal_id: 'another-proposal' } }),
+  undefined,
+  'proposal response must match request proposal id',
+);
+const errorResponse = structuredClone(fixture.responses.find(({ label }) => label === 'unknown_run').message);
+assert.throws(
+  () => encodeResponse(errorResponse, { ...createRunRequest, request_id: 'another-request' }),
+  undefined,
+  'error response must match request id',
 );
 
 const beforeCursorResponse = structuredClone(auditResponse);

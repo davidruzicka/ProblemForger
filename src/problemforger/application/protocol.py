@@ -291,6 +291,20 @@ def _json_tree(value: Any, name: str) -> None:
     except (TypeError, ValueError, RecursionError) as error:
         raise ProtocolValidationError(f"{name} must contain only JSON values") from error
 
+    def check_numbers(item: Any) -> None:
+        if type(item) is int and abs(item) > MAX_SAFE_JSON_INTEGER:
+            raise ProtocolValidationError("JSON integers must be safe integers")
+        if type(item) is float and item.is_integer() and abs(item) > MAX_SAFE_JSON_INTEGER:
+            raise ProtocolValidationError("JSON integers must be safe integers")
+        if type(item) is list:
+            for child in item:
+                check_numbers(child)
+        elif type(item) is dict:
+            for child in item.values():
+                check_numbers(child)
+
+    check_numbers(value)
+
 
 def _fields(
     value: dict[str, Any], required: set[str], optional: set[str] = frozenset(), name: str = "object"
@@ -601,6 +615,22 @@ def validate_response(
     """Validate success/error envelopes and the public operation result shape."""
     response = _object(value, "response")
     _json_tree(response, "response")
+    after_journal_position = None
+    if request is not None:
+        validate_request(request)
+        if response.get("request_id") != request["request_id"]:
+            raise ProtocolValidationError("response request_id does not match request")
+        if "error" not in response:
+            if response.get("operation") != request["operation"]:
+                raise ProtocolValidationError("response operation does not match request")
+            params = _object(request["params"], "request params")
+            result = _object(response.get("result"), "response result")
+            if result.get("run_id") != params["run_id"]:
+                raise ProtocolValidationError("response run_id does not match request")
+            if "proposal_id" in params and result.get("proposal_id") != params["proposal_id"]:
+                raise ProtocolValidationError("response proposal_id does not match request")
+            if request["operation"] == "get_audit_timeline":
+                after_journal_position = params.get("after_journal_position", 0)
     _integer(response.get("protocol_schema_version"), "protocol_schema_version", minimum=1)
     if response["protocol_schema_version"] != CURRENT_PROTOCOL_SCHEMA_VERSION:
         raise ProtocolValidationError(
@@ -640,19 +670,6 @@ def validate_response(
     elif operation in {"propose_mutation", "get_proposal"}:
         _validate_proposal_result(result)
     else:
-        after_journal_position = None
-        if request is not None:
-            validate_request(request)
-            if request["operation"] != "get_audit_timeline":
-                raise ProtocolValidationError(
-                    "audit response context must be a get_audit_timeline request"
-                )
-            if request["request_id"] != response["request_id"]:
-                raise ProtocolValidationError("response request_id does not match request")
-            params = request["params"]
-            if _object(result, "audit timeline result").get("run_id") != params["run_id"]:
-                raise ProtocolValidationError("audit response run_id does not match request")
-            after_journal_position = params.get("after_journal_position", 0)
         _validate_audit_result(result, after_journal_position)
     return cast(ProtocolResponse, response)
 

@@ -156,11 +156,7 @@ function exactFields(value: Record<string, unknown>, required: string[], optiona
 
 function identifier(value: unknown, name: string): asserts value is string {
   if (typeof value !== 'string' || !value.trim()) return fail(`${name} must be a non-empty string`);
-  try {
-    encodeURIComponent(value);
-  } catch {
-    return fail(`${name} must be valid UTF-8`);
-  }
+  identifierUnicode(value, name);
 }
 
 function integer(value: unknown, name: string, minimum = 0, maximum = MAX_SAFE_JSON_INTEGER): asserts value is number {
@@ -170,9 +166,14 @@ function integer(value: unknown, name: string, minimum = 0, maximum = MAX_SAFE_J
 }
 
 function jsonValue(value: unknown, active = new Set<object>()): asserts value is JsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+  if (value === null || typeof value === 'boolean') return;
+  if (typeof value === 'string') {
+    identifierUnicode(value, 'JSON string');
+    return;
+  }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return fail('JSON values cannot contain non-finite numbers');
+    if (Number.isInteger(value) && !Number.isSafeInteger(value)) return fail('JSON integers must be safe integers');
     return;
   }
   if (Array.isArray(value)) {
@@ -186,11 +187,27 @@ function jsonValue(value: unknown, active = new Set<object>()): asserts value is
     const record = object(value, 'JSON value');
     if (active.has(record)) return fail('JSON values cannot be cyclic');
     active.add(record);
-    for (const item of Object.values(record)) jsonValue(item, active);
+    for (const [key, item] of Object.entries(record)) {
+      identifierUnicode(key, 'JSON object key');
+      jsonValue(item, active);
+    }
     active.delete(record);
     return;
   }
   return fail('value is not JSON serializable');
+}
+
+function identifierUnicode(value: string, name: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return fail(`${name} must be valid UTF-8`);
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return fail(`${name} must be valid UTF-8`);
+    }
+  }
 }
 
 function jsonObject(value: unknown, name: string): asserts value is JsonObject {
@@ -226,6 +243,7 @@ function hash(value: unknown, prefix: string, name: string): asserts value is st
 }
 
 export function validateRequest(value: unknown): asserts value is ProtocolRequest {
+  jsonValue(value);
   const request = object(value, 'request');
   exactFields(request, ['protocol_schema_version', 'request_id', 'operation', 'params'], [], 'request');
   integer(request.protocol_schema_version, 'protocol_schema_version', 1);
@@ -357,9 +375,23 @@ function validateAuditResult(value: unknown, afterJournalPosition?: number): voi
 }
 
 export function validateResponse(value: unknown, request?: ProtocolRequest): asserts value is ProtocolResponse {
+  jsonValue(value);
   const response = object(value, 'response');
   integer(response.protocol_schema_version, 'protocol_schema_version', 1);
   if (response.protocol_schema_version !== CURRENT_PROTOCOL_SCHEMA_VERSION) return fail('unsupported protocol_schema_version');
+  let afterJournalPosition: number | undefined;
+  if (request !== undefined) {
+    validateRequest(request);
+    if (response.request_id !== request.request_id) return fail('response request_id does not match request');
+    if (!Object.hasOwn(response, 'error')) {
+      if (response.operation !== request.operation) return fail('response operation does not match request');
+      const params = request.params as unknown as Record<string, unknown>;
+      const result = object(response.result, 'response result');
+      if (result.run_id !== params.run_id) return fail('response run_id does not match request');
+      if (Object.hasOwn(params, 'proposal_id') && result.proposal_id !== params.proposal_id) return fail('response proposal_id does not match request');
+      if (request.operation === 'get_audit_timeline') afterJournalPosition = request.params.after_journal_position ?? 0;
+    }
+  }
   if (Object.hasOwn(response, 'error')) {
     exactFields(response, ['protocol_schema_version', 'request_id', 'error'], [], 'error response');
     const error = object(response.error, 'error');
@@ -379,15 +411,6 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   else if (operation === 'get_graph') validateGraphResult(response.result);
   else if (operation === 'propose_mutation' || operation === 'get_proposal') validateProposalResult(response.result);
   else {
-    let afterJournalPosition: number | undefined;
-    if (request !== undefined) {
-      validateRequest(request);
-      if (request.operation !== 'get_audit_timeline') return fail('audit response context must be a get_audit_timeline request');
-      if (request.request_id !== response.request_id) return fail('response request_id does not match request');
-      const result = object(response.result, 'audit timeline result');
-      if (result.run_id !== request.params.run_id) return fail('audit response run_id does not match request');
-      afterJournalPosition = request.params.after_journal_position ?? 0;
-    }
     validateAuditResult(response.result, afterJournalPosition);
   }
 }
@@ -480,7 +503,6 @@ function decodeJson(serialized: string | Uint8Array): unknown {
 }
 
 function encodeJson(value: unknown): string {
-  jsonValue(value);
   const encoded = JSON.stringify(value);
   if (byteLength(encoded) > MAX_PROTOCOL_MESSAGE_BYTES) return fail('message exceeds 4 MiB');
   return encoded;

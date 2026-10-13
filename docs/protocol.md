@@ -83,6 +83,10 @@ All protocol integers are non-negative JSON safe integers (at most
 `graph_schema_version`, the current `graph_version`, and bounded continuation
 metadata. `selection` is a JSON object whose meaning is defined by the graph
 schema; this P1 contract does not finalize the P2 node/edge ontology.
+Integer-valued numbers inside JSON objects are also restricted to the safe
+integer range so JavaScript cannot round them during parsing. Every JSON string
+and object key must contain valid Unicode scalar values encodable as UTF-8;
+lone UTF-16 surrogates are rejected.
 Audit-timeline records are returned in ascending `journal_position` order and
 use an exclusive cursor. For a non-empty page,
 `next_after_journal_position` equals the final record's position; for an empty
@@ -102,6 +106,11 @@ and `journal_position`. Proposal `status` is `PENDING`, `ABANDONED`, `COMMIT`,
 `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; `PENDING` is not an outcome,
 `ABANDONED` is operational recovery status, and `RETRY` ends the current
 proposal attempt. A semantic retry uses a new proposal ID.
+
+When the originating request is available, clients pass it to the response
+codec. Python and TypeScript validate matching `request_id` for success and
+error responses; successful responses must also match the request's
+`operation` and `run_id`, and proposal responses must match `proposal_id`.
 
 Audit results contain `run_id`, a bounded `records` array,
 `next_after_journal_position`, and `has_more`. Each public record contains only

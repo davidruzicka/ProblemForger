@@ -32,10 +32,15 @@ class ProtocolContractTests(unittest.TestCase):
                 encoded = encode_request(fixture["message"])
                 self.assertEqual(decode_request(encoded), fixture["message"])
 
+        requests_by_id = {
+            fixture["message"]["request_id"]: fixture["message"]
+            for fixture in self.fixtures["requests"]
+        }
         for fixture in self.fixtures["responses"]:
             with self.subTest(label=fixture["label"]):
-                encoded = encode_response(fixture["message"])
-                self.assertEqual(decode_response(encoded), fixture["message"])
+                request = requests_by_id.get(fixture["message"]["request_id"])
+                encoded = encode_response(fixture["message"], request)
+                self.assertEqual(decode_response(encoded, request), fixture["message"])
 
     def test_invalid_request_fixtures_are_rejected(self) -> None:
         for fixture in self.fixtures["invalid_requests"]:
@@ -61,6 +66,76 @@ class ProtocolContractTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 with self.assertRaises(ProtocolValidationError):
                     decode_request(payload)
+
+    def test_json_documents_reject_unsafe_integers_and_invalid_unicode(self) -> None:
+        with self.assertRaises(ProtocolValidationError):
+            decode_request(
+                b'{"protocol_schema_version":1,"request_id":"req","operation":"create_run","params":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"value":9007199254740993}}}}'
+            )
+        with self.assertRaises(ProtocolValidationError):
+            decode_request(
+                br'{"protocol_schema_version":1,"request_id":"req","operation":"create_run","params":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"value":"\ud800"}}}}'
+            )
+
+        requests = {item["label"]: deepcopy(item["message"]) for item in self.fixtures["requests"]}
+        create_run = requests["create_run"]
+        create_run["params"]["run_metadata"]["data"]["nested"] = {"value": 9_007_199_254_740_993}
+        with self.assertRaises(ProtocolValidationError):
+            encode_request(create_run)
+
+        safe_integer = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "create_run")
+        )
+        safe_integer["params"]["run_metadata"]["data"]["value"] = 9_007_199_254_740_991
+        encode_request(safe_integer)
+
+        propose = requests["propose_mutation"]
+        propose["params"]["operations"] = [{"value": 9_007_199_254_740_993}]
+        with self.assertRaises(ProtocolValidationError):
+            encode_request(propose)
+
+        graph = next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_graph")
+        unsafe_graph = deepcopy(graph)
+        unsafe_graph["result"]["nodes"] = [{"value": 9_007_199_254_740_993}]
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(unsafe_graph)
+
+        for invalid_json in (
+            {"value": "\ud800"},
+            {"key\ud800": "value"},
+        ):
+            with self.subTest(invalid_json=repr(invalid_json)):
+                invalid_request = deepcopy(requests["create_run"])
+                invalid_request["params"]["run_metadata"]["data"] = invalid_json
+                with self.assertRaises(ProtocolValidationError):
+                    encode_request(invalid_request)
+
+    def test_response_correlation_applies_to_all_operations_and_errors(self) -> None:
+        requests = {item["label"]: deepcopy(item["message"]) for item in self.fixtures["requests"]}
+        responses = {item["label"]: deepcopy(item["message"]) for item in self.fixtures["responses"]}
+
+        create_request = requests["create_run"]
+        create_response = responses["create_run"]
+        for bad_request in (
+            {**create_request, "request_id": "another-request"},
+            {**create_request, "operation": "get_run", "params": {"run_id": "run-1"}},
+            {**create_request, "params": {**create_request["params"], "run_id": "another-run"}},
+        ):
+            with self.subTest(bad_request=bad_request), self.assertRaises(ProtocolValidationError):
+                encode_response(create_response, bad_request)
+
+        proposal_request = requests["propose_mutation"]
+        proposal_response = responses["propose_mutation_pending"]
+        wrong_proposal = deepcopy(proposal_request)
+        wrong_proposal["params"]["proposal_id"] = "another-proposal"
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(proposal_response, wrong_proposal)
+
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(responses["unknown_run"], {**requests["get_run"], "request_id": "another-request"})
+
+        encoded = encode_response(create_response, create_request)
+        self.assertEqual(decode_response(encoded, create_request), create_response)
 
     def test_request_validators_reject_bad_metadata_paging_and_mutation_bounds(self) -> None:
         requests = [fixture["message"] for fixture in self.fixtures["requests"]]
