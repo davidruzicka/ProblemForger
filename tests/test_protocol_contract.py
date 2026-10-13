@@ -59,6 +59,47 @@ class ProtocolContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolValidationError, "4 MiB"):
             decode_request(oversized)
 
+    def test_subdocument_size_uses_shared_exponential_number_formatting(self) -> None:
+        values = [{"x": 1e-7}] * 95_000
+        create_run = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "create_run")
+        )
+        create_run["params"]["run_metadata"]["data"]["items"] = values
+        encode_request(create_run)
+
+        mutation = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")
+        )
+        mutation["params"]["operations"] = values
+        mutation["params"]["evidence"] = []
+        encode_request(mutation)
+
+    def test_decoded_integral_json_numbers_are_normalized(self) -> None:
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "get_graph")
+        )
+        request["params"]["limit"] = 1.0
+        encode_request(request)
+
+        for number in (b"1.0", b"1e0"):
+            payload = (
+                b'{"protocol_schema_version":1,"request_id":"req","operation":"get_graph",'
+                b'"params":{"run_id":"run-1","limit":' + number + b"}}"
+            )
+            with self.subTest(number=number):
+                decoded = decode_request(payload)
+                self.assertEqual(decoded["params"]["limit"], 1)
+                self.assertIs(type(decoded["params"]["limit"]), int)
+
+    def test_decode_wraps_python_integer_digit_limit_as_protocol_error(self) -> None:
+        payload = (
+            b'{"protocol_schema_version":1,"request_id":"req","operation":"create_run",'
+            b'"params":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,'
+            b'"data":{"value":' + b"9" * 5_000 + b"}}}}}"
+        )
+        with self.assertRaises(ProtocolValidationError):
+            decode_request(payload)
+
     def test_decoder_rejects_duplicate_keys_and_non_finite_numbers(self) -> None:
         duplicate = b'{"protocol_schema_version":1,"protocol_schema_version":1}'
         non_finite = b'{"protocol_schema_version":1,"request_id":"r","operation":"get_run","params":{"run_id":"x","extra":NaN}}'

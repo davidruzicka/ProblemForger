@@ -37,6 +37,19 @@ assert.throws(
   undefined,
   'unsafe integer in decoded metadata',
 );
+const exponentialValues = Array.from({ length: 95_000 }, () => ({ x: 1e-7 }));
+const exponentialMetadata = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
+exponentialMetadata.params.run_metadata.data.items = exponentialValues;
+assert.doesNotThrow(() => encodeRequest(exponentialMetadata), 'metadata size uses shared exponential number formatting');
+const exponentialMutation = structuredClone(fixture.requests.find(({ label }) => label === 'propose_mutation').message);
+exponentialMutation.params.operations = exponentialValues;
+exponentialMutation.params.evidence = [];
+assert.doesNotThrow(() => encodeRequest(exponentialMutation), 'mutation size uses shared exponential number formatting');
+
+for (const integerForm of ['1.0', '1e0']) {
+  const request = `{"protocol_schema_version":1,"request_id":"req","operation":"get_graph","params":{"run_id":"run-1","limit":${integerForm}}}`;
+  assert.equal(decodeRequest(request).params.limit, 1, `integral JSON form ${integerForm}`);
+}
 
 const invalidUnicodeRequest = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
 invalidUnicodeRequest.params.run_metadata.data.value = '\ud800';

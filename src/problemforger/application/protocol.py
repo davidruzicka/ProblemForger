@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Literal, NotRequired, TypedDict, TypeAlias, cast
 
 from problemforger.core.journal import (
@@ -328,7 +329,10 @@ def _identifier(value: Any, name: str) -> None:
 
 
 def _integer(value: Any, name: str, *, minimum: int = 0, maximum: int = MAX_SAFE_JSON_INTEGER) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+    integer_value = value
+    if type(value) is float and value.is_integer():
+        integer_value = int(value)
+    if type(integer_value) is not int or not minimum <= integer_value <= maximum:
         raise ProtocolValidationError(
             f"{name} must be a JSON safe integer from {minimum} through {maximum}"
         )
@@ -339,6 +343,68 @@ def _boolean(value: Any, name: str) -> None:
         raise ProtocolValidationError(f"{name} must be a boolean")
 
 
+def _ecmascript_number(value: float) -> str:
+    """Return the compact ECMAScript JSON spelling for a finite Python float."""
+    if not math.isfinite(value):
+        raise ValueError("JSON numbers must be finite")
+    if value == 0:
+        return "0"
+
+    number = repr(abs(value)).lower()
+    if "e" in number:
+        coefficient, exponent_text = number.split("e", 1)
+        exponent = int(exponent_text)
+    else:
+        coefficient = number
+        exponent = 0
+    integer_part, _, fractional_part = coefficient.partition(".")
+    digits = integer_part + fractional_part
+    leading_zeroes = len(digits) - len(digits.lstrip("0"))
+    digits = digits[leading_zeroes:].rstrip("0")
+    decimal_position = len(integer_part) + exponent - leading_zeroes
+
+    if decimal_position > 0 and decimal_position <= 21:
+        if decimal_position >= len(digits):
+            rendered = digits + ("0" * (decimal_position - len(digits)))
+        else:
+            rendered = f"{digits[:decimal_position]}.{digits[decimal_position:]}"
+    elif decimal_position <= 0 and decimal_position > -6:
+        rendered = f"0.{('0' * -decimal_position)}{digits}"
+    else:
+        scientific_exponent = decimal_position - 1
+        mantissa = digits[0] + (f".{digits[1:]}" if len(digits) > 1 else "")
+        exponent_sign = "+" if scientific_exponent >= 0 else ""
+        rendered = f"{mantissa}e{exponent_sign}{scientific_exponent}"
+
+    return f"-{rendered}" if value < 0 else rendered
+
+
+def _protocol_json_size(value: Any) -> int:
+    """Count compact UTF-8 JSON bytes using the TypeScript codec's number form."""
+    if value is None:
+        return 4
+    if type(value) is bool:
+        return 4 if value else 5
+    if isinstance(value, str):
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    if type(value) is int:
+        return len(str(value))
+    if type(value) is float:
+        return len(_ecmascript_number(value))
+    if type(value) is list:
+        return 2 + max(len(value) - 1, 0) + sum(_protocol_json_size(item) for item in value)
+    if type(value) is dict:
+        return (
+            2
+            + max(len(value) - 1, 0)
+            + sum(
+                _protocol_json_size(key) + 1 + _protocol_json_size(item)
+                for key, item in value.items()
+            )
+        )
+    raise TypeError("value is not JSON serializable")
+
+
 def _metadata(value: Any) -> dict[str, Any]:
     metadata = _object(value, "run_metadata")
     _fields(metadata, {"metadata_schema_version", "data"}, name="run_metadata")
@@ -346,7 +412,7 @@ def _metadata(value: Any) -> dict[str, Any]:
     if metadata["metadata_schema_version"] != 1:
         raise ProtocolValidationError("unsupported metadata_schema_version", code="PROTOCOL_ERROR")
     _object(metadata["data"], "run_metadata.data")
-    if len(JsonDocument.from_value(metadata).canonical_json.encode("utf-8")) > MAX_RUN_METADATA_BYTES:
+    if _protocol_json_size(metadata) > MAX_RUN_METADATA_BYTES:
         raise ProtocolValidationError("run_metadata exceeds 1 MiB", code="PAYLOAD_TOO_LARGE")
     return metadata
 
@@ -430,7 +496,7 @@ def validate_request(value: Any) -> ProtocolRequest:
             "operations": operations,
             "evidence": evidence,
         }
-        if len(JsonDocument.from_value(normalized_value).canonical_json.encode("utf-8")) > MAX_NORMALIZED_REQUEST_BYTES:
+        if _protocol_json_size(normalized_value) > MAX_NORMALIZED_REQUEST_BYTES:
             raise ProtocolValidationError("normalized mutation request exceeds 1 MiB", code="PAYLOAD_TOO_LARGE")
     elif operation == "get_proposal":
         _fields(params, {"run_id", "proposal_id"}, name="get_proposal params")
@@ -687,6 +753,13 @@ def _reject_json_constant(value: str) -> None:
     raise ProtocolValidationError(f"non-finite JSON number is forbidden: {value}")
 
 
+def _parse_protocol_float(value: str) -> float | int:
+    number = float(value)
+    if number.is_integer() and abs(number) <= MAX_SAFE_JSON_INTEGER:
+        return int(number)
+    return number
+
+
 def _encode(value: Any, validator: Any) -> bytes:
     validator(value)
     try:
@@ -715,10 +788,11 @@ def _decode(payload: str | bytes, validator: Any) -> Any:
             encoded.decode("utf-8"),
             object_pairs_hook=_reject_duplicate_keys,
             parse_constant=_reject_json_constant,
+            parse_float=_parse_protocol_float,
         )
     except ProtocolValidationError:
         raise
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+    except (UnicodeDecodeError, ValueError, RecursionError) as error:
         raise ProtocolValidationError("message is not valid UTF-8 JSON") from error
     return validator(value)
 

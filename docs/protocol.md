@@ -86,7 +86,9 @@ schema; this P1 contract does not finalize the P2 node/edge ontology.
 Integer-valued numbers inside JSON objects are also restricted to the safe
 integer range so JavaScript cannot round them during parsing. Every JSON string
 and object key must contain valid Unicode scalar values encodable as UTF-8;
-lone UTF-16 surrogates are rejected.
+lone UTF-16 surrogates are rejected. Integer fields accept any JSON number
+whose parsed value is a safe integer, including equivalent spellings such as
+`1.0` and `1e0`; both codecs expose the parsed integral value as an integer.
 Audit-timeline records are returned in ascending `journal_position` order and
 use an exclusive cursor. For a non-empty page,
 `next_after_journal_position` equals the final record's position; for an empty
@@ -133,7 +135,9 @@ normalized mutation request are each capped at 1 MiB. Graph and audit pages are
 capped at 100 records and 4 MiB. A client must split or reference larger
 evidence rather than exceed these limits. Python and TypeScript v1 codecs share
 the same fixture set and reject malformed shapes, duplicate JSON object keys,
-unsupported versions, non-finite values, and unsafe integers.
+unsupported versions, non-finite values, and unsafe integers. The 1 MiB
+subdocument limits count compact UTF-8 JSON bytes with ECMAScript-compatible
+number formatting, so both codecs apply the same size boundary.
 
 ### Observation plane
 
