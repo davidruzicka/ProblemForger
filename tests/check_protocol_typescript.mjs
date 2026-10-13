@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { decodeRequest, decodeResponse, encodeRequest, encodeResponse } from '../clients/typescript/protocol.ts';
+import {
+  MAX_PROTOCOL_MESSAGE_BYTES,
+  decodeRequest,
+  decodeResponse,
+  encodeRequest,
+  encodeResponse,
+} from '../clients/typescript/protocol.ts';
 
 const fixture = JSON.parse(await readFile(process.argv[2], 'utf8'));
 
@@ -17,6 +23,46 @@ for (const { label, message } of fixture.invalid_requests) {
 for (const { label, message } of fixture.invalid_responses) {
   assert.throws(() => encodeResponse(message), undefined, `${label} response`);
 }
+
+const textEncoder = new TextEncoder();
+const getRunRequest = fixture.requests.find(({ label }) => label === 'get_run').message;
+const encodedGetRunRequest = textEncoder.encode(JSON.stringify(getRunRequest));
+assert.deepEqual(decodeRequest(encodedGetRunRequest), getRunRequest, 'UTF-8 byte request frame');
+
+function withUtf8Bom(frame) {
+  const prefixed = new Uint8Array(frame.byteLength + 3);
+  prefixed.set([0xef, 0xbb, 0xbf]);
+  prefixed.set(frame, 3);
+  return prefixed;
+}
+
+assert.throws(
+  () => decodeRequest(withUtf8Bom(encodedGetRunRequest)),
+  undefined,
+  'request frame rejects a UTF-8 BOM',
+);
+const protocolErrorResponse = {
+  protocol_schema_version: 1,
+  request_id: 'req',
+  error: { code: 'PROTOCOL_ERROR', message: 'invalid request' },
+};
+assert.throws(
+  () => decodeResponse(withUtf8Bom(textEncoder.encode(JSON.stringify(protocolErrorResponse)))),
+  undefined,
+  'response frame rejects a UTF-8 BOM',
+);
+
+const oversizedFrame = new Uint8Array(MAX_PROTOCOL_MESSAGE_BYTES + 1).fill(0xff);
+assert.throws(
+  () => decodeRequest(oversizedFrame),
+  /message exceeds 4 MiB/,
+  'oversized request byte frame is rejected before UTF-8 decoding',
+);
+assert.throws(
+  () => decodeResponse(oversizedFrame),
+  /message exceeds 4 MiB/,
+  'oversized response byte frame is rejected before UTF-8 decoding',
+);
 
 const createRun = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
 createRun.params.run_metadata.data.large = 'é'.repeat(512 * 1024);

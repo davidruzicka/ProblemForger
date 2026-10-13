@@ -505,7 +505,16 @@ function rejectDuplicateKeys(text: string): void {
 }
 
 function decodeJson(serialized: string | Uint8Array): unknown {
-  const text = typeof serialized === 'string' ? serialized : new TextDecoder('utf-8', { fatal: true }).decode(serialized);
+  let text: string;
+  if (typeof serialized === 'string') {
+    text = serialized;
+  } else {
+    if (serialized.byteLength > MAX_PROTOCOL_MESSAGE_BYTES) return fail('message exceeds 4 MiB');
+    if (serialized[0] === 0xef && serialized[1] === 0xbb && serialized[2] === 0xbf) {
+      return fail('message cannot start with a UTF-8 BOM');
+    }
+    text = new TextDecoder('utf-8', { fatal: true }).decode(serialized);
+  }
   if (byteLength(text) > MAX_PROTOCOL_MESSAGE_BYTES) return fail('message exceeds 4 MiB');
   rejectDuplicateKeys(text);
   return JSON.parse(text) as unknown;
