@@ -81,8 +81,11 @@ All protocol integers are non-negative JSON safe integers (at most
 `2^53 - 1`), except `limit`, which is a positive safe integer from 1 through
 100. Graph results contain explicit `nodes` and `edges` arrays, a
 `graph_schema_version`, the current `graph_version`, and bounded continuation
-metadata. `selection` is a JSON object whose meaning is defined by the graph
-schema; this P1 contract does not finalize the P2 node/edge ontology.
+metadata. The `get_graph` limit applies to the combined number of nodes and
+edges; the `get_audit_timeline` limit applies to returned records. Neither
+response may exceed its originating request's limit, and both remain capped
+at 100 records. `selection` is a JSON object whose meaning is defined by the
+graph schema; this P1 contract does not finalize the P2 node/edge ontology.
 Integer-valued numbers inside JSON objects are also restricted to the safe
 integer range so JavaScript cannot round them during parsing. Every JSON string
 and object key must contain valid Unicode scalar values encodable as UTF-8;
@@ -112,7 +115,8 @@ proposal attempt. A semantic retry uses a new proposal ID.
 When the originating request is available, clients pass it to the response
 codec. Python and TypeScript validate matching `request_id` for success and
 error responses; successful responses must also match the request's
-`operation` and `run_id`, and proposal responses must match `proposal_id`.
+`operation` and `run_id`, proposal responses must match `proposal_id`, and graph
+and audit pages must not contain more records than the requested `limit`.
 
 Audit results contain `run_id`, a bounded `records` array,
 `next_after_journal_position`, and `has_more`. Each public record contains only

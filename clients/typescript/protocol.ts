@@ -307,14 +307,16 @@ function validateRunResult(value: unknown, name: string): void {
   if (typeof result.created !== 'boolean') return fail('created must be a boolean');
 }
 
-function validateGraphResult(value: unknown): void {
+function validateGraphResult(value: unknown, limit?: number): void {
   const result = object(value, 'get_graph result');
   exactFields(result, ['run_id', 'graph_schema_version', 'graph_version', 'nodes', 'edges', 'next_cursor', 'has_more'], [], 'get_graph result');
   identifier(result.run_id, 'run_id');
   integer(result.graph_schema_version, 'graph_schema_version', 1);
   integer(result.graph_version, 'graph_version');
   if (!Array.isArray(result.nodes) || !Array.isArray(result.edges)) return fail('nodes and edges must be arrays');
-  if (result.nodes.length + result.edges.length > MAX_PROTOCOL_PAGE_SIZE) return fail('graph result exceeds the 100-record page limit');
+  const recordCount = result.nodes.length + result.edges.length;
+  if (recordCount > MAX_PROTOCOL_PAGE_SIZE) return fail('graph result exceeds the 100-record page limit');
+  if (limit !== undefined && recordCount > limit) return fail('graph result exceeds the requested limit');
   for (const item of [...result.nodes, ...result.edges]) jsonObject(item, 'graph record');
   if (result.next_cursor !== null) identifier(result.next_cursor, 'next_cursor');
   if (typeof result.has_more !== 'boolean') return fail('has_more must be a boolean');
@@ -341,11 +343,12 @@ function validateProposalResult(value: unknown): void {
   }
 }
 
-function validateAuditResult(value: unknown, afterJournalPosition?: number): void {
+function validateAuditResult(value: unknown, afterJournalPosition?: number, limit?: number): void {
   const result = object(value, 'audit timeline result');
   exactFields(result, ['run_id', 'records', 'next_after_journal_position', 'has_more'], [], 'audit timeline result');
   identifier(result.run_id, 'run_id');
   if (!Array.isArray(result.records) || result.records.length > MAX_PROTOCOL_PAGE_SIZE) return fail('audit records must fit the 100-record page limit');
+  if (limit !== undefined && result.records.length > limit) return fail('audit records exceed the requested limit');
   let previousPosition = afterJournalPosition ?? 0;
   for (const value of result.records) {
     const record = object(value, 'audit record');
@@ -380,6 +383,7 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   integer(response.protocol_schema_version, 'protocol_schema_version', 1);
   if (response.protocol_schema_version !== CURRENT_PROTOCOL_SCHEMA_VERSION) return fail('unsupported protocol_schema_version');
   let afterJournalPosition: number | undefined;
+  let requestedLimit: number | undefined;
   if (request !== undefined) {
     validateRequest(request);
     if (response.request_id !== request.request_id) return fail('response request_id does not match request');
@@ -389,7 +393,12 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
       const result = object(response.result, 'response result');
       if (result.run_id !== params.run_id) return fail('response run_id does not match request');
       if (Object.hasOwn(params, 'proposal_id') && result.proposal_id !== params.proposal_id) return fail('response proposal_id does not match request');
-      if (request.operation === 'get_audit_timeline') afterJournalPosition = request.params.after_journal_position ?? 0;
+      if (request.operation === 'get_audit_timeline') {
+        afterJournalPosition = request.params.after_journal_position ?? 0;
+        requestedLimit = request.params.limit;
+      } else if (request.operation === 'get_graph') {
+        requestedLimit = request.params.limit;
+      }
     }
   }
   if (Object.hasOwn(response, 'error')) {
@@ -408,10 +417,10 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   if (typeof response.operation !== 'string' || !operations.has(response.operation as Operation)) return fail('unknown response operation');
   const operation = response.operation as Operation;
   if (operation === 'create_run' || operation === 'get_run') validateRunResult(response.result, `${operation} result`);
-  else if (operation === 'get_graph') validateGraphResult(response.result);
+  else if (operation === 'get_graph') validateGraphResult(response.result, requestedLimit);
   else if (operation === 'propose_mutation' || operation === 'get_proposal') validateProposalResult(response.result);
   else {
-    validateAuditResult(response.result, afterJournalPosition);
+    validateAuditResult(response.result, afterJournalPosition, requestedLimit);
   }
 }
 

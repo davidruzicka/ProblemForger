@@ -84,6 +84,40 @@ const auditResponse = structuredClone(fixture.responses.find(({ label }) => labe
 auditResponse.result.next_after_journal_position = 99;
 assert.throws(() => encodeResponse(auditResponse), undefined, 'audit cursor must equal final record position');
 
+const boundedGraphRequest = structuredClone(fixture.requests.find(({ label }) => label === 'get_graph').message);
+boundedGraphRequest.params.limit = 1;
+const boundedGraphResponse = structuredClone(fixture.responses.find(({ label }) => label === 'get_graph').message);
+const firstGraphNode = boundedGraphResponse.result.nodes[0];
+boundedGraphResponse.result.nodes = [firstGraphNode, { ...firstGraphNode, id: 'goal-2' }];
+assert.throws(() => encodeResponse(boundedGraphResponse, boundedGraphRequest), undefined, 'graph response must respect requested limit');
+assert.throws(
+  () => decodeResponse(JSON.stringify(boundedGraphResponse), boundedGraphRequest),
+  undefined,
+  'decoded graph response must respect requested limit',
+);
+boundedGraphRequest.params.limit = 2;
+assert.deepEqual(
+  decodeResponse(encodeResponse(boundedGraphResponse, boundedGraphRequest), boundedGraphRequest),
+  boundedGraphResponse,
+  'graph response at the requested limit is accepted',
+);
+
+const boundedAuditRequest = structuredClone(fixture.requests.find(({ label }) => label === 'get_audit_timeline').message);
+boundedAuditRequest.params.limit = 1;
+const boundedAuditResponse = structuredClone(fixture.responses.find(({ label }) => label === 'get_audit_timeline').message);
+assert.throws(() => encodeResponse(boundedAuditResponse, boundedAuditRequest), undefined, 'audit response must respect requested limit');
+assert.throws(
+  () => decodeResponse(JSON.stringify(boundedAuditResponse), boundedAuditRequest),
+  undefined,
+  'decoded audit response must respect requested limit',
+);
+boundedAuditRequest.params.limit = 2;
+assert.deepEqual(
+  decodeResponse(encodeResponse(boundedAuditResponse, boundedAuditRequest), boundedAuditRequest),
+  boundedAuditResponse,
+  'audit response at the requested limit is accepted',
+);
+
 const emptyAuditResponse = structuredClone(auditResponse);
 emptyAuditResponse.result.records = [];
 emptyAuditResponse.result.next_after_journal_position = 5;

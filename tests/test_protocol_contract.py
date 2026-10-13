@@ -268,6 +268,40 @@ class ProtocolContractTests(unittest.TestCase):
             with self.subTest(label=label), self.assertRaises(ProtocolValidationError):
                 encode_response(message)
 
+    def test_response_pages_respect_the_originating_request_limit(self) -> None:
+        requests = {item["label"]: deepcopy(item["message"]) for item in self.fixtures["requests"]}
+        responses = {item["label"]: deepcopy(item["message"]) for item in self.fixtures["responses"]}
+
+        graph_request = requests["get_graph"]
+        graph_request["params"]["limit"] = 1
+        graph_response = responses["get_graph"]
+        first_node = graph_response["result"]["nodes"][0]
+        graph_response["result"]["nodes"] = [first_node, {**first_node, "id": "goal-2"}]
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(graph_response, graph_request)
+        with self.assertRaises(ProtocolValidationError):
+            decode_response(json.dumps(graph_response, separators=(",", ":")), graph_request)
+
+        graph_request["params"]["limit"] = 2
+        self.assertEqual(
+            decode_response(encode_response(graph_response, graph_request), graph_request),
+            graph_response,
+        )
+
+        audit_request = requests["get_audit_timeline"]
+        audit_request["params"]["limit"] = 1
+        audit_response = responses["get_audit_timeline"]
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(audit_response, audit_request)
+        with self.assertRaises(ProtocolValidationError):
+            decode_response(json.dumps(audit_response, separators=(",", ":")), audit_request)
+
+        audit_request["params"]["limit"] = 2
+        self.assertEqual(
+            decode_response(encode_response(audit_response, audit_request), audit_request),
+            audit_response,
+        )
+
     def test_audit_cursor_matches_last_record_and_supplied_request_cursor(self) -> None:
         response = next(
             item["message"] for item in self.fixtures["responses"] if item["label"] == "get_audit_timeline"

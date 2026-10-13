@@ -532,7 +532,7 @@ def _validate_run_result(value: Any, name: str) -> None:
     _boolean(result["created"], "created")
 
 
-def _validate_graph_result(value: Any) -> None:
+def _validate_graph_result(value: Any, limit: int | None = None) -> None:
     result = _object(value, "get_graph result")
     _fields(
         result,
@@ -544,8 +544,11 @@ def _validate_graph_result(value: Any) -> None:
     _integer(result["graph_version"], "graph_version")
     if type(result["nodes"]) is not list or type(result["edges"]) is not list:
         raise ProtocolValidationError("nodes and edges must be arrays")
-    if len(result["nodes"]) + len(result["edges"]) > MAX_PROTOCOL_PAGE_SIZE:
+    record_count = len(result["nodes"]) + len(result["edges"])
+    if record_count > MAX_PROTOCOL_PAGE_SIZE:
         raise ProtocolValidationError("graph result exceeds the 100-record page limit", code="INVALID_LIMIT")
+    if limit is not None and record_count > limit:
+        raise ProtocolValidationError("graph result exceeds the requested limit", code="INVALID_LIMIT")
     for node in result["nodes"]:
         _object(node, "graph node")
     for edge in result["edges"]:
@@ -636,7 +639,7 @@ def _validate_audit_record(value: Any, expected_run_id: str, previous_position: 
 
 
 def _validate_audit_result(
-    value: Any, after_journal_position: int | None = None
+    value: Any, after_journal_position: int | None = None, limit: int | None = None
 ) -> None:
     result = _object(value, "audit timeline result")
     _fields(
@@ -648,6 +651,8 @@ def _validate_audit_result(
     records = result["records"]
     if type(records) is not list or len(records) > MAX_PROTOCOL_PAGE_SIZE:
         raise ProtocolValidationError("audit records must fit the 100-record page limit", code="INVALID_LIMIT")
+    if limit is not None and len(records) > limit:
+        raise ProtocolValidationError("audit records exceed the requested limit", code="INVALID_LIMIT")
     if after_journal_position is not None:
         _integer(after_journal_position, "after_journal_position")
     previous_position = after_journal_position or 0
@@ -682,6 +687,7 @@ def validate_response(
     response = _object(value, "response")
     _json_tree(response, "response")
     after_journal_position = None
+    requested_limit = None
     if request is not None:
         validate_request(request)
         if response.get("request_id") != request["request_id"]:
@@ -697,6 +703,9 @@ def validate_response(
                 raise ProtocolValidationError("response proposal_id does not match request")
             if request["operation"] == "get_audit_timeline":
                 after_journal_position = params.get("after_journal_position", 0)
+                requested_limit = params["limit"]
+            elif request["operation"] == "get_graph":
+                requested_limit = params["limit"]
     _integer(response.get("protocol_schema_version"), "protocol_schema_version", minimum=1)
     if response["protocol_schema_version"] != CURRENT_PROTOCOL_SCHEMA_VERSION:
         raise ProtocolValidationError(
@@ -732,11 +741,11 @@ def validate_response(
     if operation in {"create_run", "get_run"}:
         _validate_run_result(result, f"{operation} result")
     elif operation == "get_graph":
-        _validate_graph_result(result)
+        _validate_graph_result(result, requested_limit)
     elif operation in {"propose_mutation", "get_proposal"}:
         _validate_proposal_result(result)
     else:
-        _validate_audit_result(result, after_journal_position)
+        _validate_audit_result(result, after_journal_position, requested_limit)
     return cast(ProtocolResponse, response)
 
 
