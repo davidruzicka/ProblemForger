@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import unittest
 
+from problemforger.application._protocol_contract import CONTRACT
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
@@ -511,6 +512,55 @@ class EventStoreContractMixin:
         self.assertEqual(1, pending.last_journal_position)
         self.assertIsNone(pending.terminal_outcome)
         self.assertIsNone(pending.resulting_graph_version)
+
+    def test_declared_proposal_transitions_and_replays(self):
+        transitions = CONTRACT["x-proposal-transitions"]
+        states = CONTRACT["x-proposal-states"]
+        self.assertEqual(set(transitions), {"ABSENT", *states})
+        self.assertEqual(transitions["ABSENT"], ["PENDING"])
+        self.assertEqual(set(transitions["PENDING"]), {state for state, rule in states.items() if rule["terminal"]})
+        for state, rule in states.items():
+            if rule["terminal"]:
+                self.assertEqual(transitions[state], [])
+        for source in transitions:
+            for target in states:
+                with self.subTest(source=source, target=target):
+                    run_id = f"run-{source}-{target}"
+                    self.store.create_run(run_id, RunMetadata.from_value({"task": "transition"}))
+                    proposal_id = "transition"
+                    expected = 1 if source == "CONFLICT" or (source == "PENDING" and target == "CONFLICT") else 0
+                    pending = receipt(proposal_id, expected, run_id=run_id)
+
+                    def apply(state):
+                        if state == "PENDING":
+                            return self.store.record_proposal(run_id, proposal_id, pending.request_hash, pending.request, pending)
+                        if state == "ABANDONED":
+                            record = ProposalAbandoned(metadata("abandoned", run_id), proposal_id, pending.request_hash, "unsupported_recovery")
+                        else:
+                            record = decision(proposal_id, outcome=GovernanceOutcome(state), expected_version=expected,
+                                              resulting_version=(expected + 1 if state in {"COMMIT", "CONFLICT"} else expected),
+                                              run_id=run_id)
+                        if state == "COMMIT":
+                            return self.store.append_graph(run_id, proposal_id, expected, (record,),
+                                                           (graph_event(proposal_id, version=expected + 1, run_id=run_id),))
+                        return self.store.append_audit(run_id, (record,), proposal_id)
+
+                    if source != "ABSENT":
+                        apply("PENDING")
+                        if source != "PENDING":
+                            apply(source)
+                    before = self.store.get_proposal(run_id, proposal_id)
+                    before_status = "ABSENT" if isinstance(before, StoreError) else before.status.value
+                    self.assertEqual(source, before_status)
+                    position = self.store.get_run(run_id).last_journal_position
+                    apply(target)
+                    after = self.store.get_proposal(run_id, proposal_id)
+                    after_status = "ABSENT" if isinstance(after, StoreError) else after.status.value
+                    allowed = target in transitions[source]
+                    self.assertEqual(target if allowed else source, after_status)
+                    if not allowed:
+                        self.assertEqual(before, after)
+                        self.assertEqual(position, self.store.get_run(run_id).last_journal_position)
 
     def test_commit_is_atomic_advances_one_version_and_replays_exact_metadata(self):
         self.submit("proposal-1", 0)

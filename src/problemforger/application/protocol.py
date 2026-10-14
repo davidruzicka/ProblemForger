@@ -4,31 +4,25 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any, Literal, NotRequired, TypedDict, TypeAlias, cast
 
+from problemforger.application._protocol_contract import (
+    CONTRACT, AuditLifecycleState, AuditOutcome, ErrorCode, Operation, ProposalState,
+)
 from problemforger.core.journal import (
     CURRENT_PROTOCOL_SCHEMA_VERSION,
     CURRENT_REQUEST_SCHEMA_VERSION,
-    GovernanceOutcome,
     JsonDocument,
-    ProposalStatus,
 )
 
 
-MAX_PROTOCOL_MESSAGE_BYTES = 4 * 1024 * 1024
-MAX_PROTOCOL_PAGE_SIZE = 100
-MAX_SAFE_JSON_INTEGER = (1 << 53) - 1
-MAX_RUN_METADATA_BYTES = 1024 * 1024
-MAX_NORMALIZED_REQUEST_BYTES = 1024 * 1024
+MAX_PROTOCOL_MESSAGE_BYTES = CONTRACT["x-frame-max-bytes"]
+MAX_PROTOCOL_PAGE_SIZE = CONTRACT["x-page-max-records"]
+MAX_SAFE_JSON_INTEGER = CONTRACT["$defs"]["SafeInteger"]["maximum"]
+MAX_RUN_METADATA_BYTES = CONTRACT["$defs"]["RunMetadata"]["x-max-canonical-bytes"]
+MAX_NORMALIZED_REQUEST_BYTES = CONTRACT["$defs"]["ProposeMutationParams"]["x-max-canonical-bytes"]
 
-Operation: TypeAlias = Literal[
-    "create_run",
-    "get_run",
-    "get_graph",
-    "propose_mutation",
-    "get_proposal",
-    "get_audit_timeline",
-]
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject: TypeAlias = dict[str, JsonValue]
 
@@ -156,9 +150,7 @@ class GraphResult(TypedDict):
 class ProposalResult(TypedDict):
     run_id: str
     proposal_id: str
-    status: Literal[
-        "PENDING", "ABANDONED", "COMMIT", "REJECT", "RETRY", "ESCALATE", "CONFLICT"
-    ]
+    status: ProposalState
     request_hash: str
     reason_code: str | None
     resulting_graph_version: int | None
@@ -170,8 +162,8 @@ class PublicAuditRecord(TypedDict):
     record_type: str
     run_id: str
     proposal_id: NotRequired[str]
-    lifecycle_state: NotRequired[Literal["PENDING", "ABANDONED"]]
-    outcome: NotRequired[Literal["COMMIT", "REJECT", "RETRY", "ESCALATE", "CONFLICT"]]
+    lifecycle_state: NotRequired[AuditLifecycleState]
+    outcome: NotRequired[AuditOutcome]
     reason_code: NotRequired[str]
     graph_version: NotRequired[int]
 
@@ -184,17 +176,7 @@ class AuditTimelineResult(TypedDict):
 
 
 class ProtocolError(TypedDict):
-    code: Literal[
-        "PROTOCOL_ERROR",
-        "UNSUPPORTED_PROTOCOL_VERSION",
-        "UNAUTHORIZED",
-        "NOT_FOUND",
-        "RUN_METADATA_CONFLICT",
-        "IDEMPOTENCY_CONFLICT",
-        "INVALID_LIMIT",
-        "PAYLOAD_TOO_LARGE",
-        "STORE_IN_USE",
-    ]
+    code: ErrorCode
     message: str
 
 
@@ -256,30 +238,6 @@ SuccessResponse: TypeAlias = (
 )
 ProtocolResponse: TypeAlias = SuccessResponse | ErrorResponse
 
-_OPERATIONS = frozenset(
-    {"create_run", "get_run", "get_graph", "propose_mutation", "get_proposal", "get_audit_timeline"}
-)
-_OUTCOMES = frozenset(outcome.value for outcome in GovernanceOutcome)
-_STATUSES = _OUTCOMES | frozenset(status.value for status in ProposalStatus)
-_ERROR_CODES = frozenset(
-    {
-        "PROTOCOL_ERROR",
-        "UNSUPPORTED_PROTOCOL_VERSION",
-        "UNAUTHORIZED",
-        "NOT_FOUND",
-        "RUN_METADATA_CONFLICT",
-        "IDEMPOTENCY_CONFLICT",
-        "INVALID_LIMIT",
-        "PAYLOAD_TOO_LARGE",
-        "STORE_IN_USE",
-    }
-)
-_HASH_PREFIXES = {
-    "metadata_hash": "sha256:problemforger-run-metadata-v1:",
-    "request_hash": "sha256:problemforger-request-v1:",
-}
-
-
 def _object(value: Any, name: str) -> dict[str, Any]:
     if type(value) is not dict:
         raise ProtocolValidationError(f"{name} must be a JSON object")
@@ -307,27 +265,6 @@ def _json_tree(value: Any, name: str) -> None:
     check_numbers(value)
 
 
-def _fields(
-    value: dict[str, Any], required: set[str], optional: set[str] = frozenset(), name: str = "object"
-) -> None:
-    actual = set(value)
-    missing = required - actual
-    unknown = actual - required - optional
-    if missing or unknown:
-        raise ProtocolValidationError(
-            f"{name} fields do not match protocol schema (missing={sorted(missing)}, unknown={sorted(unknown)})"
-        )
-
-
-def _identifier(value: Any, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ProtocolValidationError(f"{name} must be a non-empty string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise ProtocolValidationError(f"{name} must be valid UTF-8") from error
-
-
 def _integer(
     value: Any,
     name: str,
@@ -346,9 +283,79 @@ def _integer(
         )
 
 
-def _boolean(value: Any, name: str) -> None:
-    if type(value) is not bool:
-        raise ProtocolValidationError(f"{name} must be a boolean")
+def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None:
+    """Evaluate only the schema keywords used by the embedded v1 contract."""
+    if isinstance(schema, str):
+        schema = CONTRACT["$defs"][schema]
+    if "$ref" in schema:
+        target = CONTRACT["$defs"][schema["$ref"].removeprefix("#/$defs/")]
+        schema = {**target, **{key: item for key, item in schema.items() if key != "$ref"}}
+    code = schema.get("x-error-code", "PROTOCOL_ERROR")
+    kind = schema.get("type")
+    kinds = kind if isinstance(kind, list) else [kind]
+    if kind is not None:
+        if value is None and "null" in kinds:
+            pass
+        elif "integer" in kinds and type(value) in (int, float):
+            _integer(
+                value, name, minimum=schema.get("minimum", 0),
+                maximum=schema.get("maximum", MAX_SAFE_JSON_INTEGER), error_code=code,
+            )
+        elif not any(
+            (item == "object" and type(value) is dict)
+            or (item == "array" and type(value) is list)
+            or (item == "string" and type(value) is str)
+            or (item == "boolean" and type(value) is bool)
+            for item in kinds
+        ):
+            raise ProtocolValidationError(f"{name} must have type {kind}", code=code)
+    if "const" in schema and _canonical_json_value(value) != _canonical_json_value(schema["const"]):
+        raise ProtocolValidationError(
+            f"{name} has an unsupported value", code=schema.get("x-const-error-code", code)
+        )
+    if "enum" in schema and value not in schema["enum"]:
+        raise ProtocolValidationError(f"{name} has an unsupported value", code=code)
+    if type(value) is str and "pattern" in schema and re.search(schema["pattern"], value) is None:
+        raise ProtocolValidationError(f"{name} does not match its string format", code=code)
+    if type(value) is dict:
+        properties = schema.get("properties", {})
+        for field in schema.get("required", []):
+            if field not in value:
+                raise ProtocolValidationError(
+                    f"{name} requires {field}", code=properties[field].get("x-error-code", code)
+                )
+        if schema.get("additionalProperties") is False and value.keys() - properties.keys():
+            raise ProtocolValidationError(f"{name} contains unknown fields", code=code)
+        for field, rule in properties.items():
+            if field in value:
+                _validate_shape(value[field], rule, f"{name}.{field}")
+    if type(value) is list:
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            raise ProtocolValidationError(f"{name} exceeds its record limit", code=code)
+        if "items" in schema:
+            for item in value:
+                _validate_shape(item, schema["items"], f"{name} item")
+    for rule in schema.get("allOf", []):
+        _validate_shape(value, rule, name)
+    if "if" in schema:
+        try:
+            _validate_shape(value, schema["if"], name)
+        except ProtocolValidationError:
+            pass
+        else:
+            _validate_shape(value, schema["then"], name)
+    if "x-max-canonical-bytes" in schema:
+        sized = (
+            {field: value[field] for field in schema["x-size-fields"]}
+            if "x-size-fields" in schema else value
+        )
+        if _protocol_json_size(sized) > schema["x-max-canonical-bytes"]:
+            raise ProtocolValidationError(f"{name} exceeds 1 MiB", code="PAYLOAD_TOO_LARGE")
+    if "x-version-position" in schema:
+        version_field, position_field = schema["x-version-position"]
+        version = value.get(version_field)
+        if version is not None and version > value[position_field]:
+            raise ProtocolValidationError(f"{name}.{version_field} cannot exceed {position_field}")
 
 
 def _ecmascript_number(value: float) -> str:
@@ -435,382 +442,94 @@ def _canonical_json_value(value: Any) -> Any:
     raise TypeError("value is not JSON serializable")
 
 
-def _metadata(value: Any) -> dict[str, Any]:
-    metadata = _object(value, "run_metadata")
-    _fields(metadata, {"metadata_schema_version", "data"}, name="run_metadata")
-    _integer(metadata["metadata_schema_version"], "metadata_schema_version", minimum=1)
-    if metadata["metadata_schema_version"] != 1:
-        raise ProtocolValidationError("unsupported metadata_schema_version", code="PROTOCOL_ERROR")
-    _object(metadata["data"], "run_metadata.data")
-    if _protocol_json_size(metadata) > MAX_RUN_METADATA_BYTES:
-        raise ProtocolValidationError("run_metadata exceeds 1 MiB", code="PAYLOAD_TOO_LARGE")
-    return metadata
-
-
-def _hash(value: Any, name: str) -> None:
-    _identifier(value, name)
-    prefix = _HASH_PREFIXES[name]
-    digest = value[len(prefix) :] if value.startswith(prefix) else ""
-    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
-        raise ProtocolValidationError(f"{name} must use its versioned SHA-256 format")
-
-
 def validate_request(value: Any) -> ProtocolRequest:
-    """Validate a decoded request's closed v1 shape and bounded scalar fields."""
-    request = _object(value, "request")
-    _json_tree(request, "request")
-    _fields(
-        request,
-        {"protocol_schema_version", "request_id", "operation", "params"},
-        name="request",
-    )
-    _integer(request["protocol_schema_version"], "protocol_schema_version", minimum=1)
-    if request["protocol_schema_version"] != CURRENT_PROTOCOL_SCHEMA_VERSION:
-        raise ProtocolValidationError(
-            "unsupported protocol_schema_version", code="UNSUPPORTED_PROTOCOL_VERSION"
-        )
-    _identifier(request["request_id"], "request_id")
-    operation = request["operation"]
-    if not isinstance(operation, str) or operation not in _OPERATIONS:
-        raise ProtocolValidationError(f"unknown operation: {operation!r}")
-    params = _object(request["params"], "params")
-
-    if operation == "create_run":
-        _fields(params, {"run_id", "run_metadata"}, name="create_run params")
-        _identifier(params["run_id"], "run_id")
-        _metadata(params["run_metadata"])
-    elif operation == "get_run":
-        _fields(params, {"run_id"}, name="get_run params")
-        _identifier(params["run_id"], "run_id")
-    elif operation == "get_graph":
-        _fields(
-            params,
-            {"run_id", "limit"},
-            {"selection", "after_cursor"},
-            "get_graph params",
-        )
-        _identifier(params["run_id"], "run_id")
-        _integer(params["limit"], "limit", minimum=1, maximum=MAX_PROTOCOL_PAGE_SIZE)
-        if "selection" in params:
-            _object(params["selection"], "selection")
-        if "after_cursor" in params:
-            _identifier(params["after_cursor"], "after_cursor")
-    elif operation == "propose_mutation":
-        _fields(
-            params,
-            {
-                "run_id",
-                "proposal_id",
-                "request_schema_version",
-                "expected_graph_version",
-                "operations",
-                "evidence",
-            },
-            name="propose_mutation params",
-        )
-        _identifier(params["run_id"], "run_id")
-        _identifier(params["proposal_id"], "proposal_id")
-        _integer(params["request_schema_version"], "request_schema_version", minimum=1)
-        _integer(params["expected_graph_version"], "expected_graph_version")
-        if params["request_schema_version"] != CURRENT_REQUEST_SCHEMA_VERSION:
-            raise ProtocolValidationError("unsupported request_schema_version")
-        operations = params["operations"]
-        evidence = params["evidence"]
-        if type(operations) is not list or type(evidence) is not list:
-            raise ProtocolValidationError("operations and evidence must be arrays")
-        if any(type(item) is not dict for item in (*operations, *evidence)):
-            raise ProtocolValidationError("each operation and evidence item must be a JSON object")
-        normalized_value = {
-            "request_schema_version": params["request_schema_version"],
-            "expected_graph_version": params["expected_graph_version"],
-            "operations": operations,
-            "evidence": evidence,
-        }
-        if _protocol_json_size(normalized_value) > MAX_NORMALIZED_REQUEST_BYTES:
-            raise ProtocolValidationError("normalized mutation request exceeds 1 MiB", code="PAYLOAD_TOO_LARGE")
-    elif operation == "get_proposal":
-        _fields(params, {"run_id", "proposal_id"}, name="get_proposal params")
-        _identifier(params["run_id"], "run_id")
-        _identifier(params["proposal_id"], "proposal_id")
-    else:
-        if "limit" not in params:
-            raise ProtocolValidationError(
-                "get_audit_timeline requires limit", code="INVALID_LIMIT"
-            )
-        _integer(
-            params["limit"],
-            "limit",
-            minimum=1,
-            maximum=MAX_PROTOCOL_PAGE_SIZE,
-            error_code="INVALID_LIMIT",
-        )
-        _fields(
-            params,
-            {"run_id", "limit"},
-            {"after_journal_position"},
-            "get_audit_timeline params",
-        )
-        _identifier(params["run_id"], "run_id")
-        if "after_journal_position" in params:
-            _integer(params["after_journal_position"], "after_journal_position")
-
-    return cast(ProtocolRequest, request)
+    """Validate a request against the shared closed v1 contract."""
+    _json_tree(value, "request")
+    _validate_shape(value, "Request", "request")
+    _validate_shape(value["params"], CONTRACT["x-operations"][value["operation"]]["params"], "params")
+    return cast(ProtocolRequest, value)
 
 
-def _validate_run_result(value: Any, name: str) -> None:
-    result = _object(value, name)
-    _fields(
-        result,
-        {"run_id", "run_metadata", "metadata_hash", "graph_version", "last_journal_position", "created"},
-        name=name,
-    )
-    _identifier(result["run_id"], "run_id")
-    _metadata(result["run_metadata"])
-    _hash(result["metadata_hash"], "metadata_hash")
-    _integer(result["graph_version"], "graph_version")
-    _integer(result["last_journal_position"], "last_journal_position")
-    if result["graph_version"] > result["last_journal_position"]:
-        raise ProtocolValidationError("graph_version cannot exceed last_journal_position")
-    _boolean(result["created"], "created")
-    if result["created"] and (result["graph_version"] != 0 or result["last_journal_position"] != 0):
-        raise ProtocolValidationError("newly created runs must have zero graph version and journal position")
-
-
-def _validate_graph_result(value: Any, limit: int | None = None) -> None:
-    result = _object(value, "get_graph result")
-    _fields(
-        result,
-        {"run_id", "graph_schema_version", "graph_version", "nodes", "edges", "next_cursor", "has_more"},
-        name="get_graph result",
-    )
-    _identifier(result["run_id"], "run_id")
-    _integer(result["graph_schema_version"], "graph_schema_version", minimum=1)
-    _integer(result["graph_version"], "graph_version")
-    if type(result["nodes"]) is not list or type(result["edges"]) is not list:
-        raise ProtocolValidationError("nodes and edges must be arrays")
+def _validate_graph_result(result: dict[str, Any], limit: int | None) -> None:
     record_count = len(result["nodes"]) + len(result["edges"])
     if record_count > MAX_PROTOCOL_PAGE_SIZE:
         raise ProtocolValidationError("graph result exceeds the 100-record page limit", code="INVALID_LIMIT")
     if limit is not None and record_count > limit:
         raise ProtocolValidationError("graph result exceeds the requested limit", code="INVALID_LIMIT")
-    for node in result["nodes"]:
-        _object(node, "graph node")
-    for edge in result["edges"]:
-        _object(edge, "graph edge")
-    cursor = result["next_cursor"]
-    if cursor is not None:
-        _identifier(cursor, "next_cursor")
-    _boolean(result["has_more"], "has_more")
-    if result["has_more"] and cursor is None:
-        raise ProtocolValidationError("graph continuation requires next_cursor")
 
 
-def _validate_proposal_result(value: Any, expected_graph_version: int | None = None) -> None:
-    result = _object(value, "proposal result")
-    _fields(
-        result,
-        {
-            "run_id",
-            "proposal_id",
-            "status",
-            "request_hash",
-            "reason_code",
-            "resulting_graph_version",
-            "journal_position",
-        },
-        name="proposal result",
-    )
-    _identifier(result["run_id"], "run_id")
-    _identifier(result["proposal_id"], "proposal_id")
-    status = result["status"]
-    if not isinstance(status, str) or status not in _STATUSES:
-        raise ProtocolValidationError("unsupported proposal status")
-    _hash(result["request_hash"], "request_hash")
-    reason = result["reason_code"]
+def _validate_proposal_result(result: dict[str, Any], expected_graph_version: int | None) -> None:
     resulting_version = result["resulting_graph_version"]
-    _integer(result["journal_position"], "journal_position", minimum=1)
-    if reason is not None:
-        _identifier(reason, "reason_code")
-    if resulting_version is not None:
-        _integer(resulting_version, "resulting_graph_version")
-    if status == ProposalStatus.PENDING.value:
-        if reason is not None or resulting_version is not None:
-            raise ProtocolValidationError("PENDING cannot contain terminal outcome fields")
-    elif status == ProposalStatus.ABANDONED.value:
-        if reason is None or resulting_version is not None:
-            raise ProtocolValidationError("ABANDONED requires a reason and no graph version")
-    elif status == GovernanceOutcome.COMMIT.value:
-        if resulting_version is None:
-            raise ProtocolValidationError("COMMIT requires a graph version")
-        if expected_graph_version is not None and resulting_version != expected_graph_version + 1:
-            raise ProtocolValidationError("COMMIT must advance graph_version exactly once")
-    else:
-        if reason is None or resulting_version is None:
-            raise ProtocolValidationError("non-COMMIT terminal outcomes require a reason and graph version")
-        if expected_graph_version is not None:
-            if status == GovernanceOutcome.CONFLICT.value:
-                if resulting_version == expected_graph_version:
-                    raise ProtocolValidationError("CONFLICT requires a graph version different from expected_graph_version")
-            elif resulting_version != expected_graph_version:
-                raise ProtocolValidationError("non-commit outcomes must preserve expected_graph_version")
+    if expected_graph_version is None or resulting_version is None:
+        return
+    effect = CONTRACT["x-proposal-states"][result["status"]]["graph_effect"]
+    if effect == "advance" and resulting_version != expected_graph_version + 1:
+        raise ProtocolValidationError("COMMIT must advance graph_version exactly once")
+    if effect == "preserve" and resulting_version != expected_graph_version:
+        raise ProtocolValidationError("non-commit outcomes must preserve expected_graph_version")
+    if effect == "differ" and resulting_version == expected_graph_version:
+        raise ProtocolValidationError("CONFLICT requires a graph version different from expected_graph_version")
 
 
-def _validate_audit_record(value: Any, expected_run_id: str, previous_position: int) -> int:
-    record = _object(value, "audit record")
-    _fields(
-        record,
-        {"journal_position", "record_type", "run_id"},
-        {"proposal_id", "lifecycle_state", "outcome", "reason_code", "graph_version"},
-        "audit record",
-    )
-    position = record["journal_position"]
-    _integer(position, "journal_position", minimum=1)
-    if position <= previous_position:
-        raise ProtocolValidationError("audit records must be ordered by journal_position")
-    _identifier(record["record_type"], "record_type")
-    _identifier(record["run_id"], "run_id")
-    if record["run_id"] != expected_run_id:
-        raise ProtocolValidationError("audit record run_id does not match response run_id")
-    if "proposal_id" in record:
-        _identifier(record["proposal_id"], "proposal_id")
-    if "lifecycle_state" in record:
-        lifecycle_state = record["lifecycle_state"]
-        if not isinstance(lifecycle_state, str) or lifecycle_state not in {
-            ProposalStatus.PENDING.value,
-            ProposalStatus.ABANDONED.value,
-        }:
-            raise ProtocolValidationError("unsupported audit lifecycle_state")
-    if "outcome" in record:
-        outcome = record["outcome"]
-        if not isinstance(outcome, str) or outcome not in _OUTCOMES:
-            raise ProtocolValidationError("unsupported audit outcome")
-    if "reason_code" in record:
-        _identifier(record["reason_code"], "reason_code")
-    if "graph_version" in record:
-        _integer(record["graph_version"], "graph_version")
-    return position
-
-
-def _validate_audit_result(
-    value: Any, after_journal_position: int | None = None, limit: int | None = None
-) -> None:
-    result = _object(value, "audit timeline result")
-    _fields(
-        result,
-        {"run_id", "records", "next_after_journal_position", "has_more"},
-        name="audit timeline result",
-    )
-    _identifier(result["run_id"], "run_id")
+def _validate_audit_result(result: dict[str, Any], after_journal_position: int | None, limit: int | None) -> None:
     records = result["records"]
-    if type(records) is not list or len(records) > MAX_PROTOCOL_PAGE_SIZE:
-        raise ProtocolValidationError("audit records must fit the 100-record page limit", code="INVALID_LIMIT")
     if limit is not None and len(records) > limit:
         raise ProtocolValidationError("audit records exceed the requested limit", code="INVALID_LIMIT")
-    if after_journal_position is not None:
-        _integer(after_journal_position, "after_journal_position")
     previous_position = after_journal_position or 0
     for record in records:
-        previous_position = _validate_audit_record(record, result["run_id"], previous_position)
-    next_position = result["next_after_journal_position"]
-    _integer(next_position, "next_after_journal_position")
-    _boolean(result["has_more"], "has_more")
-    if records:
-        if next_position != previous_position:
-            raise ProtocolValidationError(
-                "next_after_journal_position must equal the last returned record"
-            )
-    else:
-        if after_journal_position is None:
-            raise ProtocolValidationError(
-                "validating an empty audit page requires its request cursor"
-            )
-        expected_position = after_journal_position
-        if next_position != expected_position:
-            raise ProtocolValidationError(
-                "empty audit page must preserve its supplied cursor"
-            )
-        if result["has_more"]:
-            raise ProtocolValidationError("empty audit page cannot have more records")
+        if record["run_id"] != result["run_id"]:
+            raise ProtocolValidationError("audit record run_id does not match response run_id")
+        position = record["journal_position"]
+        if position <= previous_position:
+            raise ProtocolValidationError("audit records must be ordered by journal_position")
+        previous_position = position
+    if not records and after_journal_position is None:
+        raise ProtocolValidationError("validating an empty audit page requires its request cursor")
+    if result["next_after_journal_position"] != previous_position:
+        raise ProtocolValidationError("audit cursor must equal the final record or supplied empty-page cursor")
 
 
-def validate_response(
-    value: Any, request: ProtocolRequest | None = None
-) -> ProtocolResponse:
-    """Validate success/error envelopes and the public operation result shape."""
+def validate_response(value: Any, request: ProtocolRequest | None = None) -> ProtocolResponse:
+    """Validate shared shapes, then enforce request and projection invariants."""
     response = _object(value, "response")
     _json_tree(response, "response")
+    is_error = "error" in response
+    _validate_shape(response, "ErrorResponse" if is_error else "SuccessResponse", "response")
+    if not is_error:
+        operation = response["operation"]
+        result = response["result"]
+        _validate_shape(result, CONTRACT["x-operations"][operation]["result"], f"{operation} result")
     after_journal_position = None
     requested_limit = None
     expected_graph_version = None
-    requested_run_metadata = None
     if request is not None:
         validate_request(request)
-        if response.get("request_id") != request["request_id"]:
+        if response["request_id"] != request["request_id"]:
             raise ProtocolValidationError("response request_id does not match request")
-        if "error" not in response:
-            if response.get("operation") != request["operation"]:
+        if not is_error:
+            if operation != request["operation"]:
                 raise ProtocolValidationError("response operation does not match request")
-            params = _object(request["params"], "request params")
-            result = _object(response.get("result"), "response result")
-            if result.get("run_id") != params["run_id"]:
+            params = request["params"]
+            if result["run_id"] != params["run_id"]:
                 raise ProtocolValidationError("response run_id does not match request")
-            if "proposal_id" in params and result.get("proposal_id") != params["proposal_id"]:
+            if "proposal_id" in params and result["proposal_id"] != params["proposal_id"]:
                 raise ProtocolValidationError("response proposal_id does not match request")
-            if request["operation"] == "create_run":
-                requested_run_metadata = params["run_metadata"]
-            elif request["operation"] == "propose_mutation":
+            if operation == "create_run" and _canonical_json_value(
+                result["run_metadata"]
+            ) != _canonical_json_value(params["run_metadata"]):
+                raise ProtocolValidationError("create_run response run_metadata does not match request")
+            if operation == "propose_mutation":
                 expected_graph_version = params["expected_graph_version"]
-            elif request["operation"] == "get_audit_timeline":
+            if operation == "get_audit_timeline":
                 after_journal_position = params.get("after_journal_position", 0)
-                requested_limit = params["limit"]
-            elif request["operation"] == "get_graph":
-                requested_limit = params["limit"]
-    _integer(response.get("protocol_schema_version"), "protocol_schema_version", minimum=1)
-    if response["protocol_schema_version"] != CURRENT_PROTOCOL_SCHEMA_VERSION:
-        raise ProtocolValidationError(
-            "unsupported protocol_schema_version", code="UNSUPPORTED_PROTOCOL_VERSION"
-        )
-    if "error" in response:
-        _fields(response, {"protocol_schema_version", "request_id", "error"}, name="error response")
-        request_id = response["request_id"]
-        error = _object(response["error"], "error")
-        _fields(error, {"code", "message"}, name="error")
-        if not isinstance(error["code"], str) or error["code"] not in _ERROR_CODES:
-            raise ProtocolValidationError("unsupported protocol error code")
-        if request_id is not None:
-            _identifier(request_id, "request_id")
-        elif error["code"] not in {
-            "PROTOCOL_ERROR",
-            "UNSUPPORTED_PROTOCOL_VERSION",
-            "PAYLOAD_TOO_LARGE",
-            "STORE_IN_USE",
-        }:
-            raise ProtocolValidationError("this error requires a request_id")
-        if error["code"] == "STORE_IN_USE" and request_id is not None:
-            raise ProtocolValidationError("STORE_IN_USE is a startup error and has no request_id")
-        _identifier(error["message"], "error.message")
-        return cast(ProtocolResponse, response)
-
-    _fields(response, {"protocol_schema_version", "request_id", "operation", "result"}, name="success response")
-    _identifier(response["request_id"], "request_id")
-    operation = response["operation"]
-    if not isinstance(operation, str) or operation not in _OPERATIONS:
-        raise ProtocolValidationError("unknown response operation")
-    result = response["result"]
-    if operation in {"create_run", "get_run"}:
-        _validate_run_result(result, f"{operation} result")
-        if operation == "get_run" and result["created"]:
-            raise ProtocolValidationError("get_run cannot create a run")
-        if requested_run_metadata is not None and _canonical_json_value(result["run_metadata"]) != _canonical_json_value(
-            requested_run_metadata
-        ):
-            raise ProtocolValidationError("create_run response run_metadata does not match request")
-    elif operation == "get_graph":
-        _validate_graph_result(result, requested_limit)
-    elif operation in {"propose_mutation", "get_proposal"}:
-        _validate_proposal_result(result, expected_graph_version)
-    else:
-        _validate_audit_result(result, after_journal_position, requested_limit)
+            requested_limit = params.get("limit")
+    if not is_error:
+        if operation == "get_graph":
+            _validate_graph_result(result, requested_limit)
+        elif operation in {"propose_mutation", "get_proposal"}:
+            _validate_proposal_result(result, expected_graph_version)
+        elif operation == "get_audit_timeline":
+            _validate_audit_result(result, after_journal_position, requested_limit)
     return cast(ProtocolResponse, response)
 
 

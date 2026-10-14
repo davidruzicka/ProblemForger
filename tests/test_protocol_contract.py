@@ -251,6 +251,28 @@ class ProtocolContractTests(unittest.TestCase):
         with self.assertRaises(ProtocolValidationError):
             decode_response(json.dumps(response, separators=(",", ":")), request)
 
+    def test_all_public_graph_versions_are_bounded_by_journal_position(self) -> None:
+        responses = {item["label"]: deepcopy(item["message"]) for item in self.fixtures["responses"]}
+        proposal = responses["get_proposal_commit"]
+        proposal["result"].update(resulting_graph_version=99, journal_position=1)
+        audit = responses["get_audit_timeline"]
+        audit["result"]["records"][0]["graph_version"] = 99
+        for response in (proposal, audit):
+            with self.subTest(operation=response["operation"]):
+                with self.assertRaises(ProtocolValidationError):
+                    encode_response(response)
+                with self.assertRaises(ProtocolValidationError):
+                    decode_response(json.dumps(response))
+
+    def test_identifier_blank_set_is_language_independent(self) -> None:
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "get_run")
+        )
+        for blank in ("\u001c", "\ufeff", "\u001c\ufeff "):
+            request["request_id"] = blank
+            with self.subTest(blank=repr(blank)), self.assertRaises(ProtocolValidationError):
+                encode_request(request)
+
     def test_proposal_response_versions_match_the_originating_request(self) -> None:
         request = deepcopy(
             next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")

@@ -125,6 +125,8 @@ equal to the requested metadata; differing metadata is a
 and a `get_run` response always has `created: false`. Every run result must
 also satisfy `graph_version <= last_journal_position`, because each
 graph-version advance requires at least one durable journal record.
+The same bound applies to every non-null proposal or audit graph version and
+its associated `journal_position`.
 For a `propose_mutation` request, a committed result advances
 `expected_graph_version` exactly once; `REJECT`, `RETRY`, and `ESCALATE`
 preserve it, while `CONFLICT` reports a different graph version. A committed
@@ -154,6 +156,56 @@ the same fixture set and reject malformed shapes, duplicate JSON object keys,
 unsupported versions, non-finite values, and unsafe integers. The 1 MiB
 subdocument limits count compact UTF-8 JSON bytes with ECMAScript-compatible
 number formatting, so both codecs apply the same size boundary.
+
+### Declarative contract and code invariants
+
+All protocol validation is deterministic. The representation separates fixed
+declarations from comparisons between actual values or durable records.
+[The v1 contract](../contracts/protocol-v1.json) defines the fixed declarations
+once; both codecs consume generated copies of that data.
+
+| Rule | Definition |
+| --- | --- |
+| Required/optional fields, closed objects, JSON types, versions, integer bounds, string/hash formats, and payload/page limits | Contract `$defs` and fixed limit annotations |
+| Operation parameters and results | `x-operations` |
+| Proposal states, nullability, required reasons, and graph-effect categories | `x-proposal-states` |
+| Permitted proposal lifecycle advances | `x-proposal-transitions` |
+| Error codes and allowed null/non-null request IDs | `x-errors` |
+| Request/response IDs, operation, run/proposal identity, and canonical metadata equality | Code invariants |
+| Graph version versus journal position; expected versus resulting graph version | Code invariants, with field pairs/effect categories supplied by data |
+| Combined graph-page size, request-relative page limits, audit ordering, run identity, and continuation cursors | Code invariants |
+| Valid JSON/UTF-8, duplicate-key rejection, safe numbers, canonical byte counting, and frame limits | Shared codec primitives enforcing wire invariants |
+| Durable receipts, one terminal result, atomic commits, replay identity, and recovery | Existing domain/EventStore invariants under ADR 0006 |
+
+`ABSENT` is a lifecycle boundary, not a wire status. A new receipt advances
+`ABSENT` to `PENDING`; a pending receipt can advance to any declared terminal
+state. Terminal states have no outgoing advances. Lookup and same-identity
+transport replay preserve the current state and journal; they are not new
+transitions. Governance `RETRY` remains terminal for that proposal ID.
+Provider conformance tests execute every source/target pair exposed by receipt
+and finalization operations against both memory and SQLite.
+
+The contract uses a bounded set of schema keywords: local `$ref`, `type`,
+`properties`, `required`, `additionalProperties`, `items`, `maxItems`,
+`minimum`, `maximum`, `pattern`, `const`, `enum`, `allOf`, and `if`/`then`.
+The generator expands finite operation, state, and error tables into enums and
+conditional shapes. Limit/error annotations supply fixed values; the
+`x-version-position` annotation selects the fields for the shared comparison
+invariant. There is no expression evaluator or third-party schema dependency.
+Unsupported schema keywords and missing local references fail generation.
+
+`Identifier.pattern` fixes the blank-character set independently of Python
+`strip()` and JavaScript `trim()`: Unicode White_Space plus U+001C–U+001F and
+U+FEFF. An identifier must contain a character outside that set; valid Unicode
+and UTF-8 are still required throughout every JSON document.
+
+After editing the contract, run
+`python3 -m scripts.generate_protocol_contract`. CI checks
+`python3 -m scripts.generate_protocol_contract --check` before testing, so
+generated Python/TypeScript copies cannot drift. Static API type annotations
+describe callers' values; they do not replace runtime validation. Conformance
+tests compare the same finite state/field cases in both codecs and check Python
+type declarations and domain status enums against the contract.
 
 ### Observation plane
 
