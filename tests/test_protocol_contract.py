@@ -223,6 +223,34 @@ class ProtocolContractTests(unittest.TestCase):
             with self.subTest(field=f"decoded {field}"), self.assertRaises(ProtocolValidationError):
                 decode_response(json.dumps(invalid, separators=(",", ":")))
 
+    def test_run_response_graph_version_does_not_exceed_journal_position(self) -> None:
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_run")
+        )
+        response["result"]["graph_version"] = response["result"]["last_journal_position"] + 1
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "get_run")
+        )
+
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(response, request)
+        with self.assertRaises(ProtocolValidationError):
+            decode_response(json.dumps(response, separators=(",", ":")), request)
+
+    def test_get_run_response_cannot_claim_to_create_the_run(self) -> None:
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_run")
+        )
+        response["result"].update(created=True, graph_version=0, last_journal_position=0)
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "get_run")
+        )
+
+        with self.assertRaises(ProtocolValidationError):
+            encode_response(response, request)
+        with self.assertRaises(ProtocolValidationError):
+            decode_response(json.dumps(response, separators=(",", ":")), request)
+
     def test_proposal_response_versions_match_the_originating_request(self) -> None:
         request = deepcopy(
             next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")

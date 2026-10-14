@@ -121,7 +121,10 @@ With a `create_run` request, successful response metadata must be canonically
 equal to the requested metadata; differing metadata is a
 `RUN_METADATA_CONFLICT`, not a successful response. A response marked
 `created: true` must report both `graph_version` and
-`last_journal_position` as zero.
+`last_journal_position` as zero. Such a response is valid only for `create_run`,
+and a `get_run` response always has `created: false`. Every run result must
+also satisfy `graph_version <= last_journal_position`, because each
+graph-version advance requires at least one durable journal record.
 For a `propose_mutation` request, a committed result advances
 `expected_graph_version` exactly once; `REJECT`, `RETRY`, and `ESCALATE`
 preserve it, while `CONFLICT` reports a different graph version. A committed

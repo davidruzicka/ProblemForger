@@ -243,6 +243,33 @@ for (const field of ['graph_version', 'last_journal_position']) {
   assert.throws(() => decodeResponse(JSON.stringify(invalid)), undefined, `decoded new run has zero ${field}`);
 }
 
+const getRunResponse = structuredClone(fixture.responses.find(({ label }) => label === 'get_run').message);
+const invalidRunVersionPair = structuredClone(getRunResponse);
+invalidRunVersionPair.result.graph_version = invalidRunVersionPair.result.last_journal_position + 1;
+assert.throws(
+  () => encodeResponse(invalidRunVersionPair, getRunRequest),
+  undefined,
+  'run graph version cannot exceed its journal position',
+);
+assert.throws(
+  () => decodeResponse(JSON.stringify(invalidRunVersionPair), getRunRequest),
+  undefined,
+  'decoded run graph version cannot exceed its journal position',
+);
+
+const createdByGetRun = structuredClone(getRunResponse);
+Object.assign(createdByGetRun.result, { created: true, graph_version: 0, last_journal_position: 0 });
+assert.throws(
+  () => encodeResponse(createdByGetRun, getRunRequest),
+  undefined,
+  'get_run response cannot claim it created the run',
+);
+assert.throws(
+  () => decodeResponse(JSON.stringify(createdByGetRun), getRunRequest),
+  undefined,
+  'decoded get_run response cannot claim it created the run',
+);
+
 assert.throws(
   () => encodeResponse(createRunResponse, { ...createRunRequest, request_id: 'another-request' }),
   undefined,

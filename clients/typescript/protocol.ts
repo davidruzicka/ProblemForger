@@ -304,6 +304,7 @@ function validateRunResult(value: unknown, name: string): void {
   hash(result.metadata_hash, 'sha256:problemforger-run-metadata-v1:', 'metadata_hash');
   integer(result.graph_version, 'graph_version');
   integer(result.last_journal_position, 'last_journal_position');
+  if (result.graph_version > result.last_journal_position) return fail('graph_version cannot exceed last_journal_position');
   if (typeof result.created !== 'boolean') return fail('created must be a boolean');
   if (result.created && (result.graph_version !== 0 || result.last_journal_position !== 0)) {
     return fail('newly created runs must have zero graph version and journal position');
@@ -436,6 +437,7 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   const operation = response.operation as Operation;
   if (operation === 'create_run' || operation === 'get_run') {
     validateRunResult(response.result, `${operation} result`);
+    if (operation === 'get_run' && object(response.result, 'get_run result').created) return fail('get_run cannot create a run');
     if (request !== undefined && request.operation === 'create_run') {
       const result = object(response.result, 'create_run result');
       if (canonicalJson(result.run_metadata as JsonValue) !== canonicalJson(request.params.run_metadata as unknown as JsonValue)) {

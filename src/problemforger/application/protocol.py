@@ -569,6 +569,8 @@ def _validate_run_result(value: Any, name: str) -> None:
     _hash(result["metadata_hash"], "metadata_hash")
     _integer(result["graph_version"], "graph_version")
     _integer(result["last_journal_position"], "last_journal_position")
+    if result["graph_version"] > result["last_journal_position"]:
+        raise ProtocolValidationError("graph_version cannot exceed last_journal_position")
     _boolean(result["created"], "created")
     if result["created"] and (result["graph_version"] != 0 or result["last_journal_position"] != 0):
         raise ProtocolValidationError("newly created runs must have zero graph version and journal position")
@@ -797,6 +799,8 @@ def validate_response(
     result = response["result"]
     if operation in {"create_run", "get_run"}:
         _validate_run_result(result, f"{operation} result")
+        if operation == "get_run" and result["created"]:
+            raise ProtocolValidationError("get_run cannot create a run")
         if requested_run_metadata is not None and _canonical_json_value(result["run_metadata"]) != _canonical_json_value(
             requested_run_metadata
         ):
