@@ -579,7 +579,7 @@ def _validate_graph_result(value: Any, limit: int | None = None) -> None:
         raise ProtocolValidationError("graph continuation requires next_cursor")
 
 
-def _validate_proposal_result(value: Any) -> None:
+def _validate_proposal_result(value: Any, expected_graph_version: int | None = None) -> None:
     result = _object(value, "proposal result")
     _fields(
         result,
@@ -614,10 +614,19 @@ def _validate_proposal_result(value: Any) -> None:
         if reason is None or resulting_version is not None:
             raise ProtocolValidationError("ABANDONED requires a reason and no graph version")
     elif status == GovernanceOutcome.COMMIT.value:
-        if reason is not None or resulting_version is None:
-            raise ProtocolValidationError("COMMIT requires a graph version and no reason")
-    elif reason is None or resulting_version is None:
-        raise ProtocolValidationError("non-COMMIT terminal outcomes require a reason and graph version")
+        if resulting_version is None:
+            raise ProtocolValidationError("COMMIT requires a graph version")
+        if expected_graph_version is not None and resulting_version != expected_graph_version + 1:
+            raise ProtocolValidationError("COMMIT must advance graph_version exactly once")
+    else:
+        if reason is None or resulting_version is None:
+            raise ProtocolValidationError("non-COMMIT terminal outcomes require a reason and graph version")
+        if expected_graph_version is not None:
+            if status == GovernanceOutcome.CONFLICT.value:
+                if resulting_version == expected_graph_version:
+                    raise ProtocolValidationError("CONFLICT requires a graph version different from expected_graph_version")
+            elif resulting_version != expected_graph_version:
+                raise ProtocolValidationError("non-commit outcomes must preserve expected_graph_version")
 
 
 def _validate_audit_record(value: Any, expected_run_id: str, previous_position: int) -> int:
@@ -706,6 +715,7 @@ def validate_response(
     _json_tree(response, "response")
     after_journal_position = None
     requested_limit = None
+    expected_graph_version = None
     if request is not None:
         validate_request(request)
         if response.get("request_id") != request["request_id"]:
@@ -719,7 +729,9 @@ def validate_response(
                 raise ProtocolValidationError("response run_id does not match request")
             if "proposal_id" in params and result.get("proposal_id") != params["proposal_id"]:
                 raise ProtocolValidationError("response proposal_id does not match request")
-            if request["operation"] == "get_audit_timeline":
+            if request["operation"] == "propose_mutation":
+                expected_graph_version = params["expected_graph_version"]
+            elif request["operation"] == "get_audit_timeline":
                 after_journal_position = params.get("after_journal_position", 0)
                 requested_limit = params["limit"]
             elif request["operation"] == "get_graph":
@@ -761,7 +773,7 @@ def validate_response(
     elif operation == "get_graph":
         _validate_graph_result(result, requested_limit)
     elif operation in {"propose_mutation", "get_proposal"}:
-        _validate_proposal_result(result)
+        _validate_proposal_result(result, expected_graph_version)
     else:
         _validate_audit_result(result, after_journal_position, requested_limit)
     return cast(ProtocolResponse, response)

@@ -117,6 +117,10 @@ codec. Python and TypeScript validate matching `request_id` for success and
 error responses; successful responses must also match the request's
 `operation` and `run_id`, proposal responses must match `proposal_id`, and graph
 and audit pages must not contain more records than the requested `limit`.
+For a `propose_mutation` request, a committed result advances
+`expected_graph_version` exactly once; `REJECT`, `RETRY`, and `ESCALATE`
+preserve it, while `CONFLICT` reports a different graph version. A committed
+result may still include a nullable `reason_code`.
 
 Audit results contain `run_id`, a bounded `records` array,
 `next_after_journal_position`, and `has_more`. Each public record contains only

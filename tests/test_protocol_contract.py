@@ -178,6 +178,67 @@ class ProtocolContractTests(unittest.TestCase):
         encoded = encode_response(create_response, create_request)
         self.assertEqual(decode_response(encoded, create_request), create_response)
 
+    def test_proposal_response_versions_match_the_originating_request(self) -> None:
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")
+        )
+        request["params"]["expected_graph_version"] = 2
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_proposal_commit")
+        )
+        response["request_id"] = request["request_id"]
+        response["operation"] = "propose_mutation"
+        response["result"]["proposal_id"] = request["params"]["proposal_id"]
+
+        invalid_results = (
+            ("commit advances more than once", "COMMIT", None, 4),
+            ("reject advances graph", "REJECT", "POLICY_REJECTED", 3),
+            ("conflict has no version mismatch", "CONFLICT", "VERSION_CONFLICT", 2),
+        )
+        for label, status, reason_code, resulting_version in invalid_results:
+            invalid = deepcopy(response)
+            invalid["result"].update(
+                status=status,
+                reason_code=reason_code,
+                resulting_graph_version=resulting_version,
+            )
+            with self.subTest(label=label), self.assertRaises(ProtocolValidationError):
+                encode_response(invalid, request)
+            with self.subTest(label=f"decoded {label}"), self.assertRaises(ProtocolValidationError):
+                decode_response(json.dumps(invalid, separators=(",", ":")), request)
+
+        valid_commit = deepcopy(response)
+        valid_commit["result"].update(status="COMMIT", resulting_graph_version=3)
+        self.assertEqual(decode_response(encode_response(valid_commit, request), request), valid_commit)
+
+        for status, resulting_version in (("REJECT", 2), ("RETRY", 2), ("ESCALATE", 2), ("CONFLICT", 3)):
+            valid_terminal = deepcopy(response)
+            valid_terminal["result"].update(
+                status=status,
+                reason_code=f"{status}_REASON",
+                resulting_graph_version=resulting_version,
+            )
+            with self.subTest(status=status):
+                self.assertEqual(
+                    decode_response(encode_response(valid_terminal, request), request),
+                    valid_terminal,
+                )
+
+    def test_committed_proposal_accepts_a_valid_optional_reason_code(self) -> None:
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")
+        )
+        request["params"]["expected_graph_version"] = 2
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_proposal_commit")
+        )
+        response["request_id"] = request["request_id"]
+        response["operation"] = "propose_mutation"
+        response["result"]["proposal_id"] = request["params"]["proposal_id"]
+        response["result"]["reason_code"] = "all_checks_passed"
+
+        self.assertEqual(decode_response(encode_response(response, request), request), response)
+
     def test_request_validators_reject_bad_metadata_paging_and_mutation_bounds(self) -> None:
         requests = [fixture["message"] for fixture in self.fixtures["requests"]]
         create_run = next(item for item in requests if item["operation"] == "create_run")

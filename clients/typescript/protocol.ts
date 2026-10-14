@@ -323,7 +323,7 @@ function validateGraphResult(value: unknown, limit?: number): void {
   if (result.has_more && result.next_cursor === null) return fail('graph continuation requires next_cursor');
 }
 
-function validateProposalResult(value: unknown): void {
+function validateProposalResult(value: unknown, expectedGraphVersion?: number): void {
   const result = object(value, 'proposal result');
   exactFields(result, ['run_id', 'proposal_id', 'status', 'request_hash', 'reason_code', 'resulting_graph_version', 'journal_position'], [], 'proposal result');
   identifier(result.run_id, 'run_id');
@@ -337,9 +337,21 @@ function validateProposalResult(value: unknown): void {
   if (resultingVersion !== null) integer(resultingVersion, 'resulting_graph_version');
   if (result.status === 'PENDING' && (reason !== null || resultingVersion !== null)) return fail('PENDING cannot contain terminal outcome fields');
   if (result.status === 'ABANDONED' && (reason === null || resultingVersion !== null)) return fail('ABANDONED requires a reason and no graph version');
-  if (result.status === 'COMMIT' && (reason !== null || resultingVersion === null)) return fail('COMMIT requires a graph version and no reason');
-  if (result.status !== 'PENDING' && result.status !== 'ABANDONED' && result.status !== 'COMMIT' && (reason === null || resultingVersion === null)) {
-    return fail('non-COMMIT terminal outcomes require a reason and graph version');
+  if (result.status === 'COMMIT') {
+    if (resultingVersion === null) return fail('COMMIT requires a graph version');
+    if (expectedGraphVersion !== undefined && resultingVersion !== expectedGraphVersion + 1) {
+      return fail('COMMIT must advance graph_version exactly once');
+    }
+  } else if (result.status !== 'PENDING' && result.status !== 'ABANDONED') {
+    if (reason === null || resultingVersion === null) return fail('non-COMMIT terminal outcomes require a reason and graph version');
+    if (expectedGraphVersion !== undefined) {
+      if (result.status === 'CONFLICT' && resultingVersion === expectedGraphVersion) {
+        return fail('CONFLICT requires a graph version different from expected_graph_version');
+      }
+      if (result.status !== 'CONFLICT' && resultingVersion !== expectedGraphVersion) {
+        return fail('non-commit outcomes must preserve expected_graph_version');
+      }
+    }
   }
 }
 
@@ -384,6 +396,7 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   if (response.protocol_schema_version !== CURRENT_PROTOCOL_SCHEMA_VERSION) return fail('unsupported protocol_schema_version');
   let afterJournalPosition: number | undefined;
   let requestedLimit: number | undefined;
+  let expectedGraphVersion: number | undefined;
   if (request !== undefined) {
     validateRequest(request);
     if (response.request_id !== request.request_id) return fail('response request_id does not match request');
@@ -393,7 +406,9 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
       const result = object(response.result, 'response result');
       if (result.run_id !== params.run_id) return fail('response run_id does not match request');
       if (Object.hasOwn(params, 'proposal_id') && result.proposal_id !== params.proposal_id) return fail('response proposal_id does not match request');
-      if (request.operation === 'get_audit_timeline') {
+      if (request.operation === 'propose_mutation') {
+        expectedGraphVersion = request.params.expected_graph_version;
+      } else if (request.operation === 'get_audit_timeline') {
         afterJournalPosition = request.params.after_journal_position ?? 0;
         requestedLimit = request.params.limit;
       } else if (request.operation === 'get_graph') {
@@ -418,7 +433,7 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   const operation = response.operation as Operation;
   if (operation === 'create_run' || operation === 'get_run') validateRunResult(response.result, `${operation} result`);
   else if (operation === 'get_graph') validateGraphResult(response.result, requestedLimit);
-  else if (operation === 'propose_mutation' || operation === 'get_proposal') validateProposalResult(response.result);
+  else if (operation === 'propose_mutation' || operation === 'get_proposal') validateProposalResult(response.result, expectedGraphVersion);
   else {
     validateAuditResult(response.result, afterJournalPosition, requestedLimit);
   }

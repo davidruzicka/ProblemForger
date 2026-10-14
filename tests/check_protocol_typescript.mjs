@@ -241,6 +241,42 @@ assert.throws(
   undefined,
   'proposal response must match request proposal id',
 );
+proposalRequest.params.expected_graph_version = 2;
+const commitResponse = structuredClone(fixture.responses.find(({ label }) => label === 'get_proposal_commit').message);
+commitResponse.request_id = proposalRequest.request_id;
+commitResponse.operation = 'propose_mutation';
+commitResponse.result.proposal_id = proposalRequest.params.proposal_id;
+
+for (const [label, status, reasonCode, resultingVersion] of [
+  ['commit advances more than once', 'COMMIT', null, 4],
+  ['reject advances graph', 'REJECT', 'POLICY_REJECTED', 3],
+  ['conflict has no version mismatch', 'CONFLICT', 'VERSION_CONFLICT', 2],
+]) {
+  const invalid = structuredClone(commitResponse);
+  Object.assign(invalid.result, { status, reason_code: reasonCode, resulting_graph_version: resultingVersion });
+  assert.throws(() => encodeResponse(invalid, proposalRequest), undefined, label);
+  assert.throws(() => decodeResponse(JSON.stringify(invalid), proposalRequest), undefined, `decoded ${label}`);
+}
+
+for (const [status, reasonCode, resultingVersion] of [
+  ['COMMIT', null, 3],
+  ['REJECT', 'POLICY_REJECTED', 2],
+  ['RETRY', 'RETRY_REQUESTED', 2],
+  ['ESCALATE', 'ESCALATION_REQUIRED', 2],
+  ['CONFLICT', 'VERSION_CONFLICT', 3],
+]) {
+  const valid = structuredClone(commitResponse);
+  Object.assign(valid.result, { status, reason_code: reasonCode, resulting_graph_version: resultingVersion });
+  assert.deepEqual(decodeResponse(encodeResponse(valid, proposalRequest), proposalRequest), valid, `${status} version relationship`);
+}
+
+const committedWithReason = structuredClone(commitResponse);
+committedWithReason.result.reason_code = 'all_checks_passed';
+assert.deepEqual(
+  decodeResponse(encodeResponse(committedWithReason, proposalRequest), proposalRequest),
+  committedWithReason,
+  'committed proposal accepts an optional reason code',
+);
 const errorResponse = structuredClone(fixture.responses.find(({ label }) => label === 'unknown_run').message);
 assert.throws(
   () => encodeResponse(errorResponse, { ...createRunRequest, request_id: 'another-request' }),
