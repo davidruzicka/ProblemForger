@@ -117,6 +117,11 @@ codec. Python and TypeScript validate matching `request_id` for success and
 error responses; successful responses must also match the request's
 `operation` and `run_id`, proposal responses must match `proposal_id`, and graph
 and audit pages must not contain more records than the requested `limit`.
+With a `create_run` request, successful response metadata must be canonically
+equal to the requested metadata; differing metadata is a
+`RUN_METADATA_CONFLICT`, not a successful response. A response marked
+`created: true` must report both `graph_version` and
+`last_journal_position` as zero.
 For a `propose_mutation` request, a committed result advances
 `expected_graph_version` exactly once; `REJECT`, `RETRY`, and `ESCALATE`
 preserve it, while `CONFLICT` reports a different graph version. A committed

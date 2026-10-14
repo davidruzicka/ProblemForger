@@ -413,6 +413,28 @@ def _protocol_json_size(value: Any) -> int:
     raise TypeError("value is not JSON serializable")
 
 
+def _canonical_json_value(value: Any) -> Any:
+    """Build a type-safe, key-order-independent comparison form for JSON values."""
+    if value is None:
+        return ("null",)
+    if type(value) is bool:
+        return ("boolean", value)
+    if type(value) is str:
+        return ("string", value)
+    if type(value) is int:
+        return ("number", str(value))
+    if type(value) is float:
+        return ("number", _ecmascript_number(value))
+    if type(value) is list:
+        return ("array", tuple(_canonical_json_value(item) for item in value))
+    if type(value) is dict:
+        return (
+            "object",
+            tuple((key, _canonical_json_value(value[key])) for key in sorted(value)),
+        )
+    raise TypeError("value is not JSON serializable")
+
+
 def _metadata(value: Any) -> dict[str, Any]:
     metadata = _object(value, "run_metadata")
     _fields(metadata, {"metadata_schema_version", "data"}, name="run_metadata")
@@ -548,6 +570,8 @@ def _validate_run_result(value: Any, name: str) -> None:
     _integer(result["graph_version"], "graph_version")
     _integer(result["last_journal_position"], "last_journal_position")
     _boolean(result["created"], "created")
+    if result["created"] and (result["graph_version"] != 0 or result["last_journal_position"] != 0):
+        raise ProtocolValidationError("newly created runs must have zero graph version and journal position")
 
 
 def _validate_graph_result(value: Any, limit: int | None = None) -> None:
@@ -716,6 +740,7 @@ def validate_response(
     after_journal_position = None
     requested_limit = None
     expected_graph_version = None
+    requested_run_metadata = None
     if request is not None:
         validate_request(request)
         if response.get("request_id") != request["request_id"]:
@@ -729,7 +754,9 @@ def validate_response(
                 raise ProtocolValidationError("response run_id does not match request")
             if "proposal_id" in params and result.get("proposal_id") != params["proposal_id"]:
                 raise ProtocolValidationError("response proposal_id does not match request")
-            if request["operation"] == "propose_mutation":
+            if request["operation"] == "create_run":
+                requested_run_metadata = params["run_metadata"]
+            elif request["operation"] == "propose_mutation":
                 expected_graph_version = params["expected_graph_version"]
             elif request["operation"] == "get_audit_timeline":
                 after_journal_position = params.get("after_journal_position", 0)
@@ -770,6 +797,10 @@ def validate_response(
     result = response["result"]
     if operation in {"create_run", "get_run"}:
         _validate_run_result(result, f"{operation} result")
+        if requested_run_metadata is not None and _canonical_json_value(result["run_metadata"]) != _canonical_json_value(
+            requested_run_metadata
+        ):
+            raise ProtocolValidationError("create_run response run_metadata does not match request")
     elif operation == "get_graph":
         _validate_graph_result(result, requested_limit)
     elif operation in {"propose_mutation", "get_proposal"}:

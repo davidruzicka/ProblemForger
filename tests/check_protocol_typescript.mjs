@@ -219,6 +219,30 @@ assert.throws(
 
 const createRunResponse = structuredClone(fixture.responses.find(({ label }) => label === 'create_run').message);
 const createRunRequest = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
+const canonicalCreateRunRequest = structuredClone(createRunRequest);
+canonicalCreateRunRequest.params.run_metadata.data = { second: 2, first: { enabled: true }, integral_float: 1.0 };
+const canonicalCreateRunResponse = structuredClone(createRunResponse);
+canonicalCreateRunResponse.result.run_metadata.data = { first: { enabled: true }, second: 2, integral_float: 1 };
+assert.deepEqual(
+  decodeResponse(encodeResponse(canonicalCreateRunResponse, canonicalCreateRunRequest), canonicalCreateRunRequest),
+  canonicalCreateRunResponse,
+  'create_run response accepts canonically equal metadata with reordered keys',
+);
+
+for (const [label, enabled] of [['different metadata value', false], ['boolean and number metadata differ', 1]]) {
+  const invalid = structuredClone(canonicalCreateRunResponse);
+  invalid.result.run_metadata.data.first.enabled = enabled;
+  assert.throws(() => encodeResponse(invalid, canonicalCreateRunRequest), undefined, label);
+  assert.throws(() => decodeResponse(JSON.stringify(invalid), canonicalCreateRunRequest), undefined, `decoded ${label}`);
+}
+
+for (const field of ['graph_version', 'last_journal_position']) {
+  const invalid = structuredClone(createRunResponse);
+  invalid.result[field] = 1;
+  assert.throws(() => encodeResponse(invalid), undefined, `new run has zero ${field}`);
+  assert.throws(() => decodeResponse(JSON.stringify(invalid)), undefined, `decoded new run has zero ${field}`);
+}
+
 assert.throws(
   () => encodeResponse(createRunResponse, { ...createRunRequest, request_id: 'another-request' }),
   undefined,

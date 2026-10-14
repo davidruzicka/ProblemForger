@@ -178,6 +178,51 @@ class ProtocolContractTests(unittest.TestCase):
         encoded = encode_response(create_response, create_request)
         self.assertEqual(decode_response(encoded, create_request), create_response)
 
+    def test_create_run_response_metadata_matches_request_canonically(self) -> None:
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "create_run")
+        )
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "create_run")
+        )
+        request["params"]["run_metadata"]["data"] = {
+            "second": 2,
+            "first": {"enabled": True},
+            "integral_float": 1.0,
+        }
+        response["result"]["run_metadata"]["data"] = {
+            "first": {"enabled": True},
+            "second": 2,
+            "integral_float": 1,
+        }
+        self.assertEqual(decode_response(encode_response(response, request), request), response)
+
+        mismatches = []
+        different_value = deepcopy(response)
+        different_value["result"]["run_metadata"]["data"]["first"]["enabled"] = False
+        mismatches.append(("different metadata value", different_value))
+        different_type = deepcopy(response)
+        different_type["result"]["run_metadata"]["data"]["first"]["enabled"] = 1
+        mismatches.append(("boolean and number metadata differ", different_type))
+
+        for label, invalid in mismatches:
+            with self.subTest(label=label), self.assertRaises(ProtocolValidationError):
+                encode_response(invalid, request)
+            with self.subTest(label=f"decoded {label}"), self.assertRaises(ProtocolValidationError):
+                decode_response(json.dumps(invalid, separators=(",", ":")), request)
+
+    def test_newly_created_run_response_has_zero_versions(self) -> None:
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "create_run")
+        )
+        for field in ("graph_version", "last_journal_position"):
+            invalid = deepcopy(response)
+            invalid["result"][field] = 1
+            with self.subTest(field=field), self.assertRaises(ProtocolValidationError):
+                encode_response(invalid)
+            with self.subTest(field=f"decoded {field}"), self.assertRaises(ProtocolValidationError):
+                decode_response(json.dumps(invalid, separators=(",", ":")))
+
     def test_proposal_response_versions_match_the_originating_request(self) -> None:
         request = deepcopy(
             next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")

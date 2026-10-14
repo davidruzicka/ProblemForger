@@ -305,6 +305,9 @@ function validateRunResult(value: unknown, name: string): void {
   integer(result.graph_version, 'graph_version');
   integer(result.last_journal_position, 'last_journal_position');
   if (typeof result.created !== 'boolean') return fail('created must be a boolean');
+  if (result.created && (result.graph_version !== 0 || result.last_journal_position !== 0)) {
+    return fail('newly created runs must have zero graph version and journal position');
+  }
 }
 
 function validateGraphResult(value: unknown, limit?: number): void {
@@ -431,7 +434,15 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   identifier(response.request_id, 'request_id');
   if (typeof response.operation !== 'string' || !operations.has(response.operation as Operation)) return fail('unknown response operation');
   const operation = response.operation as Operation;
-  if (operation === 'create_run' || operation === 'get_run') validateRunResult(response.result, `${operation} result`);
+  if (operation === 'create_run' || operation === 'get_run') {
+    validateRunResult(response.result, `${operation} result`);
+    if (request !== undefined && request.operation === 'create_run') {
+      const result = object(response.result, 'create_run result');
+      if (canonicalJson(result.run_metadata as JsonValue) !== canonicalJson(request.params.run_metadata as unknown as JsonValue)) {
+        return fail('create_run response run_metadata does not match request');
+      }
+    }
+  }
   else if (operation === 'get_graph') validateGraphResult(response.result, requestedLimit);
   else if (operation === 'propose_mutation' || operation === 'get_proposal') validateProposalResult(response.result, expectedGraphVersion);
   else {
