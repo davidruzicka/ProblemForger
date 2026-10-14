@@ -103,10 +103,11 @@ the [proposal recovery contract](protocol.md#spec-protocol-proposal-recovery).
 Run metadata schema v1 is `RunMetadata(metadata_schema_version=1, data=<JSON
 object>)`. Its hash input is the canonical JSON object
 `{"metadata_schema_version":1,"data":<object>}`, using the same UTF-8 JSON
-canonicalization rules as normalized requests. The SHA-256 input is the domain
-bytes `problemforger.run-metadata.v1\0` followed by that canonical JSON, and
-the stored value is
-`sha256:problemforger-run-metadata-v1:<lowercase hex digest>`. A metadata
+canonicalization defined by the [v1 protocol contract](protocol.md#version-1-request-and-response-schema).
+The SHA-256 input is the declared domain separator followed by that canonical
+JSON, and the stored value is
+`sha256:problemforger-run-metadata-v1:<lowercase hex digest>`. Clients verify
+this binding on successful `create_run` and `get_run` responses. A metadata
 schema or hash-input change requires an explicit new version.
 
 Conceptual port contract:

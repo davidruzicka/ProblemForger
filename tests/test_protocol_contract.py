@@ -195,6 +195,10 @@ class ProtocolContractTests(unittest.TestCase):
             "second": 2,
             "integral_float": 1,
         }
+        response["result"]["metadata_hash"] = (
+            "sha256:problemforger-run-metadata-v1:"
+            "00ee606ab94545cf77dae3af2ae13d37971a0723991ef224347872807c00aabc"
+        )
         self.assertEqual(decode_response(encode_response(response, request), request), response)
 
         mismatches = []

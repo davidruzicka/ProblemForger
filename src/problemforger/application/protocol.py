@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -442,6 +443,21 @@ def _canonical_json_value(value: Any) -> Any:
     raise TypeError("value is not JSON serializable")
 
 
+def _run_metadata_hash(run_metadata: dict[str, Any]) -> str:
+    rule = CONTRACT["$defs"]["MetadataHash"]["x-canonical-hash"]
+    canonical = json.dumps(
+        run_metadata,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    digest = hashlib.new(
+        rule["algorithm"], rule["domain_separator"].encode("utf-8") + canonical
+    ).hexdigest()
+    return f"{rule['prefix']}{digest}"
+
+
 def validate_request(value: Any) -> ProtocolRequest:
     """Validate a request against the shared closed v1 contract."""
     _json_tree(value, "request")
@@ -499,6 +515,10 @@ def validate_response(value: Any, request: ProtocolRequest | None = None) -> Pro
         operation = response["operation"]
         result = response["result"]
         _validate_shape(result, CONTRACT["x-operations"][operation]["result"], f"{operation} result")
+        if operation in {"create_run", "get_run"} and _run_metadata_hash(
+            result["run_metadata"]
+        ) != result["metadata_hash"]:
+            raise ProtocolValidationError("metadata_hash does not match run_metadata")
     after_journal_position = None
     requested_limit = None
     expected_graph_version = None

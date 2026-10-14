@@ -14,7 +14,7 @@ SCHEMA_KEYWORDS = {
     "$ref", "type", "const", "enum", "minimum", "maximum", "pattern", "properties",
     "required", "additionalProperties", "items", "maxItems", "allOf", "if", "then",
     "x-error-code", "x-const-error-code", "x-max-canonical-bytes", "x-size-fields",
-    "x-version-position",
+    "x-version-position", "x-canonical-hash",
 }
 
 
@@ -42,6 +42,7 @@ def expand_tables(contract: dict) -> None:
         "identifier": {"$ref": "#/$defs/Identifier"},
         "nullable_identifier": {"$ref": "#/$defs/NullableIdentifier"},
         "integer": {"$ref": "#/$defs/SafeInteger"},
+        "positive_integer": {"$ref": "#/$defs/PositiveInteger"},
     }
     definitions["ProposalResult"]["allOf"] = [
         {"if": {"properties": {"status": {"const": status}}},

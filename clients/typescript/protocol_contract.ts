@@ -48,7 +48,7 @@ export const protocolContract = {
     "COMMIT": {
       "terminal": true,
       "reason_code": "nullable_identifier",
-      "resulting_graph_version": "integer",
+      "resulting_graph_version": "positive_integer",
       "graph_effect": "advance",
       "kind": "governance"
     },
@@ -153,7 +153,13 @@ export const protocolContract = {
     },
     "MetadataHash": {
       "type": "string",
-      "pattern": "^sha256:problemforger-run-metadata-v1:[0-9a-f]{64}(?![\\s\\S])"
+      "pattern": "^sha256:problemforger-run-metadata-v1:[0-9a-f]{64}(?![\\s\\S])",
+      "x-canonical-hash": {
+        "algorithm": "sha256",
+        "prefix": "sha256:problemforger-run-metadata-v1:",
+        "domain_separator": "problemforger.run-metadata.v1\u0000",
+        "canonicalization": "run-metadata-json-v1"
+      }
     },
     "RequestHash": {
       "type": "string",
@@ -603,7 +609,7 @@ export const protocolContract = {
                 "$ref": "#/$defs/NullableIdentifier"
               },
               "resulting_graph_version": {
-                "$ref": "#/$defs/SafeInteger"
+                "$ref": "#/$defs/PositiveInteger"
               }
             }
           }

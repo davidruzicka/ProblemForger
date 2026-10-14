@@ -1,5 +1,6 @@
 /** Public protocol v1 types and structural codec for TypeScript clients. */
 
+import { createHash } from 'node:crypto';
 import { protocolContract } from './protocol_contract.ts';
 
 export const CURRENT_PROTOCOL_SCHEMA_VERSION = protocolContract['x-contract-version'];
@@ -211,6 +212,57 @@ function canonicalJson(value: JsonValue): string {
   return JSON.stringify(value) as string;
 }
 
+function compareCodePoints(left: string, right: string): number {
+  const leftPoints = [...left].map((character) => character.codePointAt(0)!);
+  const rightPoints = [...right].map((character) => character.codePointAt(0)!);
+  for (let index = 0; index < Math.min(leftPoints.length, rightPoints.length); index += 1) {
+    if (leftPoints[index] !== rightPoints[index]) return leftPoints[index]! - rightPoints[index]!;
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
+function pythonCanonicalFloat(value: number): string {
+  const source = value.toString().toLowerCase();
+  const negative = source.startsWith('-');
+  const unsigned = negative ? source.slice(1) : source;
+  const [mantissa, exponentText] = unsigned.split('e');
+  const exponent = exponentText === undefined ? 0 : Number.parseInt(exponentText, 10);
+  const [integerPart, fractionalPart = ''] = mantissa!.split('.');
+  let digits = `${integerPart}${fractionalPart}`;
+  const significant = digits.replace(/^0+/, '');
+  const leadingZeroes = digits.length - significant.length;
+  let decimalPosition = integerPart!.length + exponent - leadingZeroes;
+  digits = significant.replace(/0+$/, '');
+  const scientificExponent = decimalPosition - 1;
+  let rendered: string;
+  if (scientificExponent < -4) {
+    const exponentDigits = Math.abs(scientificExponent).toString().padStart(2, '0');
+    rendered = `${digits[0]}${digits.length > 1 ? `.${digits.slice(1)}` : ''}e-${exponentDigits}`;
+  } else if (decimalPosition <= 0) {
+    rendered = `0.${'0'.repeat(-decimalPosition)}${digits}`;
+  } else {
+    rendered = `${digits.slice(0, decimalPosition)}.${digits.slice(decimalPosition)}`;
+  }
+  return `${negative ? '-' : ''}${rendered}`;
+}
+
+function pythonCanonicalJson(value: JsonValue): string {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value) as string;
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : pythonCanonicalFloat(value);
+  if (Array.isArray(value)) return `[${value.map(pythonCanonicalJson).join(',')}]`;
+  const fields = Object.keys(value).sort(compareCodePoints);
+  return `{${fields.map((key) => `${JSON.stringify(key)}:${pythonCanonicalJson(value[key]!)}`).join(',')}}`;
+}
+
+function runMetadataHash(metadata: RunMetadata): string {
+  const rule = protocolContract.$defs.MetadataHash['x-canonical-hash'];
+  const digest = createHash(rule.algorithm)
+    .update(rule.domain_separator, 'utf8')
+    .update(pythonCanonicalJson(metadata), 'utf8')
+    .digest('hex');
+  return `${rule.prefix}${digest}`;
+}
+
 function validateShape(value: unknown, shape: Shape | string, name: string): void {
   let schema = typeof shape === 'string' ? definitions[shape]! : shape;
   if (schema.$ref !== undefined) {
@@ -309,7 +361,15 @@ export function validateResponse(value: unknown, request?: ProtocolRequest): ass
   validateShape(response, isError ? 'ErrorResponse' : 'SuccessResponse', 'response');
   const operation = response.operation as Operation;
   const result = isError ? undefined : object(response.result, 'response result');
-  if (result !== undefined) validateShape(result, protocolContract['x-operations'][operation].result, `${operation} result`);
+  if (result !== undefined) {
+    validateShape(result, protocolContract['x-operations'][operation].result, `${operation} result`);
+    if (operation === 'create_run' || operation === 'get_run') {
+      const runResult = result as unknown as RunResult;
+      if (runMetadataHash(runResult.run_metadata) !== runResult.metadata_hash) {
+        return fail('metadata_hash does not match run_metadata');
+      }
+    }
+  }
   let afterJournalPosition: number | undefined;
   let requestedLimit: number | undefined;
   let expectedGraphVersion: number | undefined;

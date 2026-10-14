@@ -98,7 +98,7 @@
         "result": {
           "run_id": "run-1",
           "run_metadata": {"metadata_schema_version": 1, "data": {"purpose": "contract fixture"}},
-          "metadata_hash": "sha256:problemforger-run-metadata-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "metadata_hash": "sha256:problemforger-run-metadata-v1:6412ee231458d8137bd7df319a3f629cc78d4a4239023527700641c2f784441f",
           "graph_version": 0,
           "last_journal_position": 0,
           "created": true
@@ -114,7 +114,7 @@
         "result": {
           "run_id": "run-1",
           "run_metadata": {"metadata_schema_version": 1, "data": {"purpose": "contract fixture"}},
-          "metadata_hash": "sha256:problemforger-run-metadata-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "metadata_hash": "sha256:problemforger-run-metadata-v1:6412ee231458d8137bd7df319a3f629cc78d4a4239023527700641c2f784441f",
           "graph_version": 2,
           "last_journal_position": 5,
           "created": false
@@ -276,7 +276,7 @@
     },
     {
       "label": "non_safe_integer",
-      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "result": {"run_id": "run-1", "run_metadata": {"metadata_schema_version": 1, "data": {}}, "metadata_hash": "sha256:problemforger-run-metadata-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "graph_version": 9007199254740992, "last_journal_position": 1, "created": false}}
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "result": {"run_id": "run-1", "run_metadata": {"metadata_schema_version": 1, "data": {}}, "metadata_hash": "sha256:problemforger-run-metadata-v1:8b5b8a52578e8b1c0ee4e12d0668d3fd4a72fea87326b48cfb523e209caac8eb", "graph_version": 9007199254740992, "last_journal_position": 1, "created": false}}
     }
   ]
 }

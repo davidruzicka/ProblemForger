@@ -77,6 +77,18 @@ client-computed hash. The hash binds the expected graph version, operations,
 and immutable evidence identities described in
 [PROPOSAL-RECOVERY](#spec-protocol-proposal-recovery).
 
+`metadata_hash` binds the complete `run_metadata` object. Its value is the
+`MetadataHash` prefix followed by lowercase SHA-256 hex over the declared
+domain separator and canonical UTF-8 JSON. Canonicalization version
+`run-metadata-json-v1` sorts object keys by Unicode code point, uses compact JSON
+separators, emits non-ASCII scalar values as UTF-8, and normalizes safe
+integer-valued numbers before serialization. Other finite numbers use the
+shortest round-trip decimal spelling with Python JSON exponent formatting (for
+example, `0.00001` is serialized as `1e-05`). The contract records the prefix,
+domain separator, and algorithm under `$defs.MetadataHash.x-canonical-hash`.
+Both codecs recompute and check this binding on every successful `create_run`
+and `get_run` response, including without the originating request.
+
 All protocol integers are non-negative JSON safe integers (at most
 `2^53 - 1`), except `limit`, which is a positive safe integer from 1 through
 100. Graph results contain explicit `nodes` and `edges` arrays, a
@@ -127,6 +139,8 @@ also satisfy `graph_version <= last_journal_position`, because each
 graph-version advance requires at least one durable journal record.
 The same bound applies to every non-null proposal or audit graph version and
 its associated `journal_position`.
+Every `COMMIT` proposal result has a positive `resulting_graph_version`, even
+when a `get_proposal` response is validated without its originating mutation.
 For a `propose_mutation` request, a committed result advances
 `expected_graph_version` exactly once; `REJECT`, `RETRY`, and `ESCALATE`
 preserve it, while `CONFLICT` reports a different graph version. A committed
@@ -168,10 +182,10 @@ once; both codecs consume generated copies of that data.
 | --- | --- |
 | Required/optional fields, closed objects, JSON types, versions, integer bounds, string/hash formats, and payload/page limits | Contract `$defs` and fixed limit annotations |
 | Operation parameters and results | `x-operations` |
-| Proposal states, nullability, required reasons, and graph-effect categories | `x-proposal-states` |
+| Proposal states, nullability, required reasons, graph-effect categories, and state-specific version bounds | `x-proposal-states` |
 | Permitted proposal lifecycle advances | `x-proposal-transitions` |
 | Error codes and allowed null/non-null request IDs | `x-errors` |
-| Request/response IDs, operation, run/proposal identity, and canonical metadata equality | Code invariants |
+| Request/response IDs, operation, run/proposal identity, canonical metadata equality, and metadata-hash binding | Code invariants |
 | Graph version versus journal position; expected versus resulting graph version | Code invariants, with field pairs/effect categories supplied by data |
 | Combined graph-page size, request-relative page limits, audit ordering, run identity, and continuation cursors | Code invariants |
 | Valid JSON/UTF-8, duplicate-key rejection, safe numbers, canonical byte counting, and frame limits | Shared codec primitives enforcing wire invariants |

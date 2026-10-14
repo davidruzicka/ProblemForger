@@ -223,6 +223,7 @@ const canonicalCreateRunRequest = structuredClone(createRunRequest);
 canonicalCreateRunRequest.params.run_metadata.data = { second: 2, first: { enabled: true }, integral_float: 1.0 };
 const canonicalCreateRunResponse = structuredClone(createRunResponse);
 canonicalCreateRunResponse.result.run_metadata.data = { first: { enabled: true }, second: 2, integral_float: 1 };
+canonicalCreateRunResponse.result.metadata_hash = 'sha256:problemforger-run-metadata-v1:00ee606ab94545cf77dae3af2ae13d37971a0723991ef224347872807c00aabc';
 assert.deepEqual(
   decodeResponse(encodeResponse(canonicalCreateRunResponse, canonicalCreateRunRequest), canonicalCreateRunRequest),
   canonicalCreateRunResponse,

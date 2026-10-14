@@ -48,6 +48,8 @@ def accepts_field(rule, value):
         return value == "reason"
     if rule == "nullable_identifier":
         return value is None or value == "reason"
+    if rule == "positive_integer":
+        return type(value) is int and value > 0
     return type(value) is int and value >= 0
 
 
@@ -135,6 +137,31 @@ class ProtocolSchemaTests(unittest.TestCase):
             else:
                 message["result"]["records"][0]["graph_version"] = 99
             cls.cases.append({"label": f"{label} impossible version", "kind": "response", "message": message, "valid": False})
+        metadata_vector = deepcopy(cls.responses["get_run"])
+        metadata_vector["result"]["run_metadata"] = {
+            "metadata_schema_version": 1,
+            "data": {
+                "fixed": 1e-4,
+                "fraction": -1.5,
+                "items": [1, "v", {"b": 2}],
+                "small": 1e-5,
+                "tiny": 1e-7,
+                "unicode": "é😀\u2028",
+                "x": "prefix",
+                "x1": "longer",
+                "\ue000": "bmp",
+                "\U00010000": "astral",
+            },
+        }
+        metadata_vector["result"]["metadata_hash"] = (
+            "sha256:problemforger-run-metadata-v1:"
+            "82b1b785163f37f33779143c6cd9c80b6b8007c2625ee547bc8e06f9a556d145"
+        )
+        cls.cases.append({"label": "metadata hash canonicalization", "kind": "response", "message": metadata_vector, "request": None, "valid": True})
+        for label in ("create_run", "get_run"):
+            invalid_hash = deepcopy(cls.responses[label])
+            invalid_hash["result"]["run_metadata"]["data"]["unbound"] = True
+            cls.cases.append({"label": f"{label} metadata hash mismatch", "kind": "response", "message": invalid_hash, "request": None, "valid": False})
 
     def test_both_codecs_conform_to_the_same_complete_matrix(self):
         for case in self.cases:
