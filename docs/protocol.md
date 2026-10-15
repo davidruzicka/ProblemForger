@@ -27,6 +27,8 @@ Initial operations should cover:
 
 All run-scoped v1 commands and queries carry `run_id` explicitly. There is no ambient/session-selected run context in the domain/application protocol; a transport may maintain connections or sessions, but it must not infer or override the target run. Missing/unknown/mismatched `run_id` is an explicit protocol error.
 
+`run_id` identifies the durable v1 graph/journal execution scope; it is not a harness-session identifier. The v1 protocol defines no product-level `Problem` identity or cross-run operations and makes no one-to-one mapping claim between a product-level Problem and a run.
+
 Run creation is durable and idempotent: `create_run(run_id, run_metadata)`
 registers an empty version-zero run before any proposal is accepted. A repeat
 create returns the existing registration only when the supplied metadata has the
