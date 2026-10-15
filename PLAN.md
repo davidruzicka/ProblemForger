@@ -131,6 +131,19 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
   - repeat across HarnessX and Claude Code where technically comparable;
   - re-audit and freeze an independent external-validity benchmark.
 
+## Conditional Problem-oriented direction
+
+This is a candidate follow-up only if examination supports the direction; it does not change the initial PoC scope or phase order.
+
+- Validate a Problem-centered workflow in which ProblemForger researches, decomposes, plans, and coordinates outcomes that may span multiple projects/resources.
+- Treat semantic outcomes and resource/project relationships as the candidate primary model; repositories are resources, not necessarily Problem boundaries. Avoid assuming a universal ontology.
+- Keep agent runs and harness sessions replaceable execution mechanisms, not product-level Problem identity.
+- Before P2 freezes its graph schema, resolve Problem/run/graph/resource ownership through [issue #37](https://github.com/davidruzicka/ProblemForger/issues/37) and proposed [ADR 0012](docs/adr/0012-problem-identity-and-run-ownership.md). Until then, v1 remains run-scoped as specified in [the protocol](docs/protocol.md); add no `problem_id`, cross-run operations, or multi-project persistence.
+- After P6, if the direction remains justified, run a separately frozen evaluation spanning at least two repositories/resources, research plus implementation, and a replaced harness session. Keep it separate from P6; P6 does not validate this direction.
+- Keep P10 as the observer/debug UI. A Problem-first, goal-oriented interface is a later decision tracked in issue #12, not a change to P10's current scope.
+
+The PoC definition of done below remains unchanged.
+
 ## Definition of done for the PoC
 
 The PoC is complete when:
