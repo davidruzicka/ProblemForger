@@ -15,6 +15,7 @@ from problemforger.application.protocol import (
     encode_request,
     encode_response,
 )
+from problemforger.ports.event_store import RunMetadata
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -214,6 +215,23 @@ class ProtocolContractTests(unittest.TestCase):
                 encode_response(invalid, request)
             with self.subTest(label=f"decoded {label}"), self.assertRaises(ProtocolValidationError):
                 decode_response(json.dumps(invalid, separators=(",", ":")), request)
+
+    def test_run_metadata_hash_survives_integral_float_response_round_trip(self) -> None:
+        metadata = RunMetadata.from_value(
+            {"first": {"enabled": True}, "second": 2, "integral_float": 1.0}
+        )
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_run")
+        )
+        response["result"]["run_metadata"] = metadata.to_value()
+        response["result"]["metadata_hash"] = metadata.metadata_hash
+
+        decoded = decode_response(encode_response(response))
+
+        self.assertEqual(metadata.metadata_hash, decoded["result"]["metadata_hash"])
+        self.assertIs(
+            type(decoded["result"]["run_metadata"]["data"]["integral_float"]), int
+        )
 
     def test_newly_created_run_response_has_zero_versions(self) -> None:
         response = deepcopy(

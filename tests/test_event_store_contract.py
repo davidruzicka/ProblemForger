@@ -62,6 +62,27 @@ class EventStoreConfigurationTests(unittest.TestCase):
             first.metadata_hash,
         )
 
+    def test_run_metadata_hash_normalizes_safe_integral_floats(self):
+        with_float = RunMetadata.from_value(
+            {"first": {"enabled": True}, "second": 2, "integral_float": 1.0}
+        )
+        with_integer = RunMetadata.from_value(
+            {"first": {"enabled": True}, "second": 2, "integral_float": 1}
+        )
+
+        self.assertEqual(with_integer.canonical_json, with_float.canonical_json)
+        self.assertEqual(with_integer.metadata_hash, with_float.metadata_hash)
+        self.assertEqual(
+            "sha256:problemforger-run-metadata-v1:"
+            "00ee606ab94545cf77dae3af2ae13d37971a0723991ef224347872807c00aabc",
+            with_float.metadata_hash,
+        )
+        self.assertEqual(
+            '{"data":{"fractional":1e-05,"integral":1},"metadata_schema_version":1}',
+            RunMetadata.from_value({"fractional": 0.00001, "integral": 1.0}).canonical_json,
+        )
+        self.assertEqual('{"value":1.0}', JsonDocument.from_value({"value": 1.0}).canonical_json)
+
     def test_provider_configurations_reject_invalid_limits_paths_and_timeouts(self):
         for limit in (0, True, 1.5, 101):
             with self.subTest(limit=limit), self.assertRaises(ValueError):

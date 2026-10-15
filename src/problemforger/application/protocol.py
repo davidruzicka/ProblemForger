@@ -15,6 +15,7 @@ from problemforger.core.journal import (
     CURRENT_PROTOCOL_SCHEMA_VERSION,
     CURRENT_REQUEST_SCHEMA_VERSION,
     JsonDocument,
+    canonical_json_with_safe_integer_normalization,
 )
 
 
@@ -445,12 +446,8 @@ def _canonical_json_value(value: Any) -> Any:
 
 def _run_metadata_hash(run_metadata: dict[str, Any]) -> str:
     rule = CONTRACT["$defs"]["MetadataHash"]["x-canonical-hash"]
-    canonical = json.dumps(
-        run_metadata,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
+    canonical = canonical_json_with_safe_integer_normalization(
+        run_metadata, max_safe_integer=MAX_SAFE_JSON_INTEGER
     ).encode("utf-8")
     digest = hashlib.new(
         rule["algorithm"], rule["domain_separator"].encode("utf-8") + canonical

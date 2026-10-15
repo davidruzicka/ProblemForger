@@ -14,7 +14,13 @@ import unittest
 from unittest.mock import patch
 
 from problemforger.application import protocol
-from problemforger.core.journal import GovernanceOutcome, MutationDecision, ProposalStatus, RecordMetadata
+from problemforger.core.journal import (
+    MAX_SAFE_JSON_INTEGER,
+    GovernanceOutcome,
+    MutationDecision,
+    ProposalStatus,
+    RecordMetadata,
+)
 from scripts import generate_protocol_contract as generator
 
 
@@ -200,6 +206,7 @@ class ProtocolSchemaTests(unittest.TestCase):
             self.assertEqual({field for field, annotation in fields.items() if get_origin(annotation) is not NotRequired}, set(schema["required"]), name)
         self.assertEqual(protocol.CURRENT_PROTOCOL_SCHEMA_VERSION, self.contract["x-contract-version"])
         self.assertEqual(protocol.CURRENT_REQUEST_SCHEMA_VERSION, self.contract["$defs"]["RequestVersion"]["const"])
+        self.assertEqual(MAX_SAFE_JSON_INTEGER, self.contract["$defs"]["SafeInteger"]["maximum"])
 
     def test_generated_contracts_are_current_and_stale_copies_fail(self):
         generator.generate(check=True)

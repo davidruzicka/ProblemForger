@@ -27,6 +27,7 @@ CURRENT_RECORD_SCHEMA_VERSION = 1
 CURRENT_PROTOCOL_SCHEMA_VERSION = 1
 CURRENT_REQUEST_SCHEMA_VERSION = 1
 CURRENT_EVENT_SCHEMA_VERSION = 1
+MAX_SAFE_JSON_INTEGER = (1 << 53) - 1
 REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
 _REQUEST_HASH_DOMAIN = b"problemforger.normalized-mutation-request.v1\0"
 
@@ -94,6 +95,30 @@ def _canonical_json(value: Any) -> str:
     except (TypeError, ValueError, UnicodeEncodeError) as error:
         raise ValueError("value cannot be represented as canonical UTF-8 JSON") from error
     return serialized
+
+
+def _normalize_safe_integral_floats(value: Any, maximum: int) -> Any:
+    if type(value) is float:
+        if value.is_integer() and abs(value) <= maximum:
+            return int(value)
+        return value
+    if type(value) is list:
+        return [_normalize_safe_integral_floats(item, maximum) for item in value]
+    if type(value) is dict:
+        return {
+            key: _normalize_safe_integral_floats(item, maximum)
+            for key, item in value.items()
+        }
+    return value
+
+
+def canonical_json_with_safe_integer_normalization(
+    value: Any, *, max_safe_integer: int = MAX_SAFE_JSON_INTEGER
+) -> str:
+    """Serialize JSON after normalizing safe integral floats to integers."""
+    if type(max_safe_integer) is not int or max_safe_integer < 0:
+        raise ValueError("max_safe_integer must be a non-negative integer")
+    return _canonical_json(_normalize_safe_integral_floats(value, max_safe_integer))
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

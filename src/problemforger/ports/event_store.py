@@ -22,10 +22,20 @@ from problemforger.core.journal import (
     RequestHash,
     RunId,
     VersionConflict,
+    canonical_json_with_safe_integer_normalization,
 )
 
 
 AuditRecord: TypeAlias = NonTerminalAuditRecord | MutationDecision | ProposalAbandoned
+
+
+def _run_metadata_hash(canonical_json: str) -> str:
+    from hashlib import sha256
+
+    digest = sha256(
+        b"problemforger.run-metadata.v1\0" + canonical_json.encode("utf-8")
+    ).hexdigest()
+    return f"sha256:problemforger-run-metadata-v1:{digest}"
 
 
 class StoreDurability(str, Enum):
@@ -80,16 +90,17 @@ class RunMetadata:
 
     @property
     def canonical_json(self) -> str:
-        return JsonDocument.from_value(self.to_value()).canonical_json
+        return canonical_json_with_safe_integer_normalization(self.to_value())
 
     @property
     def metadata_hash(self) -> str:
-        from hashlib import sha256
+        return _run_metadata_hash(self.canonical_json)
 
-        digest = sha256(
-            b"problemforger.run-metadata.v1\0" + self.canonical_json.encode("utf-8")
-        ).hexdigest()
-        return f"sha256:problemforger-run-metadata-v1:{digest}"
+    @property
+    def legacy_metadata_hash(self) -> str:
+        """Return the pre-normalization hash for validating stored v1 runs."""
+        legacy_json = JsonDocument.from_value(self.to_value()).canonical_json
+        return _run_metadata_hash(legacy_json)
 
 
 @dataclass(frozen=True, slots=True)

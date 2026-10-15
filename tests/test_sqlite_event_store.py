@@ -1315,6 +1315,34 @@ class SqliteEventStoreTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     SqliteEventStore(path)
 
+    def test_legacy_integral_float_metadata_hash_is_normalized_on_open(self):
+        store = self.open_store()
+        metadata = RunMetadata.from_value({"integral": 1.0})
+        self.assertEqual(CreateRunStatus.CREATED, store.create_run("run-1", metadata).status)
+        store.close()
+
+        legacy_json = JsonDocument.from_value(metadata.to_value()).canonical_json
+        connection = sqlite3.connect(self.path)
+        connection.execute(
+            "UPDATE runs SET metadata_json = ?, metadata_hash = ? WHERE run_id = ?",
+            (legacy_json, metadata.legacy_metadata_hash, "run-1"),
+        )
+        connection.commit()
+        connection.close()
+
+        store = self.open_store()
+        snapshot = store.get_run("run-1")
+        self.assertEqual(metadata.metadata_hash, snapshot.metadata_hash)
+        store.close()
+
+        connection = sqlite3.connect(self.path)
+        row = connection.execute(
+            "SELECT metadata_json, metadata_hash FROM runs WHERE run_id = ?", ("run-1",)
+        ).fetchone()
+        connection.close()
+        self.assertEqual(metadata.canonical_json, row[0])
+        self.assertEqual(metadata.metadata_hash, row[1])
+
 
 if __name__ == "__main__":
     unittest.main()
