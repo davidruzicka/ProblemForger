@@ -386,12 +386,15 @@ Durable providers additionally run a durability contract suite covering close/re
 Restart recovery of an incomplete receipt applies only to durable providers;
 `MemoryEventStore` cannot claim process-restart recovery.
 
-The initial providers cap run metadata and each serialized journal record at
-1 MiB, an atomic append batch at 4 MiB, and each journal page at 4 MiB and 100
-records by default. A page stops before either limit and exposes continuation
-through its cursor. Larger evidence belongs in immutable versioned references,
-not inline payloads. The typed provider configuration may lower the positive
-record-count limit.
+The initial providers cap run metadata and ordinary serialized journal records
+at 1 MiB. A proposal receipt may use up to 2 MiB: its normalized request is
+limited to 1 MiB, with another 1 MiB reserved for its durable envelope and
+canonical-number expansion. Identifiers stored in the envelope are capped at
+256 UTF-8 bytes. Atomic append batches and journal pages remain capped at 4 MiB;
+pages also default to 100 records and stop before either limit, exposing
+continuation through the cursor. Larger evidence belongs in immutable versioned
+references, not inline payloads. The typed provider configuration may lower the
+positive record-count limit.
 
 SQLite uses a canonical resolved path, a persistent adjacent path lock, and an
 exclusive OS `flock` on both that lock file and the database inode. The

@@ -21,10 +21,12 @@ from problemforger.ports.event_store import RunMetadata, StoreDurability
 
 from ._base import (
     DEFAULT_MAX_JOURNAL_PAGE_SIZE,
-    MAX_JOURNAL_RECORD_BYTES,
+    MAX_PROPOSAL_RECEIPT_BYTES,
     MAX_RUN_METADATA_BYTES,
     EventStoreState,
     _RunState,
+    _max_serialized_record_bytes,
+    _valid_identifier,
 )
 
 SQLITE_BUSY_TIMEOUT_MAX_MS = (1 << 31) - 1
@@ -611,7 +613,7 @@ class SqliteEventStore(EventStoreState):
                     (metadata.canonical_json, metadata.metadata_hash, row["run_id"])
                 )
             run_id = row["run_id"]
-            if not isinstance(run_id, str) or not run_id.strip():
+            if not _valid_identifier(run_id):
                 raise ValueError("invalid stored run_id")
             runs[run_id] = _RunState(
                 metadata,
@@ -624,9 +626,12 @@ class SqliteEventStore(EventStoreState):
             run = runs.get(row["run_id"])
             if run is None:
                 raise ValueError(f"journal entry references unknown run {row['run_id']}")
-            if len(row["record_json"].encode("utf-8")) > MAX_JOURNAL_RECORD_BYTES:
+            encoded_size = len(row["record_json"].encode("utf-8"))
+            if encoded_size > MAX_PROPOSAL_RECEIPT_BYTES:
                 raise ValueError(f"stored journal record exceeds size limit for run {row['run_id']}")
             entry = deserialize_entry(row["record_json"])
+            if encoded_size > _max_serialized_record_bytes(entry.record):
+                raise ValueError(f"stored journal record exceeds size limit for run {row['run_id']}")
             if (
                 serialize_entry(entry) != row["record_json"]
                 or entry.journal_position != row["journal_position"]

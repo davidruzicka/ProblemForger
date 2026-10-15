@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from problemforger.application import protocol
 from problemforger.core.journal import (
+    MAX_IDENTIFIER_UTF8_BYTES,
     MAX_SAFE_JSON_INTEGER,
     GovernanceOutcome,
     MutationDecision,
@@ -168,6 +169,16 @@ class ProtocolSchemaTests(unittest.TestCase):
             invalid_hash = deepcopy(cls.responses[label])
             invalid_hash["result"]["run_metadata"]["data"]["unbound"] = True
             cls.cases.append({"label": f"{label} metadata hash mismatch", "kind": "response", "message": invalid_hash, "request": None, "valid": False})
+
+    def test_identifier_byte_limit_matches_domain_validation(self):
+        self.assertEqual(
+            MAX_IDENTIFIER_UTF8_BYTES,
+            self.contract["$defs"]["Identifier"]["x-max-utf8-bytes"],
+        )
+        self.assertEqual(
+            MAX_IDENTIFIER_UTF8_BYTES,
+            self.contract["$defs"]["NullableIdentifier"]["x-max-utf8-bytes"],
+        )
 
     def test_both_codecs_conform_to_the_same_complete_matrix(self):
         for case in self.cases:

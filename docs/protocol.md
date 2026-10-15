@@ -57,7 +57,8 @@ Every request is a closed JSON object with these fields:
 }
 ```
 
-`request_id` and identifiers are non-empty UTF-8 strings. `operation` is one of
+`request_id` and identifiers are non-empty UTF-8 strings capped at 256 bytes.
+`operation` is one of
 `create_run`, `get_run`, `get_graph`, `propose_mutation`, `get_proposal`, or
 `get_audit_timeline`. Unknown envelope or operation fields are rejected in v1.
 Every operation, including `create_run`, carries an explicit `run_id`.
@@ -165,13 +166,17 @@ no protocol response. `CONFLICT` remains a durable governance status, distinct
 from `REJECT` and from transport failure.
 
 Each encoded request and response is capped at 4 MiB; `run_metadata` and the
-normalized mutation request are each capped at 1 MiB. Graph and audit pages are
-capped at 100 records and 4 MiB. A client must split or reference larger
-evidence rather than exceed these limits. Python and TypeScript v1 codecs share
-the same fixture set and reject malformed shapes, duplicate JSON object keys,
-unsupported versions, non-finite values, and unsafe integers. The 1 MiB
-subdocument limits count compact UTF-8 JSON bytes with ECMAScript-compatible
-number formatting, so both codecs apply the same size boundary.
+normalized mutation request are each capped at 1 MiB. The metadata limit uses
+the `run-metadata-json-v1` durable canonical form, including safe-integer
+normalization and Python-compatible float spelling. The normalized mutation
+limit uses compact UTF-8 JSON with ECMAScript number formatting. Graph and
+audit pages are capped at 100 records and 4 MiB. A client must split or
+reference larger evidence rather than exceed these limits. Python and
+TypeScript v1 codecs share the same fixture set and reject malformed shapes,
+duplicate JSON object keys, unsupported versions, non-finite values, and unsafe
+integers. The metadata and normalized-mutation subdocument limits count the
+respective canonical forms above, so both codecs apply the same
+durable/protocol size boundaries.
 
 ### Declarative contract and code invariants
 

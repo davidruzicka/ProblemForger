@@ -319,6 +319,10 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
         raise ProtocolValidationError(f"{name} has an unsupported value", code=code)
     if type(value) is str and "pattern" in schema and re.search(schema["pattern"], value) is None:
         raise ProtocolValidationError(f"{name} does not match its string format", code=code)
+    if type(value) is str and "x-max-utf8-bytes" in schema:
+        maximum = schema["x-max-utf8-bytes"]
+        if len(value.encode("utf-8")) > maximum:
+            raise ProtocolValidationError(f"{name} exceeds {maximum} UTF-8 bytes", code=code)
     if type(value) is dict:
         properties = schema.get("properties", {})
         for field in schema.get("required", []):
@@ -351,7 +355,16 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
             {field: value[field] for field in schema["x-size-fields"]}
             if "x-size-fields" in schema else value
         )
-        if _protocol_json_size(sized) > schema["x-max-canonical-bytes"]:
+        canonicalization = schema.get("x-size-canonicalization", "ecmascript-json-v1")
+        if canonicalization == "run-metadata-json-v1":
+            encoded_size = len(
+                canonical_json_with_safe_integer_normalization(sized).encode("utf-8")
+            )
+        elif canonicalization == "ecmascript-json-v1":
+            encoded_size = _protocol_json_size(sized)
+        else:  # pragma: no cover - generated contract validation prevents this
+            raise RuntimeError(f"unsupported size canonicalization: {canonicalization}")
+        if encoded_size > schema["x-max-canonical-bytes"]:
             raise ProtocolValidationError(f"{name} exceeds 1 MiB", code="PAYLOAD_TOO_LARGE")
     if "x-version-position" in schema:
         version_field, position_field = schema["x-version-position"]

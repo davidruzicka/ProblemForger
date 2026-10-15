@@ -86,11 +86,17 @@ assert.throws(
 const exponentialValues = Array.from({ length: 95_000 }, () => ({ x: 1e-7 }));
 const exponentialMetadata = structuredClone(fixture.requests.find(({ label }) => label === 'create_run').message);
 exponentialMetadata.params.run_metadata.data.items = exponentialValues;
-assert.doesNotThrow(() => encodeRequest(exponentialMetadata), 'metadata size uses shared exponential number formatting');
+assert.throws(() => encodeRequest(exponentialMetadata), undefined, 'metadata size matches durable canonical JSON');
 const exponentialMutation = structuredClone(fixture.requests.find(({ label }) => label === 'propose_mutation').message);
 exponentialMutation.params.operations = exponentialValues;
 exponentialMutation.params.evidence = [];
 assert.doesNotThrow(() => encodeRequest(exponentialMutation), 'mutation size uses shared exponential number formatting');
+
+const identifierLimitRequest = structuredClone(getRunRequest);
+identifierLimitRequest.request_id = 'é'.repeat(128);
+assert.doesNotThrow(() => encodeRequest(identifierLimitRequest), 'identifier permits 256 UTF-8 bytes');
+identifierLimitRequest.request_id = 'é'.repeat(129);
+assert.throws(() => encodeRequest(identifierLimitRequest), undefined, 'identifier rejects over 256 UTF-8 bytes');
 
 for (const integerForm of ['1.0', '1e0']) {
   const request = `{"protocol_schema_version":1,"request_id":"req","operation":"get_graph","params":{"run_id":"run-1","limit":${integerForm}}}`;

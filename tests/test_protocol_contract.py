@@ -60,13 +60,14 @@ class ProtocolContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolValidationError, "4 MiB"):
             decode_request(oversized)
 
-    def test_subdocument_size_uses_shared_exponential_number_formatting(self) -> None:
+    def test_metadata_size_matches_durable_canonicalization(self) -> None:
         values = [{"x": 1e-7}] * 95_000
         create_run = deepcopy(
             next(item["message"] for item in self.fixtures["requests"] if item["label"] == "create_run")
         )
         create_run["params"]["run_metadata"]["data"]["items"] = values
-        encode_request(create_run)
+        with self.assertRaises(ProtocolValidationError):
+            encode_request(create_run)
 
         mutation = deepcopy(
             next(item["message"] for item in self.fixtures["requests"] if item["label"] == "propose_mutation")
@@ -74,6 +75,16 @@ class ProtocolContractTests(unittest.TestCase):
         mutation["params"]["operations"] = values
         mutation["params"]["evidence"] = []
         encode_request(mutation)
+
+    def test_identifier_size_limit_counts_utf8_bytes(self) -> None:
+        request = deepcopy(
+            next(item["message"] for item in self.fixtures["requests"] if item["label"] == "get_run")
+        )
+        request["request_id"] = "é" * 128
+        encode_request(request)
+        request["request_id"] = "é" * 129
+        with self.assertRaises(ProtocolValidationError):
+            encode_request(request)
 
     def test_decoded_integral_json_numbers_are_normalized(self) -> None:
         request = deepcopy(

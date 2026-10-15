@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import unittest
 
 from problemforger.application._protocol_contract import CONTRACT
+from problemforger.application.protocol import MAX_NORMALIZED_REQUEST_BYTES, encode_request
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
@@ -33,6 +34,7 @@ from problemforger.modules.persistence._base import (
     MAX_APPEND_BATCH_BYTES,
     MAX_JOURNAL_PAGE_BYTES,
     MAX_JOURNAL_RECORD_BYTES,
+    MAX_PROPOSAL_RECEIPT_BYTES,
     MAX_RUN_METADATA_BYTES,
 )
 
@@ -251,10 +253,15 @@ class EventStoreContractMixin:
         self.assertEqual(CreateRunStatus.INVALID_REQUEST, invalid_run.status)
         self.assertEqual(StoreErrorCode.NOT_FOUND, self.store.get_run("oversized-run").code)
 
+        exponent_metadata = RunMetadata.from_value({"items": [{"x": 1e-7}] * 90_000})
+        self.assertGreater(len(exponent_metadata.canonical_json.encode("utf-8")), MAX_RUN_METADATA_BYTES)
+        invalid_exponent_run = self.store.create_run("oversized-exponent-run", exponent_metadata)
+        self.assertEqual(CreateRunStatus.INVALID_REQUEST, invalid_exponent_run.status)
+
         oversized_request = NormalizedMutationRequest(
             request_schema_version=1,
             expected_graph_version=0,
-            operations=(JsonDocument.from_value({"payload": "x" * MAX_JOURNAL_RECORD_BYTES}),),
+            operations=(JsonDocument.from_value({"payload": "x" * (MAX_PROPOSAL_RECEIPT_BYTES + 1)}),),
             evidence=(),
         )
         oversized_receipt = ProposalReceipt(
@@ -269,6 +276,8 @@ class EventStoreContractMixin:
         )
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, rejected_receipt.status)
         self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+        self.assertLessEqual(MAX_PROPOSAL_RECEIPT_BYTES, MAX_APPEND_BATCH_BYTES)
+        self.assertLessEqual(MAX_PROPOSAL_RECEIPT_BYTES, MAX_JOURNAL_PAGE_BYTES)
 
         proposal_id = "large-batch"
         self.submit(proposal_id)
@@ -323,6 +332,43 @@ class EventStoreContractMixin:
         )
         self.assertEqual(1, len(second_page.records))
         self.assertFalse(second_page.has_more)
+
+    def test_near_limit_mutation_request_persists_and_recovers(self):
+        payload = "x" * (MAX_NORMALIZED_REQUEST_BYTES - 100)
+        normalized = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value({"payload": payload}),),
+            evidence=(),
+        )
+        protocol_request = {
+            "protocol_schema_version": 1,
+            "request_id": "near-limit-request",
+            "operation": "propose_mutation",
+            "params": {
+                "run_id": "run-1",
+                "proposal_id": "near-limit-proposal",
+                **normalized.to_value(),
+            },
+        }
+        encode_request(protocol_request)
+        proposal_receipt = ProposalReceipt(
+            metadata("near-limit-receipt"), "near-limit-proposal", normalized
+        )
+        result = self.store.record_proposal(
+            "run-1",
+            "near-limit-proposal",
+            proposal_request_hash(normalized),
+            normalized,
+            proposal_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.CREATED, result.status)
+        serialized = serialize_entry(self.store.read_journal("run-1", limit=1).records[0])
+        self.assertLessEqual(len(serialized.encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
+        self.assertEqual(
+            normalized,
+            self.store.get_proposal("run-1", "near-limit-proposal").normalized_request,
+        )
 
     def test_unknown_run_and_proposal_never_create_implicit_streams(self):
         normalized = request()
@@ -384,6 +430,10 @@ class EventStoreContractMixin:
         self.assertEqual(
             CreateRunStatus.INVALID_REQUEST,
             self.store.create_run("\ud800", run_metadata).status,
+        )
+        self.assertEqual(
+            CreateRunStatus.INVALID_REQUEST,
+            self.store.create_run("r" * 257, run_metadata).status,
         )
         self.assertEqual(StoreErrorCode.INVALID_REQUEST, self.store.get_run("\ud800").code)
         self.assertEqual(
@@ -463,7 +513,7 @@ class EventStoreContractMixin:
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, missing_identity.status)
         self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
 
-    def test_existing_proposal_identity_precedes_unused_receipt_size(self):
+    def test_existing_proposal_identity_precedes_unused_receipt_metadata(self):
         normalized, original_receipt = self.submit()
         before = self.store.get_proposal("run-1", "proposal-1")
         oversized_request = NormalizedMutationRequest(
@@ -489,15 +539,13 @@ class EventStoreContractMixin:
         self.assertEqual(oversized_receipt.request_hash, conflict.supplied_request_hash)
         self.assertEqual(before, conflict.proposal)
 
-        unused_oversized_receipt = ProposalReceipt(
-            metadata("x" * MAX_JOURNAL_RECORD_BYTES), "proposal-1", normalized
-        )
+        unused_receipt = ProposalReceipt(metadata("unused-receipt"), "proposal-1", normalized)
         existing = self.store.record_proposal(
             "run-1",
             "proposal-1",
             original_receipt.request_hash,
             normalized,
-            unused_oversized_receipt,
+            unused_receipt,
         )
         self.assertEqual(RecordProposalStatus.EXISTING, existing.status)
         self.assertEqual(before, existing.proposal)

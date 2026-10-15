@@ -122,6 +122,7 @@ type Shape = {
   minimum?: number;
   maximum?: number;
   pattern?: string;
+  'x-max-utf8-bytes'?: number;
   properties?: Readonly<Record<string, Shape>>;
   required?: readonly string[];
   additionalProperties?: boolean;
@@ -134,6 +135,7 @@ type Shape = {
   'x-const-error-code'?: string;
   'x-max-canonical-bytes'?: number;
   'x-size-fields'?: readonly string[];
+  'x-size-canonicalization'?: 'run-metadata-json-v1' | 'ecmascript-json-v1';
   'x-version-position'?: readonly string[];
 };
 const definitions = protocolContract.$defs as unknown as Readonly<Record<string, Shape>>;
@@ -287,6 +289,7 @@ function validateShape(value: unknown, shape: Shape | string, name: string): voi
   if (Object.hasOwn(schema, 'const') && canonicalJson(value as JsonValue) !== canonicalJson(schema.const!)) return fail(`${name} has an unsupported value`);
   if (schema.enum !== undefined && !schema.enum.includes(value as JsonValue)) return fail(`${name} has an unsupported value`);
   if (typeof value === 'string' && schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) return fail(`${name} does not match its string format`);
+  if (typeof value === 'string' && schema['x-max-utf8-bytes'] !== undefined && byteLength(value) > schema['x-max-utf8-bytes']) return fail(`${name} exceeds ${schema['x-max-utf8-bytes']} UTF-8 bytes`);
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
     const record = object(value, name);
     const properties = schema.properties ?? {};
@@ -310,7 +313,11 @@ function validateShape(value: unknown, shape: Shape | string, name: string): voi
   if (schema['x-max-canonical-bytes'] !== undefined) {
     const record = value as Record<string, JsonValue>;
     const sized = schema['x-size-fields'] === undefined ? value : Object.fromEntries(schema['x-size-fields'].map((field) => [field, record[field]]));
-    if (byteLength(canonicalJson(sized as JsonValue)) > schema['x-max-canonical-bytes']) return fail(`${name} exceeds 1 MiB`);
+    const canonicalization = schema['x-size-canonicalization'] ?? 'ecmascript-json-v1';
+    const canonical = canonicalization === 'run-metadata-json-v1'
+      ? pythonCanonicalJson(sized as JsonValue)
+      : canonicalJson(sized as JsonValue);
+    if (byteLength(canonical) > schema['x-max-canonical-bytes']) return fail(`${name} exceeds 1 MiB`);
   }
   if (schema['x-version-position'] !== undefined) {
     const [versionField, positionField] = schema['x-version-position'];

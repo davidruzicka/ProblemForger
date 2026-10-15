@@ -10,6 +10,7 @@ from problemforger.core.journal import (
     GraphChangedEvent,
     JournalEntry,
     JsonDocument,
+    MAX_IDENTIFIER_UTF8_BYTES,
     MutationDecision,
     NonTerminalAuditRecord,
     NormalizedMutationRequest,
@@ -45,6 +46,8 @@ from problemforger.ports.event_store import (
 DEFAULT_MAX_JOURNAL_PAGE_SIZE = 100
 MAX_RUN_METADATA_BYTES = 1_048_576
 MAX_JOURNAL_RECORD_BYTES = 1_048_576
+MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES = 1_048_576
+MAX_PROPOSAL_RECEIPT_BYTES = MAX_JOURNAL_RECORD_BYTES + MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES
 MAX_APPEND_BATCH_BYTES = 4_194_304
 MAX_JOURNAL_PAGE_BYTES = 4_194_304
 _HASH_PREFIX = "sha256:problemforger-request-v1:"
@@ -84,10 +87,18 @@ def _valid_identifier(value: object) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
     try:
-        value.encode("utf-8")
+        if len(value.encode("utf-8")) > MAX_IDENTIFIER_UTF8_BYTES:
+            return False
     except UnicodeEncodeError:
         return False
     return True
+
+
+def _max_serialized_record_bytes(record: object) -> int:
+    """Return the storage cap for this serialized journal record."""
+    if isinstance(record, ProposalReceipt):
+        return MAX_PROPOSAL_RECEIPT_BYTES
+    return MAX_JOURNAL_RECORD_BYTES
 
 
 def _valid_integer(value: object, *, minimum: int) -> bool:
@@ -702,7 +713,7 @@ class EventStoreState:
                 )
             except (TypeError, ValueError, UnicodeEncodeError):
                 return False
-            if encoded_size > MAX_JOURNAL_RECORD_BYTES:
+            if encoded_size > _max_serialized_record_bytes(record):
                 return False
             total_bytes += encoded_size
             if total_bytes > MAX_APPEND_BATCH_BYTES:

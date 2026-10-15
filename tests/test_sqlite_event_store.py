@@ -15,12 +15,14 @@ from unittest.mock import patch
 import weakref
 
 from event_store_contract import audit_record, decision, graph_event, metadata, receipt, request
+from problemforger.application.protocol import MAX_NORMALIZED_REQUEST_BYTES, encode_request
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
     JournalEntry,
     JsonDocument,
     NonTerminalAuditRecord,
+    NormalizedMutationRequest,
     ProposalAbandoned,
     ProposalReceipt,
     ProposalStatus,
@@ -43,7 +45,10 @@ from problemforger.modules.persistence import (
     StoreInUseError,
     UnsupportedStoreError,
 )
-from problemforger.modules.persistence._base import MAX_JOURNAL_RECORD_BYTES
+from problemforger.modules.persistence._base import (
+    MAX_JOURNAL_RECORD_BYTES,
+    MAX_PROPOSAL_RECEIPT_BYTES,
+)
 from problemforger.ports.event_store import (
     AppendResult,
     CreateRunStatus,
@@ -232,6 +237,47 @@ class SqliteEventStoreTests(unittest.TestCase):
         self.assertEqual(ProposalStatus.PENDING, reopened.get_proposal("run-1", "pending").status)
         pending_position = reopened.get_proposal("run-1", "pending").last_journal_position
         self.assertEqual(len(before), pending_position)
+        reopened.close()
+
+    def test_reopen_recovers_near_limit_proposal_receipt(self):
+        store = self.open_store()
+        self._create_run(store)
+        payload = "x" * (MAX_NORMALIZED_REQUEST_BYTES - 100)
+        normalized = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value({"payload": payload}),),
+            evidence=(),
+        )
+        encode_request({
+            "protocol_schema_version": 1,
+            "request_id": "near-limit-request",
+            "operation": "propose_mutation",
+            "params": {
+                "run_id": "run-1",
+                "proposal_id": "near-limit",
+                **normalized.to_value(),
+            },
+        })
+        proposal_receipt = ProposalReceipt(
+            metadata("near-limit-receipt"), "near-limit", normalized
+        )
+        result = store.record_proposal(
+            "run-1",
+            "near-limit",
+            proposal_request_hash(normalized),
+            normalized,
+            proposal_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.CREATED, result.status)
+        serialized = serialize_entry(store.read_journal("run-1", limit=1).records[0])
+        self.assertLessEqual(len(serialized.encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
+        store.close()
+
+        reopened = self.open_store()
+        recovered = reopened.get_proposal("run-1", "near-limit")
+        self.assertEqual(ProposalStatus.PENDING, recovered.status)
+        self.assertEqual(normalized, recovered.normalized_request)
         reopened.close()
 
     def test_reopen_preserves_independent_nonterminal_audit_records(self):
@@ -1278,9 +1324,21 @@ class SqliteEventStoreTests(unittest.TestCase):
                 elif corruption == "run_head":
                     connection.execute("UPDATE runs SET last_journal_position = 2 WHERE run_id = 'run-1'")
                 elif corruption == "oversized_record":
+                    oversized_record = NonTerminalAuditRecord(
+                        metadata=metadata("oversized-record"),
+                        audit_type="corrupt.oversized",
+                        payload=JsonDocument.from_value(
+                            {"payload": "x" * MAX_JOURNAL_RECORD_BYTES}
+                        ),
+                    )
                     connection.execute(
                         "INSERT INTO journal(run_id, journal_position, record_id, record_json) VALUES (?, ?, ?, ?)",
-                        ("run-1", 1, "oversized-record", " " * (MAX_JOURNAL_RECORD_BYTES + 1)),
+                        (
+                            "run-1",
+                            1,
+                            "oversized-record",
+                            serialize_entry(JournalEntry(1, oversized_record)),
+                        ),
                     )
                     connection.execute(
                         "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"

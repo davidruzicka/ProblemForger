@@ -103,13 +103,19 @@ export const protocolContract = {
   "$defs": {
     "Identifier": {
       "type": "string",
-      "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]"
+      "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]",
+      "x-max-utf8-bytes": 256
     },
     "NullableIdentifier": {
       "type": [
         "string",
         "null"
       ],
+      "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]",
+      "x-max-utf8-bytes": 256
+    },
+    "NonEmptyString": {
+      "type": "string",
       "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]"
     },
     "SafeInteger": {
@@ -180,6 +186,7 @@ export const protocolContract = {
         "data"
       ],
       "additionalProperties": false,
+      "x-size-canonicalization": "run-metadata-json-v1",
       "x-max-canonical-bytes": 1048576
     },
     "CreateRunParams": {
@@ -807,7 +814,7 @@ export const protocolContract = {
           ]
         },
         "message": {
-          "$ref": "#/$defs/Identifier"
+          "$ref": "#/$defs/NonEmptyString"
         }
       },
       "required": [

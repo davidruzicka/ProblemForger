@@ -28,6 +28,7 @@ CURRENT_PROTOCOL_SCHEMA_VERSION = 1
 CURRENT_REQUEST_SCHEMA_VERSION = 1
 CURRENT_EVENT_SCHEMA_VERSION = 1
 MAX_SAFE_JSON_INTEGER = (1 << 53) - 1
+MAX_IDENTIFIER_UTF8_BYTES = 256
 REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
 _REQUEST_HASH_DOMAIN = b"problemforger.normalized-mutation-request.v1\0"
 
@@ -50,9 +51,11 @@ def _require_identifier(value: str, name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     try:
-        value.encode("utf-8")
+        encoded = value.encode("utf-8")
     except UnicodeEncodeError as error:
         raise ValueError(f"{name} must be valid UTF-8") from error
+    if len(encoded) > MAX_IDENTIFIER_UTF8_BYTES:
+        raise ValueError(f"{name} exceeds {MAX_IDENTIFIER_UTF8_BYTES} UTF-8 bytes")
 
 
 def _require_integer(value: int, name: str, *, minimum: int) -> None:
