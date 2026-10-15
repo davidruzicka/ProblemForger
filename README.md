@@ -16,6 +16,10 @@ The architecture itself is intended to remain domain-neutral.
 
 The initial PoC compares an existing harness with and without the complete graph/governance package. Learned verification and model routing are planned later work. Phase ordering lives in [PLAN.md](PLAN.md); experiment definitions live in [Evaluation](docs/evaluation.md).
 
+## Possible future direction
+
+If examination supports it, ProblemForger may evolve toward problem-oriented research and orchestration across projects, with a goal-oriented view of outcomes and replaceable agent/harness sessions. This is a conditional direction, not a current capability or product commitment; the present PoC evaluates a harness-neutral reliability layer. See [Vision](docs/vision.md#conditional-product-direction) and [PLAN.md](PLAN.md#conditional-problem-oriented-direction).
+
 ## Integration
 
 ProblemForger is not a standalone agent harness. An existing harness retains model, tool, and session execution. A thin adapter connects it to the local ProblemForger service, where the worker queries graph state and proposes changes. ProblemForger governs those changes using evidence and policy and records durable decisions.
