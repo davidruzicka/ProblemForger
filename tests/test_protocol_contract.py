@@ -263,6 +263,16 @@ class ProtocolContractTests(unittest.TestCase):
         self.assertEqual(1.0, decoded["result"]["run_metadata"]["data"]["integral"])
         self.assertIn(b'"integral":1.0', encode_response(decoded))
 
+        for schema_version_token in (b"1.0", b"1e0"):
+            variant = encoded.replace(
+                b'"metadata_schema_version":1,',
+                b'"metadata_schema_version":' + schema_version_token + b",",
+                1,
+            )
+            decoded_variant = decode_response(variant)
+            self.assertEqual(metadata.legacy_metadata_hash, decoded_variant["result"]["metadata_hash"])
+            self.assertEqual(1, decoded_variant["result"]["run_metadata"]["metadata_schema_version"])
+
     def test_newly_created_run_response_has_zero_versions(self) -> None:
         response = deepcopy(
             next(item["message"] for item in self.fixtures["responses"] if item["label"] == "create_run")

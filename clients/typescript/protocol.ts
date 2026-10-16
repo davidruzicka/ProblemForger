@@ -516,10 +516,17 @@ function rejectDuplicateKeys(text: string): (LegacyMetadataWire & { start: numbe
       const token = match[0];
       offset += token.length;
       const number = Number(token);
+      const preserveLegacyFloat = captureCanonical
+        && path.length >= 3
+        && path[0] === 'result'
+        && path[1] === 'run_metadata'
+        && path[2] === 'data';
       canonical = captureCanonical
-        ? /[.eE]/.test(token)
+        ? preserveLegacyFloat && /[.eE]/.test(token)
           ? Number.isFinite(number) ? pythonCanonicalFloat(number) : token
-          : Number.isSafeInteger(number) ? String(BigInt(token)) : token
+          : Number.isSafeInteger(number)
+            ? String(BigInt(number))
+            : Number.isFinite(number) ? pythonCanonicalFloat(number) : token
         : '';
     }
     const end = offset;

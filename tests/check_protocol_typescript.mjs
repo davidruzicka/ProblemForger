@@ -239,6 +239,20 @@ assert.deepEqual(
 const legacyMetadataResponseJson = '{"protocol_schema_version":1,"request_id":"legacy-run","operation":"get_run","result":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"integral":1.0}},"metadata_hash":"sha256:problemforger-run-metadata-v1:a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996","graph_version":0,"last_journal_position":0,"created":false}}';
 const legacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
 assert.equal(legacyMetadataResponse.result.run_metadata.data.integral, 1);
+for (const schemaVersionToken of ['1.0', '1e0']) {
+  const legacySchemaVersionJson = legacyMetadataResponseJson.replace(
+    '"metadata_schema_version":1,',
+    `"metadata_schema_version":${schemaVersionToken},`,
+  );
+  const decodedLegacySchemaVersion = decodeResponse(legacySchemaVersionJson);
+  assert.equal(decodedLegacySchemaVersion.result.run_metadata.metadata_schema_version, 1);
+  assert.equal(decodedLegacySchemaVersion.result.metadata_hash, legacyMetadataResponse.result.metadata_hash);
+  assert.deepEqual(
+    decodeResponse(encodeResponse(decodedLegacySchemaVersion)),
+    decodedLegacySchemaVersion,
+    `legacy metadata hash normalizes schema version ${schemaVersionToken}`,
+  );
+}
 const reencodedLegacyMetadata = encodeResponse(legacyMetadataResponse);
 assert.match(reencodedLegacyMetadata, /"integral":1\.0/);
 assert.deepEqual(decodeResponse(reencodedLegacyMetadata), legacyMetadataResponse);
