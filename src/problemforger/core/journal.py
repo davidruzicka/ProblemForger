@@ -33,6 +33,11 @@ REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
 _REQUEST_HASH_DOMAIN = b"problemforger.normalized-mutation-request.v1\0"
 
 
+def _has_identifier_content(value: str) -> bool:
+    """Match the protocol's blank set: Python whitespace plus U+FEFF."""
+    return any(not character.isspace() and character != "\ufeff" for character in value)
+
+
 @dataclass(frozen=True, slots=True)
 class VersionConflict:
     """Observed graph version differs from the proposal's expected version."""
@@ -48,7 +53,7 @@ class VersionConflict:
 
 
 def _require_identifier(value: str, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or not _has_identifier_content(value):
         raise ValueError(f"{name} must be a non-empty string")
     try:
         encoded = value.encode("utf-8")

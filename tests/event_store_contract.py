@@ -435,11 +435,30 @@ class EventStoreContractMixin:
             CreateRunStatus.INVALID_REQUEST,
             self.store.create_run("r" * 257, run_metadata).status,
         )
+        for blank in ("\ufeff", "\u001c\ufeff "):
+            with self.subTest(blank=repr(blank)):
+                self.assertEqual(
+                    CreateRunStatus.INVALID_REQUEST,
+                    self.store.create_run(blank, run_metadata).status,
+                )
+                self.assertEqual(
+                    StoreErrorCode.INVALID_REQUEST,
+                    self.store.get_run(blank).code,
+                )
+                self.assertEqual(
+                    StoreErrorCode.INVALID_REQUEST,
+                    self.store.get_proposal("run-1", blank).code,
+                )
         self.assertEqual(StoreErrorCode.INVALID_REQUEST, self.store.get_run("\ud800").code)
         self.assertEqual(
             StoreErrorCode.INVALID_REQUEST,
             self.store.get_proposal("run-1", "\ud800").code,
         )
+        self.assertEqual(
+            CreateRunStatus.CREATED,
+            self.store.create_run("run-\ufeff", run_metadata).status,
+        )
+        self.assertEqual("run-\ufeff", self.store.get_run("run-\ufeff").run_id)
         self.assertEqual(
             StoreErrorCode.INVALID_REQUEST,
             self.store.current_graph_version("\ud800").code,

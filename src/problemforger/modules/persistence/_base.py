@@ -22,6 +22,7 @@ from problemforger.core.journal import (
     RequestHash,
     RunId,
     VersionConflict,
+    _has_identifier_content,
     deserialize_entry,
     proposal_request_hash,
     proposal_status,
@@ -84,7 +85,7 @@ class _ProposalParts:
 
 
 def _valid_identifier(value: object) -> bool:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or not _has_identifier_content(value):
         return False
     try:
         if len(value.encode("utf-8")) > MAX_IDENTIFIER_UTF8_BYTES:

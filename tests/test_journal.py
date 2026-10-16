@@ -303,6 +303,16 @@ class JournalValueTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "valid UTF-8"):
             deserialize_entry(json.dumps(wire, ensure_ascii=True))
 
+    def test_identifier_blank_set_matches_protocol_and_preserves_nonblank_bom(self):
+        for blank in ("\ufeff", "\u001c\ufeff "):
+            with self.subTest(blank=repr(blank)), self.assertRaisesRegex(
+                ValueError, "non-empty string"
+            ):
+                RecordMetadata(blank, "record-1", RECORDED_AT)
+
+        record = RecordMetadata("run-\ufeff", "record-1", RECORDED_AT)
+        self.assertEqual("run-\ufeff", record.run_id)
+
     def test_receipt_hash_is_recomputed_and_checked_on_decode(self):
         serialized = serialize_entry(JournalEntry(1, receipt()))
         changed_hash = serialized.replace("sha256:problemforger-request-v1:", "sha256:problemforger-request-v2:")
