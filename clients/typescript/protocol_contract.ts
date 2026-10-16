@@ -159,12 +159,18 @@ export const protocolContract = {
     },
     "MetadataHash": {
       "type": "string",
-      "pattern": "^sha256:problemforger-run-metadata-v1:[0-9a-f]{64}(?![\\s\\S])",
+      "pattern": "^sha256:problemforger-run-metadata-v[12]:[0-9a-f]{64}(?![\\s\\S])",
       "x-canonical-hash": {
+        "algorithm": "sha256",
+        "prefix": "sha256:problemforger-run-metadata-v2:",
+        "domain_separator": "problemforger.run-metadata.v2\u0000",
+        "canonicalization": "run-metadata-json-v2"
+      },
+      "x-legacy-canonical-hash": {
         "algorithm": "sha256",
         "prefix": "sha256:problemforger-run-metadata-v1:",
         "domain_separator": "problemforger.run-metadata.v1\u0000",
-        "canonicalization": "run-metadata-json-v1"
+        "canonicalization": "python-json-v1"
       }
     },
     "RequestHash": {
@@ -186,7 +192,7 @@ export const protocolContract = {
         "data"
       ],
       "additionalProperties": false,
-      "x-size-canonicalization": "run-metadata-json-v1",
+      "x-size-canonicalization": "run-metadata-json-v2",
       "x-max-canonical-bytes": 1048576
     },
     "CreateRunParams": {

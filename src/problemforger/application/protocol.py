@@ -356,7 +356,7 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
             if "x-size-fields" in schema else value
         )
         canonicalization = schema.get("x-size-canonicalization", "ecmascript-json-v1")
-        if canonicalization == "run-metadata-json-v1":
+        if canonicalization == "run-metadata-json-v2":
             encoded_size = len(
                 canonical_json_with_safe_integer_normalization(sized).encode("utf-8")
             )
@@ -457,11 +457,22 @@ def _canonical_json_value(value: Any) -> Any:
     raise TypeError("value is not JSON serializable")
 
 
-def _run_metadata_hash(run_metadata: dict[str, Any]) -> str:
-    rule = CONTRACT["$defs"]["MetadataHash"]["x-canonical-hash"]
-    canonical = canonical_json_with_safe_integer_normalization(
-        run_metadata, max_safe_integer=MAX_SAFE_JSON_INTEGER
-    ).encode("utf-8")
+def _run_metadata_hash(run_metadata: dict[str, Any], *, version: int) -> str:
+    definition = CONTRACT["$defs"]["MetadataHash"]
+    rule = (
+        definition["x-legacy-canonical-hash"]
+        if version == 1
+        else definition["x-canonical-hash"]
+    )
+    if version == 1:
+        canonical = JsonDocument.from_value(run_metadata).canonical_json
+    elif version == 2:
+        canonical = canonical_json_with_safe_integer_normalization(
+            run_metadata, max_safe_integer=MAX_SAFE_JSON_INTEGER
+        )
+    else:  # pragma: no cover - only contract-declared versions are accepted
+        raise ValueError(f"unsupported run metadata hash version: {version}")
+    canonical = canonical.encode("utf-8")
     digest = hashlib.new(
         rule["algorithm"], rule["domain_separator"].encode("utf-8") + canonical
     ).hexdigest()
@@ -525,10 +536,14 @@ def validate_response(value: Any, request: ProtocolRequest | None = None) -> Pro
         operation = response["operation"]
         result = response["result"]
         _validate_shape(result, CONTRACT["x-operations"][operation]["result"], f"{operation} result")
-        if operation in {"create_run", "get_run"} and _run_metadata_hash(
-            result["run_metadata"]
-        ) != result["metadata_hash"]:
-            raise ProtocolValidationError("metadata_hash does not match run_metadata")
+        if operation in {"create_run", "get_run"}:
+            hash_version = 1 if result["metadata_hash"].startswith(
+                CONTRACT["$defs"]["MetadataHash"]["x-legacy-canonical-hash"]["prefix"]
+            ) else 2
+            if _run_metadata_hash(
+                result["run_metadata"], version=hash_version
+            ) != result["metadata_hash"]:
+                raise ProtocolValidationError("metadata_hash does not match run_metadata")
     after_journal_position = None
     requested_limit = None
     expected_graph_version = None
@@ -576,11 +591,28 @@ def _reject_json_constant(value: str) -> None:
     raise ProtocolValidationError(f"non-finite JSON number is forbidden: {value}")
 
 
-def _parse_protocol_float(value: str) -> float | int:
-    number = float(value)
-    if number.is_integer() and abs(number) <= MAX_SAFE_JSON_INTEGER:
-        return int(number)
-    return number
+def _parse_protocol_float(value: str) -> float:
+    return float(value)
+
+
+def _normalize_decoded_numbers(value: Any, *, legacy_metadata: bool) -> Any:
+    def visit(item: Any, path: tuple[str, ...] = ()) -> Any:
+        if type(item) is float:
+            if (
+                legacy_metadata
+                and path[:3] == ("result", "run_metadata", "data")
+            ):
+                return item
+            if item.is_integer() and abs(item) <= MAX_SAFE_JSON_INTEGER:
+                return int(item)
+            return item
+        if type(item) is list:
+            return [visit(child, path) for child in item]
+        if type(item) is dict:
+            return {key: visit(child, (*path, key)) for key, child in item.items()}
+        return item
+
+    return visit(value)
 
 
 def _encode(value: Any, validator: Any) -> bytes:
@@ -617,6 +649,15 @@ def _decode(payload: str | bytes, validator: Any) -> Any:
         raise
     except (UnicodeDecodeError, ValueError, RecursionError) as error:
         raise ProtocolValidationError("message is not valid UTF-8 JSON") from error
+    legacy_prefix = CONTRACT["$defs"]["MetadataHash"]["x-legacy-canonical-hash"]["prefix"]
+    legacy_metadata = (
+        isinstance(value, dict)
+        and value.get("operation") in {"create_run", "get_run"}
+        and isinstance(value.get("result"), dict)
+        and isinstance(value["result"].get("metadata_hash"), str)
+        and value["result"]["metadata_hash"].startswith(legacy_prefix)
+    )
+    value = _normalize_decoded_numbers(value, legacy_metadata=legacy_metadata)
     return validator(value)
 
 

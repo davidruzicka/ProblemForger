@@ -245,7 +245,7 @@ class EventStoreContractMixin:
         self.assertEqual(0, run.graph_version)
         self.assertEqual(0, run.last_journal_position)
         self.assertEqual({"task": "contract"}, run.run_metadata.data.value)
-        self.assertTrue(run.metadata_hash.startswith("sha256:problemforger-run-metadata-v1:"))
+        self.assertTrue(run.metadata_hash.startswith("sha256:problemforger-run-metadata-v2:"))
 
     def test_serialized_metadata_records_batches_and_pages_are_bounded(self):
         oversized_metadata = RunMetadata.from_value({"value": "x" * MAX_RUN_METADATA_BYTES})

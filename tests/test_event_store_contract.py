@@ -50,16 +50,28 @@ class EventStoreConfigurationTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             RunMetadata(JsonDocument.from_value([]))
 
-    def test_run_metadata_hash_has_a_stable_canonical_v1_vector(self):
+    def test_run_metadata_hash_has_a_stable_canonical_v2_vector(self):
         first = RunMetadata.from_value({"b": 2, "a": {"y": 2, "x": 1}})
         reordered = RunMetadata.from_value({"a": {"x": 1, "y": 2}, "b": 2})
 
         self.assertEqual(first.canonical_json, reordered.canonical_json)
         self.assertEqual(first.metadata_hash, reordered.metadata_hash)
         self.assertEqual(
-            "sha256:problemforger-run-metadata-v1:"
-            "7bdd1901f74e1d4e354190949121b3a73080934c7611bbe26de029cc76bfdb16",
+            "sha256:problemforger-run-metadata-v2:"
+            "af40c8cc6cd16d949f5bd85839cfad7078d9a952fd2f1990135f8279007ae6e2",
             first.metadata_hash,
+        )
+
+    def test_v1_and_v2_metadata_hashes_preserve_distinct_float_identity(self):
+        with_float = RunMetadata.from_value({"integral": 1.0})
+        with_integer = RunMetadata.from_value({"integral": 1})
+
+        self.assertNotEqual(with_float.legacy_metadata_hash, with_integer.legacy_metadata_hash)
+        self.assertEqual(with_float.metadata_hash, with_integer.metadata_hash)
+        self.assertEqual(
+            "sha256:problemforger-run-metadata-v1:"
+            "a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996",
+            with_float.legacy_metadata_hash,
         )
 
     def test_run_metadata_hash_normalizes_safe_integral_floats(self):
@@ -73,8 +85,8 @@ class EventStoreConfigurationTests(unittest.TestCase):
         self.assertEqual(with_integer.canonical_json, with_float.canonical_json)
         self.assertEqual(with_integer.metadata_hash, with_float.metadata_hash)
         self.assertEqual(
-            "sha256:problemforger-run-metadata-v1:"
-            "00ee606ab94545cf77dae3af2ae13d37971a0723991ef224347872807c00aabc",
+            "sha256:problemforger-run-metadata-v2:"
+            "99abf52f8ca513df30af599f5c82178bc909c65ef992f27675b5ed1769eed3ec",
             with_float.metadata_hash,
         )
         self.assertEqual(

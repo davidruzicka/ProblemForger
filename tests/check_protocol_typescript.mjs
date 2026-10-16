@@ -229,11 +229,23 @@ const canonicalCreateRunRequest = structuredClone(createRunRequest);
 canonicalCreateRunRequest.params.run_metadata.data = { second: 2, first: { enabled: true }, integral_float: 1.0 };
 const canonicalCreateRunResponse = structuredClone(createRunResponse);
 canonicalCreateRunResponse.result.run_metadata.data = { first: { enabled: true }, second: 2, integral_float: 1 };
-canonicalCreateRunResponse.result.metadata_hash = 'sha256:problemforger-run-metadata-v1:00ee606ab94545cf77dae3af2ae13d37971a0723991ef224347872807c00aabc';
+canonicalCreateRunResponse.result.metadata_hash = 'sha256:problemforger-run-metadata-v2:99abf52f8ca513df30af599f5c82178bc909c65ef992f27675b5ed1769eed3ec';
 assert.deepEqual(
   decodeResponse(encodeResponse(canonicalCreateRunResponse, canonicalCreateRunRequest), canonicalCreateRunRequest),
   canonicalCreateRunResponse,
   'create_run response accepts canonically equal metadata with reordered keys',
+);
+
+const legacyMetadataResponseJson = '{"protocol_schema_version":1,"request_id":"legacy-run","operation":"get_run","result":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"integral":1.0}},"metadata_hash":"sha256:problemforger-run-metadata-v1:a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996","graph_version":0,"last_journal_position":0,"created":false}}';
+const legacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
+assert.equal(legacyMetadataResponse.result.run_metadata.data.integral, 1);
+const reencodedLegacyMetadata = encodeResponse(legacyMetadataResponse);
+assert.match(reencodedLegacyMetadata, /"integral":1\.0/);
+assert.deepEqual(decodeResponse(reencodedLegacyMetadata), legacyMetadataResponse);
+assert.throws(
+  () => decodeResponse(legacyMetadataResponseJson.replace('"integral":1.0', '"integral":2')),
+  undefined,
+  'legacy metadata hash remains bound to the original value',
 );
 
 for (const [label, enabled] of [['different metadata value', false], ['boolean and number metadata differ', 1]]) {

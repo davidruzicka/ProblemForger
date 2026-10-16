@@ -184,10 +184,10 @@ class EventStoreState:
             metadata_hash = run_metadata.metadata_hash
             existing = self._runs.get(run_id)
             if existing is not None:
-                if existing.metadata_hash == metadata_hash:
+                if existing.metadata.canonical_json == run_metadata.canonical_json:
                     return CreateRunResult(
                         CreateRunStatus.EXISTING,
-                        metadata_hash=metadata_hash,
+                        metadata_hash=existing.metadata_hash,
                         run=self._snapshot(run_id, existing),
                     )
                 return CreateRunResult(
@@ -750,7 +750,10 @@ class EventStoreState:
     @staticmethod
     def validate_loaded_run(run_id: str, run: _RunState) -> None:
         """Fail closed if durable rows cannot be interpreted as a valid journal."""
-        if run.metadata.metadata_hash != run.metadata_hash:
+        if run.metadata_hash not in {
+            run.metadata.metadata_hash,
+            run.metadata.legacy_metadata_hash,
+        }:
             raise ValueError(f"stored metadata hash mismatch for run {run_id}")
         seen_ids: set[str] = set()
         receipts: dict[str, ProposalReceipt] = {}

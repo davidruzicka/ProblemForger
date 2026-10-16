@@ -582,7 +582,6 @@ class SqliteEventStore(EventStoreState):
         connection = self._connection
         assert connection is not None
         runs: dict[str, _RunState] = {}
-        normalized_metadata_rows = []
         for row in connection.execute(
             "SELECT run_id, metadata_json, metadata_hash, graph_version, last_journal_position FROM runs"
         ):
@@ -600,24 +599,18 @@ class SqliteEventStore(EventStoreState):
                 JsonDocument.from_value(value["data"]),
                 metadata_schema_version=value["metadata_schema_version"],
             )
-            if (
-                metadata.metadata_hash != row["metadata_hash"]
-                and metadata.legacy_metadata_hash != row["metadata_hash"]
-            ):
+            valid_hashes = {
+                metadata.metadata_hash: metadata.canonical_json,
+                metadata.legacy_metadata_hash: metadata.legacy_canonical_json,
+            }
+            if valid_hashes.get(row["metadata_hash"]) != row["metadata_json"]:
                 raise ValueError(f"stored metadata hash mismatch for run {row['run_id']}")
-            if (
-                metadata.canonical_json != row["metadata_json"]
-                or metadata.metadata_hash != row["metadata_hash"]
-            ):
-                normalized_metadata_rows.append(
-                    (metadata.canonical_json, metadata.metadata_hash, row["run_id"])
-                )
             run_id = row["run_id"]
             if not _valid_identifier(run_id):
                 raise ValueError("invalid stored run_id")
             runs[run_id] = _RunState(
                 metadata,
-                metadata.metadata_hash,
+                row["metadata_hash"],
                 graph_version=row["graph_version"],
             )
         for row in connection.execute(
@@ -644,20 +637,6 @@ class SqliteEventStore(EventStoreState):
             if run.last_journal_position != row["last_journal_position"]:
                 raise ValueError(f"stored journal head mismatch for run {row['run_id']}")
             self.validate_loaded_run(row["run_id"], run)
-        if normalized_metadata_rows:
-            self._verify_identity()
-            connection.execute("BEGIN IMMEDIATE")
-            try:
-                connection.executemany(
-                    "UPDATE runs SET metadata_json = ?, metadata_hash = ? WHERE run_id = ?",
-                    normalized_metadata_rows,
-                )
-                self._verify_identity()
-                connection.execute("COMMIT")
-            except BaseException:
-                if connection.in_transaction:
-                    connection.execute("ROLLBACK")
-                raise
         return runs
 
     def _persist_transition(

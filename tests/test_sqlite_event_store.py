@@ -1373,7 +1373,7 @@ class SqliteEventStoreTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     SqliteEventStore(path)
 
-    def test_legacy_integral_float_metadata_hash_is_normalized_on_open(self):
+    def test_legacy_integral_float_metadata_hash_is_preserved_on_open(self):
         store = self.open_store()
         metadata = RunMetadata.from_value({"integral": 1.0})
         self.assertEqual(CreateRunStatus.CREATED, store.create_run("run-1", metadata).status)
@@ -1390,7 +1390,10 @@ class SqliteEventStoreTests(unittest.TestCase):
 
         store = self.open_store()
         snapshot = store.get_run("run-1")
-        self.assertEqual(metadata.metadata_hash, snapshot.metadata_hash)
+        self.assertEqual(metadata.legacy_metadata_hash, snapshot.metadata_hash)
+        retry = store.create_run("run-1", RunMetadata.from_value({"integral": 1}))
+        self.assertEqual(CreateRunStatus.EXISTING, retry.status)
+        self.assertEqual(metadata.legacy_metadata_hash, retry.metadata_hash)
         store.close()
 
         connection = sqlite3.connect(self.path)
@@ -1398,8 +1401,8 @@ class SqliteEventStoreTests(unittest.TestCase):
             "SELECT metadata_json, metadata_hash FROM runs WHERE run_id = ?", ("run-1",)
         ).fetchone()
         connection.close()
-        self.assertEqual(metadata.canonical_json, row[0])
-        self.assertEqual(metadata.metadata_hash, row[1])
+        self.assertEqual(legacy_json, row[0])
+        self.assertEqual(metadata.legacy_metadata_hash, row[1])
 
 
 if __name__ == "__main__":

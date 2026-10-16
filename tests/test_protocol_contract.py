@@ -208,8 +208,8 @@ class ProtocolContractTests(unittest.TestCase):
             "integral_float": 1,
         }
         response["result"]["metadata_hash"] = (
-            "sha256:problemforger-run-metadata-v1:"
-            "00ee606ab94545cf77dae3af2ae13d37971a0723991ef224347872807c00aabc"
+            "sha256:problemforger-run-metadata-v2:"
+            "99abf52f8ca513df30af599f5c82178bc909c65ef992f27675b5ed1769eed3ec"
         )
         self.assertEqual(decode_response(encode_response(response, request), request), response)
 
@@ -243,6 +243,25 @@ class ProtocolContractTests(unittest.TestCase):
         self.assertIs(
             type(decoded["result"]["run_metadata"]["data"]["integral_float"]), int
         )
+
+    def test_legacy_metadata_hash_preserves_integral_float_wire_identity(self) -> None:
+        metadata = RunMetadata.from_value({"integral": 1.0})
+        response = deepcopy(
+            next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_run")
+        )
+        response["result"]["run_metadata"] = metadata.to_value()
+        response["result"]["metadata_hash"] = metadata.legacy_metadata_hash
+
+        encoded = encode_response(response)
+        self.assertIn(b'"integral":1.0', encoded)
+        decoded = decode_response(encoded)
+
+        self.assertEqual(metadata.legacy_metadata_hash, decoded["result"]["metadata_hash"])
+        self.assertIs(
+            type(decoded["result"]["run_metadata"]["data"]["integral"]), float
+        )
+        self.assertEqual(1.0, decoded["result"]["run_metadata"]["data"]["integral"])
+        self.assertIn(b'"integral":1.0', encode_response(decoded))
 
     def test_newly_created_run_response_has_zero_versions(self) -> None:
         response = deepcopy(
