@@ -101,13 +101,15 @@ Canonical proposal request hashing and its versioned JSON rules are defined by
 the [proposal recovery contract](protocol.md#spec-protocol-proposal-recovery).
 
 Run metadata schema v1 is `RunMetadata(metadata_schema_version=1, data=<JSON
-object>)`. Its hash input is the canonical JSON object
-`{"metadata_schema_version":1,"data":<object>}`, using the same UTF-8 JSON
-canonicalization rules as normalized requests. The SHA-256 input is the domain
-bytes `problemforger.run-metadata.v1\0` followed by that canonical JSON, and
-the stored value is
-`sha256:problemforger-run-metadata-v1:<lowercase hex digest>`. A metadata
-schema or hash-input change requires an explicit new version.
+object>)`. New runs use metadata-hash v2 over the canonical JSON object
+`{"metadata_schema_version":1,"data":<object>}`. V2 normalizes safe
+integer-valued floats before hashing and uses the
+`sha256:problemforger-run-metadata-v2:<lowercase hex digest>` prefix. Existing
+SQLite rows with v1 hashes retain their stored JSON and hash when opened; their
+`sha256:problemforger-run-metadata-v1:` identity remains stable. The hash prefix
+selects the canonicalization version, and both protocol codecs validate v1 and
+v2 responses. Metadata schema version and hash version are separate. Any hash
+input change requires a new hash version.
 
 Conceptual port contract:
 
@@ -157,7 +159,7 @@ current_graph_version(run_id)
 
 Requirements:
 
-- persist run registration before accepting proposals; `create_run` is idempotent only when the supplied run metadata has the same canonical serialization and metadata hash as the existing registration; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal. Version zero and an empty journal apply only to a newly created run; reopening preserves the persisted journal and current graph version and retains the registration; every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
+- persist run registration before accepting proposals; `create_run` is idempotent when supplied metadata has the same v2 canonical serialization as the existing metadata, returning the stored hash version and identity (including for a legacy v1 registration); a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal. Version zero and an empty journal apply only to a newly created run; reopening preserves the persisted journal and current graph version and retains the registration; every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
 - canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
 - `record_proposal` returns `IDEMPOTENCY_CONFLICT` with the stored and supplied canonical request hashes when an existing `(run_id, proposal_id)` has a different request hash; it does not evaluate or mutate the proposal;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;
@@ -385,12 +387,15 @@ Durable providers additionally run a durability contract suite covering close/re
 Restart recovery of an incomplete receipt applies only to durable providers;
 `MemoryEventStore` cannot claim process-restart recovery.
 
-The initial providers cap run metadata and each serialized journal record at
-1 MiB, an atomic append batch at 4 MiB, and each journal page at 4 MiB and 100
-records by default. A page stops before either limit and exposes continuation
-through its cursor. Larger evidence belongs in immutable versioned references,
-not inline payloads. The typed provider configuration may lower the positive
-record-count limit.
+The initial providers cap run metadata and ordinary serialized journal records
+at 1 MiB. A proposal receipt may use up to 2 MiB: its normalized request is
+limited to 1 MiB, with another 1 MiB reserved for its durable envelope and
+canonical-number expansion. Identifiers stored in the envelope are capped at
+256 UTF-8 bytes. Atomic append batches and journal pages remain capped at 4 MiB;
+pages also default to 100 records and stop before either limit, exposing
+continuation through the cursor. Larger evidence belongs in immutable versioned
+references, not inline payloads. The typed provider configuration may lower the
+positive record-count limit.
 
 SQLite uses a canonical resolved path, a persistent adjacent path lock, and an
 exclusive OS `flock` on both that lock file and the database inode. The

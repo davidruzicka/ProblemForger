@@ -1,0 +1,282 @@
+{
+  "requests": [
+    {
+      "label": "create_run",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-create",
+        "operation": "create_run",
+        "params": {
+          "run_id": "run-1",
+          "run_metadata": {
+            "metadata_schema_version": 1,
+            "data": {"purpose": "contract fixture"}
+          }
+        }
+      }
+    },
+    {
+      "label": "get_run",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-run",
+        "operation": "get_run",
+        "params": {"run_id": "run-1"}
+      }
+    },
+    {
+      "label": "get_graph",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-graph",
+        "operation": "get_graph",
+        "params": {
+          "run_id": "run-1",
+          "selection": {"root_ids": ["goal-1"], "max_depth": 1},
+          "limit": 10
+        }
+      }
+    },
+    {
+      "label": "propose_mutation",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-propose",
+        "operation": "propose_mutation",
+        "params": {
+          "run_id": "run-1",
+          "proposal_id": "proposal-1",
+          "request_schema_version": 1,
+          "expected_graph_version": 0,
+          "operations": [{"op": "add_node", "node": {"id": "task-1"}}],
+          "evidence": [{"evidence_id": "evidence-1", "subject_digest": "sha256:abc"}]
+        }
+      }
+    },
+    {
+      "label": "same_proposal_id_in_another_run",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-propose-other-run",
+        "operation": "propose_mutation",
+        "params": {
+          "run_id": "run-2",
+          "proposal_id": "proposal-1",
+          "request_schema_version": 1,
+          "expected_graph_version": 0,
+          "operations": [{"op": "add_node", "node": {"id": "task-1"}}],
+          "evidence": []
+        }
+      }
+    },
+    {
+      "label": "get_proposal",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-proposal",
+        "operation": "get_proposal",
+        "params": {"run_id": "run-1", "proposal_id": "proposal-1"}
+      }
+    },
+    {
+      "label": "get_audit_timeline",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-audit",
+        "operation": "get_audit_timeline",
+        "params": {"run_id": "run-1", "limit": 100, "after_journal_position": 0}
+      }
+    }
+  ],
+  "responses": [
+    {
+      "label": "create_run",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-create",
+        "operation": "create_run",
+        "result": {
+          "run_id": "run-1",
+          "run_metadata": {"metadata_schema_version": 1, "data": {"purpose": "contract fixture"}},
+          "metadata_hash": "sha256:problemforger-run-metadata-v2:00b92e18f250f6af32d0b46f6517067eb11366ffb40244f52eb9e3fa0c0e02af",
+          "graph_version": 0,
+          "last_journal_position": 0,
+          "created": true
+        }
+      }
+    },
+    {
+      "label": "get_run",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-run",
+        "operation": "get_run",
+        "result": {
+          "run_id": "run-1",
+          "run_metadata": {"metadata_schema_version": 1, "data": {"purpose": "contract fixture"}},
+          "metadata_hash": "sha256:problemforger-run-metadata-v2:00b92e18f250f6af32d0b46f6517067eb11366ffb40244f52eb9e3fa0c0e02af",
+          "graph_version": 2,
+          "last_journal_position": 5,
+          "created": false
+        }
+      }
+    },
+    {
+      "label": "get_graph",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-graph",
+        "operation": "get_graph",
+        "result": {
+          "run_id": "run-1",
+          "graph_schema_version": 1,
+          "graph_version": 2,
+          "nodes": [{"id": "goal-1", "kind": "RootGoal", "data": {"title": "goal"}}],
+          "edges": [],
+          "next_cursor": null,
+          "has_more": false
+        }
+      }
+    },
+    {
+      "label": "propose_mutation_pending",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-propose",
+        "operation": "propose_mutation",
+        "result": {
+          "run_id": "run-1",
+          "proposal_id": "proposal-1",
+          "status": "PENDING",
+          "request_hash": "sha256:problemforger-request-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reason_code": null,
+          "resulting_graph_version": null,
+          "journal_position": 6
+        }
+      }
+    },
+    {
+      "label": "get_proposal_commit",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-proposal",
+        "operation": "get_proposal",
+        "result": {
+          "run_id": "run-1",
+          "proposal_id": "proposal-1",
+          "status": "COMMIT",
+          "request_hash": "sha256:problemforger-request-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reason_code": null,
+          "resulting_graph_version": 3,
+          "journal_position": 8
+        }
+      }
+    },
+    {
+      "label": "get_proposal_abandoned",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-abandoned",
+        "operation": "get_proposal",
+        "result": {
+          "run_id": "run-1",
+          "proposal_id": "proposal-2",
+          "status": "ABANDONED",
+          "request_hash": "sha256:problemforger-request-v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "reason_code": "RECOVERY_INPUT_MISSING",
+          "resulting_graph_version": null,
+          "journal_position": 10
+        }
+      }
+    },
+    {
+      "label": "get_audit_timeline",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-audit",
+        "operation": "get_audit_timeline",
+        "result": {
+          "run_id": "run-1",
+          "records": [
+            {"journal_position": 1, "record_type": "proposal_receipt", "run_id": "run-1", "proposal_id": "proposal-1", "lifecycle_state": "PENDING"},
+            {"journal_position": 2, "record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "proposal-1", "outcome": "COMMIT", "graph_version": 1}
+          ],
+          "next_after_journal_position": 2,
+          "has_more": false
+        }
+      }
+    },
+    {
+      "label": "unknown_run",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-run",
+        "error": {"code": "NOT_FOUND", "message": "run was not found"}
+      }
+    },
+    {
+      "label": "wrong_run_authority",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-run",
+        "error": {"code": "UNAUTHORIZED", "message": "caller is not authorized for this run"}
+      }
+    },
+    {
+      "label": "store_in_use_startup_error",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": null,
+        "error": {"code": "STORE_IN_USE", "message": "store already has an owner"}
+      }
+    }
+  ],
+  "invalid_requests": [
+    {
+      "label": "missing_run_id",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "params": {}}
+    },
+    {
+      "label": "empty_run_id",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "params": {"run_id": " "}}
+    },
+    {
+      "label": "unknown_operation",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "future_operation", "params": {"run_id": "run-1"}}
+    },
+    {
+      "label": "unknown_envelope_field",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "params": {"run_id": "run-1"}, "internal_state": {}}
+    },
+    {
+      "label": "unsupported_protocol_version",
+      "message": {"protocol_schema_version": 2, "request_id": "req", "operation": "get_run", "params": {"run_id": "run-1"}}
+    },
+    {
+      "label": "invalid_audit_limit",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_audit_timeline", "params": {"run_id": "run-1", "limit": 101}}
+    },
+    {
+      "label": "boolean_graph_version",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "propose_mutation", "params": {"run_id": "run-1", "proposal_id": "p", "request_schema_version": 1, "expected_graph_version": true, "operations": [], "evidence": []}}
+    },
+    {
+      "label": "malformed_evidence",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "propose_mutation", "params": {"run_id": "run-1", "proposal_id": "p", "request_schema_version": 1, "expected_graph_version": 0, "operations": [], "evidence": ["worker says trusted"]}}
+    }
+  ],
+  "invalid_responses": [
+    {
+      "label": "public_response_leaks_recovery_input",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_proposal", "result": {"run_id": "run-1", "proposal_id": "p", "status": "PENDING", "request_hash": "sha256:problemforger-request-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "journal_position": 1, "normalized_request": {"operations": []}}}
+    },
+    {
+      "label": "fencing_state_not_in_p1",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_proposal", "result": {"run_id": "run-1", "proposal_id": "p", "status": "PENDING", "request_hash": "sha256:problemforger-request-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "journal_position": 1, "claim_epoch": 2}}
+    },
+    {
+      "label": "non_safe_integer",
+      "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "result": {"run_id": "run-1", "run_metadata": {"metadata_schema_version": 1, "data": {}}, "metadata_hash": "sha256:problemforger-run-metadata-v2:22d5b23cf00f6b9a761c9acaac898378b8977ba571f07c90cc4b4f068abcacd8", "graph_version": 9007199254740992, "last_journal_position": 1, "created": false}}
+    }
+  ]
+}

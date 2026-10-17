@@ -15,6 +15,7 @@ from problemforger.core.journal import (
     JsonDocument,
     ProposalId,
     RunId,
+    _has_identifier_content,
 )
 
 
@@ -46,7 +47,7 @@ _NON_EMPTY_LABEL_ATTRIBUTE_KEYS = frozenset(
 
 
 def _require_identifier(value: object, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or not _has_identifier_content(value):
         raise ValueError(f"{name} must be a non-empty string")
     try:
         value.encode("utf-8")

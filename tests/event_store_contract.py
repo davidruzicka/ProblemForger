@@ -4,10 +4,17 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import unittest
 
+from problemforger.application._protocol_contract import CONTRACT
+from problemforger.application.protocol import (
+    MAX_NORMALIZED_REQUEST_BYTES,
+    ProtocolValidationError,
+    encode_request,
+)
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
     GraphChangedEvent,
+    JournalEntry,
     JsonDocument,
     MutationDecision,
     NonTerminalAuditRecord,
@@ -32,6 +39,8 @@ from problemforger.modules.persistence._base import (
     MAX_APPEND_BATCH_BYTES,
     MAX_JOURNAL_PAGE_BYTES,
     MAX_JOURNAL_RECORD_BYTES,
+    MAX_NORMALIZED_REQUEST_BYTES as MAX_EVENT_STORE_NORMALIZED_REQUEST_BYTES,
+    MAX_PROPOSAL_RECEIPT_BYTES,
     MAX_RUN_METADATA_BYTES,
 )
 
@@ -242,7 +251,7 @@ class EventStoreContractMixin:
         self.assertEqual(0, run.graph_version)
         self.assertEqual(0, run.last_journal_position)
         self.assertEqual({"task": "contract"}, run.run_metadata.data.value)
-        self.assertTrue(run.metadata_hash.startswith("sha256:problemforger-run-metadata-v1:"))
+        self.assertTrue(run.metadata_hash.startswith("sha256:problemforger-run-metadata-v2:"))
 
     def test_serialized_metadata_records_batches_and_pages_are_bounded(self):
         oversized_metadata = RunMetadata.from_value({"value": "x" * MAX_RUN_METADATA_BYTES})
@@ -250,10 +259,15 @@ class EventStoreContractMixin:
         self.assertEqual(CreateRunStatus.INVALID_REQUEST, invalid_run.status)
         self.assertEqual(StoreErrorCode.NOT_FOUND, self.store.get_run("oversized-run").code)
 
+        exponent_metadata = RunMetadata.from_value({"items": [{"x": 1e-7}] * 90_000})
+        self.assertGreater(len(exponent_metadata.canonical_json.encode("utf-8")), MAX_RUN_METADATA_BYTES)
+        invalid_exponent_run = self.store.create_run("oversized-exponent-run", exponent_metadata)
+        self.assertEqual(CreateRunStatus.INVALID_REQUEST, invalid_exponent_run.status)
+
         oversized_request = NormalizedMutationRequest(
             request_schema_version=1,
             expected_graph_version=0,
-            operations=(JsonDocument.from_value({"payload": "x" * MAX_JOURNAL_RECORD_BYTES}),),
+            operations=(JsonDocument.from_value({"payload": "x" * (MAX_PROPOSAL_RECEIPT_BYTES + 1)}),),
             evidence=(),
         )
         oversized_receipt = ProposalReceipt(
@@ -268,6 +282,8 @@ class EventStoreContractMixin:
         )
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, rejected_receipt.status)
         self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+        self.assertLessEqual(MAX_PROPOSAL_RECEIPT_BYTES, MAX_APPEND_BATCH_BYTES)
+        self.assertLessEqual(MAX_PROPOSAL_RECEIPT_BYTES, MAX_JOURNAL_PAGE_BYTES)
 
         proposal_id = "large-batch"
         self.submit(proposal_id)
@@ -322,6 +338,131 @@ class EventStoreContractMixin:
         )
         self.assertEqual(1, len(second_page.records))
         self.assertFalse(second_page.has_more)
+
+    def test_near_limit_mutation_request_persists_and_recovers(self):
+        payload = "x" * (MAX_NORMALIZED_REQUEST_BYTES - 100)
+        normalized = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value({"payload": payload}),),
+            evidence=(),
+        )
+        protocol_request = {
+            "protocol_schema_version": 1,
+            "request_id": "near-limit-request",
+            "operation": "propose_mutation",
+            "params": {
+                "run_id": "run-1",
+                "proposal_id": "near-limit-proposal",
+                **normalized.to_value(),
+            },
+        }
+        encode_request(protocol_request)
+        proposal_receipt = ProposalReceipt(
+            metadata("near-limit-receipt"), "near-limit-proposal", normalized
+        )
+        result = self.store.record_proposal(
+            "run-1",
+            "near-limit-proposal",
+            proposal_request_hash(normalized),
+            normalized,
+            proposal_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.CREATED, result.status)
+        serialized = serialize_entry(self.store.read_journal("run-1", limit=1).records[0])
+        self.assertLessEqual(len(serialized.encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
+        self.assertEqual(
+            normalized,
+            self.store.get_proposal("run-1", "near-limit-proposal").normalized_request,
+        )
+
+    def test_oversized_normalized_request_is_rejected_even_when_receipt_fits(self):
+        self.assertEqual(
+            MAX_NORMALIZED_REQUEST_BYTES,
+            MAX_EVENT_STORE_NORMALIZED_REQUEST_BYTES,
+        )
+        proposal_id = "oversized-normalized-request"
+        normalized = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(
+                JsonDocument.from_value(
+                    {"payload": "x" * (MAX_NORMALIZED_REQUEST_BYTES + 128)}
+                ),
+            ),
+            evidence=(),
+        )
+        protocol_request = {
+            "protocol_schema_version": 1,
+            "request_id": "oversized-normalized-request",
+            "operation": "propose_mutation",
+            "params": {
+                "run_id": "run-1",
+                "proposal_id": proposal_id,
+                **normalized.to_value(),
+            },
+        }
+        with self.assertRaises(ProtocolValidationError) as error:
+            encode_request(protocol_request)
+        self.assertEqual("PAYLOAD_TOO_LARGE", error.exception.code)
+
+        proposal_receipt = ProposalReceipt(
+            metadata("oversized-normalized-receipt"), proposal_id, normalized
+        )
+        encoded_receipt_size = len(
+            serialize_entry(JournalEntry(1, proposal_receipt)).encode("utf-8")
+        )
+        self.assertLess(encoded_receipt_size, MAX_PROPOSAL_RECEIPT_BYTES)
+
+        result = self.store.record_proposal(
+            "run-1",
+            proposal_id,
+            proposal_request_hash(normalized),
+            normalized,
+            proposal_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
+        self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+
+    def test_normalized_requests_reject_unsafe_numbers_without_writes(self):
+        unsafe_numbers = (2**53, -(2**53), float(2**53), -float(2**53))
+        for field in ("operations", "evidence"):
+            for index, number in enumerate(unsafe_numbers):
+                with self.subTest(field=field, number=number, kind=type(number)):
+                    normalized = NormalizedMutationRequest(
+                        request_schema_version=1,
+                        expected_graph_version=0,
+                        operations=(),
+                        evidence=(),
+                    )
+                    normalized = replace(normalized, **{
+                        field: (JsonDocument.from_value({"nested": [number]}),)
+                    })
+                    proposal_id = f"unsafe-{field}-{index}"
+                    proposal_receipt = ProposalReceipt(
+                        metadata(f"{proposal_id}-receipt"), proposal_id, normalized
+                    )
+                    result = self.store.record_proposal(
+                        "run-1", proposal_id, proposal_receipt.request_hash,
+                        normalized, proposal_receipt,
+                    )
+                    self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
+                    self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+
+        valid = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value({"nested": [
+                2**53 - 1, -(2**53 - 1), float(2**53 - 1),
+                -float(2**53 - 1), 0.5, True, None,
+            ]}),),
+            evidence=(),
+        )
+        valid_receipt = ProposalReceipt(metadata("safe-receipt"), "safe", valid)
+        result = self.store.record_proposal(
+            "run-1", "safe", valid_receipt.request_hash, valid, valid_receipt
+        )
+        self.assertEqual(RecordProposalStatus.CREATED, result.status)
 
     def test_unknown_run_and_proposal_never_create_implicit_streams(self):
         normalized = request()
@@ -384,11 +525,34 @@ class EventStoreContractMixin:
             CreateRunStatus.INVALID_REQUEST,
             self.store.create_run("\ud800", run_metadata).status,
         )
+        self.assertEqual(
+            CreateRunStatus.INVALID_REQUEST,
+            self.store.create_run("r" * 257, run_metadata).status,
+        )
+        for blank in ("\ufeff", "\u001c\ufeff "):
+            with self.subTest(blank=repr(blank)):
+                self.assertEqual(
+                    CreateRunStatus.INVALID_REQUEST,
+                    self.store.create_run(blank, run_metadata).status,
+                )
+                self.assertEqual(
+                    StoreErrorCode.INVALID_REQUEST,
+                    self.store.get_run(blank).code,
+                )
+                self.assertEqual(
+                    StoreErrorCode.INVALID_REQUEST,
+                    self.store.get_proposal("run-1", blank).code,
+                )
         self.assertEqual(StoreErrorCode.INVALID_REQUEST, self.store.get_run("\ud800").code)
         self.assertEqual(
             StoreErrorCode.INVALID_REQUEST,
             self.store.get_proposal("run-1", "\ud800").code,
         )
+        self.assertEqual(
+            CreateRunStatus.CREATED,
+            self.store.create_run("run-\ufeff", run_metadata).status,
+        )
+        self.assertEqual("run-\ufeff", self.store.get_run("run-\ufeff").run_id)
         self.assertEqual(
             StoreErrorCode.INVALID_REQUEST,
             self.store.current_graph_version("\ud800").code,
@@ -462,7 +626,7 @@ class EventStoreContractMixin:
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, missing_identity.status)
         self.assertEqual(1, self.store.get_run("run-1").last_journal_position)
 
-    def test_existing_proposal_identity_precedes_unused_receipt_size(self):
+    def test_existing_proposal_identity_precedes_unused_receipt_metadata(self):
         normalized, original_receipt = self.submit()
         before = self.store.get_proposal("run-1", "proposal-1")
         oversized_request = NormalizedMutationRequest(
@@ -488,15 +652,13 @@ class EventStoreContractMixin:
         self.assertEqual(oversized_receipt.request_hash, conflict.supplied_request_hash)
         self.assertEqual(before, conflict.proposal)
 
-        unused_oversized_receipt = ProposalReceipt(
-            metadata("x" * MAX_JOURNAL_RECORD_BYTES), "proposal-1", normalized
-        )
+        unused_receipt = ProposalReceipt(metadata("unused-receipt"), "proposal-1", normalized)
         existing = self.store.record_proposal(
             "run-1",
             "proposal-1",
             original_receipt.request_hash,
             normalized,
-            unused_oversized_receipt,
+            unused_receipt,
         )
         self.assertEqual(RecordProposalStatus.EXISTING, existing.status)
         self.assertEqual(before, existing.proposal)
@@ -511,6 +673,55 @@ class EventStoreContractMixin:
         self.assertEqual(1, pending.last_journal_position)
         self.assertIsNone(pending.terminal_outcome)
         self.assertIsNone(pending.resulting_graph_version)
+
+    def test_declared_proposal_transitions_and_replays(self):
+        transitions = CONTRACT["x-proposal-transitions"]
+        states = CONTRACT["x-proposal-states"]
+        self.assertEqual(set(transitions), {"ABSENT", *states})
+        self.assertEqual(transitions["ABSENT"], ["PENDING"])
+        self.assertEqual(set(transitions["PENDING"]), {state for state, rule in states.items() if rule["terminal"]})
+        for state, rule in states.items():
+            if rule["terminal"]:
+                self.assertEqual(transitions[state], [])
+        for source in transitions:
+            for target in states:
+                with self.subTest(source=source, target=target):
+                    run_id = f"run-{source}-{target}"
+                    self.store.create_run(run_id, RunMetadata.from_value({"task": "transition"}))
+                    proposal_id = "transition"
+                    expected = 1 if source == "CONFLICT" or (source == "PENDING" and target == "CONFLICT") else 0
+                    pending = receipt(proposal_id, expected, run_id=run_id)
+
+                    def apply(state):
+                        if state == "PENDING":
+                            return self.store.record_proposal(run_id, proposal_id, pending.request_hash, pending.request, pending)
+                        if state == "ABANDONED":
+                            record = ProposalAbandoned(metadata("abandoned", run_id), proposal_id, pending.request_hash, "unsupported_recovery")
+                        else:
+                            record = decision(proposal_id, outcome=GovernanceOutcome(state), expected_version=expected,
+                                              resulting_version=(expected + 1 if state in {"COMMIT", "CONFLICT"} else expected),
+                                              run_id=run_id)
+                        if state == "COMMIT":
+                            return self.store.append_graph(run_id, proposal_id, expected, (record,),
+                                                           (graph_event(proposal_id, version=expected + 1, run_id=run_id),))
+                        return self.store.append_audit(run_id, (record,), proposal_id)
+
+                    if source != "ABSENT":
+                        apply("PENDING")
+                        if source != "PENDING":
+                            apply(source)
+                    before = self.store.get_proposal(run_id, proposal_id)
+                    before_status = "ABSENT" if isinstance(before, StoreError) else before.status.value
+                    self.assertEqual(source, before_status)
+                    position = self.store.get_run(run_id).last_journal_position
+                    apply(target)
+                    after = self.store.get_proposal(run_id, proposal_id)
+                    after_status = "ABSENT" if isinstance(after, StoreError) else after.status.value
+                    allowed = target in transitions[source]
+                    self.assertEqual(target if allowed else source, after_status)
+                    if not allowed:
+                        self.assertEqual(before, after)
+                        self.assertEqual(position, self.store.get_run(run_id).last_journal_position)
 
     def test_commit_is_atomic_advances_one_version_and_replays_exact_metadata(self):
         self.submit("proposal-1", 0)

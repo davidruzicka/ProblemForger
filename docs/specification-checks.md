@@ -35,6 +35,7 @@ From the repository root, use Python 3.12+ in a virtual environment and Node.js 
 
 ```sh
 python3 -m pip install -e . -r tests/requirements.txt
+python3 -m scripts.generate_protocol_contract --check
 python3 -m scripts.check_architecture
 python3 -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
 python3 -m coverage report --fail-under=90

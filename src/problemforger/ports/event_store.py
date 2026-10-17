@@ -22,10 +22,28 @@ from problemforger.core.journal import (
     RequestHash,
     RunId,
     VersionConflict,
+    canonical_json_with_safe_integer_normalization,
 )
 
 
 AuditRecord: TypeAlias = NonTerminalAuditRecord | MutationDecision | ProposalAbandoned
+
+
+def _run_metadata_hash(canonical_json: str, *, version: int) -> str:
+    from hashlib import sha256
+
+    if version == 1:
+        domain = b"problemforger.run-metadata.v1\0"
+        prefix = "sha256:problemforger-run-metadata-v1:"
+    elif version == 2:
+        domain = b"problemforger.run-metadata.v2\0"
+        prefix = "sha256:problemforger-run-metadata-v2:"
+    else:
+        raise ValueError(f"unsupported run metadata hash version: {version}")
+    digest = sha256(
+        domain + canonical_json.encode("utf-8")
+    ).hexdigest()
+    return f"{prefix}{digest}"
 
 
 class StoreDurability(str, Enum):
@@ -80,16 +98,21 @@ class RunMetadata:
 
     @property
     def canonical_json(self) -> str:
-        return JsonDocument.from_value(self.to_value()).canonical_json
+        return canonical_json_with_safe_integer_normalization(self.to_value())
 
     @property
     def metadata_hash(self) -> str:
-        from hashlib import sha256
+        return _run_metadata_hash(self.canonical_json, version=2)
 
-        digest = sha256(
-            b"problemforger.run-metadata.v1\0" + self.canonical_json.encode("utf-8")
-        ).hexdigest()
-        return f"sha256:problemforger-run-metadata-v1:{digest}"
+    @property
+    def legacy_canonical_json(self) -> str:
+        """Return the original v1 serialization used by existing run identities."""
+        return JsonDocument.from_value(self.to_value()).canonical_json
+
+    @property
+    def legacy_metadata_hash(self) -> str:
+        """Return the pre-normalization v1 hash for existing durable runs."""
+        return _run_metadata_hash(self.legacy_canonical_json, version=1)
 
 
 @dataclass(frozen=True, slots=True)

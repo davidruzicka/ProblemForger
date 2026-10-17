@@ -28,6 +28,7 @@ jobs:
           "$RUNNER_TEMP/spec-checks-venv/bin/python" -m pip install -e .
       - name: Check package, architecture boundaries, and specification contracts
         run: |
+          "$RUNNER_TEMP/spec-checks-venv/bin/python" -m scripts.generate_protocol_contract --check
           "$RUNNER_TEMP/spec-checks-venv/bin/python" -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
           "$RUNNER_TEMP/spec-checks-venv/bin/python" -m coverage report --fail-under=90
           "$RUNNER_TEMP/spec-checks-venv/bin/python" -m scripts.check_architecture
