@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
+import math
 from typing import Any, NewType, TypeAlias
 
 
@@ -103,6 +104,68 @@ def _canonical_json(value: Any) -> str:
     except (TypeError, ValueError, UnicodeEncodeError) as error:
         raise ValueError("value cannot be represented as canonical UTF-8 JSON") from error
     return serialized
+
+
+def ecmascript_json_number(value: float) -> str:
+    """Return the compact ECMAScript JSON spelling for a finite float."""
+    if not math.isfinite(value):
+        raise ValueError("JSON numbers must be finite")
+    if value == 0:
+        return "0"
+
+    number = repr(abs(value)).lower()
+    if "e" in number:
+        coefficient, exponent_text = number.split("e", 1)
+        exponent = int(exponent_text)
+    else:
+        coefficient = number
+        exponent = 0
+    integer_part, _, fractional_part = coefficient.partition(".")
+    digits = integer_part + fractional_part
+    leading_zeroes = len(digits) - len(digits.lstrip("0"))
+    digits = digits[leading_zeroes:].rstrip("0")
+    decimal_position = len(integer_part) + exponent - leading_zeroes
+
+    if decimal_position > 0 and decimal_position <= 21:
+        if decimal_position >= len(digits):
+            rendered = digits + ("0" * (decimal_position - len(digits)))
+        else:
+            rendered = f"{digits[:decimal_position]}.{digits[decimal_position:]}"
+    elif decimal_position <= 0 and decimal_position > -6:
+        rendered = f"0.{('0' * -decimal_position)}{digits}"
+    else:
+        scientific_exponent = decimal_position - 1
+        mantissa = digits[0] + (f".{digits[1:]}" if len(digits) > 1 else "")
+        exponent_sign = "+" if scientific_exponent >= 0 else ""
+        rendered = f"{mantissa}e{exponent_sign}{scientific_exponent}"
+
+    return f"-{rendered}" if value < 0 else rendered
+
+
+def ecmascript_json_size(value: Any) -> int:
+    """Count compact UTF-8 JSON bytes using ECMAScript number formatting."""
+    if value is None:
+        return 4
+    if type(value) is bool:
+        return 4 if value else 5
+    if isinstance(value, str):
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    if type(value) is int:
+        return len(str(value))
+    if type(value) is float:
+        return len(ecmascript_json_number(value))
+    if type(value) is list:
+        return 2 + max(len(value) - 1, 0) + sum(ecmascript_json_size(item) for item in value)
+    if type(value) is dict:
+        return (
+            2
+            + max(len(value) - 1, 0)
+            + sum(
+                ecmascript_json_size(key) + 1 + ecmascript_json_size(item)
+                for key, item in value.items()
+            )
+        )
+    raise TypeError("value is not JSON serializable")
 
 
 def _normalize_safe_integral_floats(value: Any, maximum: int) -> Any:

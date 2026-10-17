@@ -5,11 +5,16 @@ from datetime import datetime, timezone
 import unittest
 
 from problemforger.application._protocol_contract import CONTRACT
-from problemforger.application.protocol import MAX_NORMALIZED_REQUEST_BYTES, encode_request
+from problemforger.application.protocol import (
+    MAX_NORMALIZED_REQUEST_BYTES,
+    ProtocolValidationError,
+    encode_request,
+)
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
     GraphChangedEvent,
+    JournalEntry,
     JsonDocument,
     MutationDecision,
     NonTerminalAuditRecord,
@@ -34,6 +39,7 @@ from problemforger.modules.persistence._base import (
     MAX_APPEND_BATCH_BYTES,
     MAX_JOURNAL_PAGE_BYTES,
     MAX_JOURNAL_RECORD_BYTES,
+    MAX_NORMALIZED_REQUEST_BYTES as MAX_EVENT_STORE_NORMALIZED_REQUEST_BYTES,
     MAX_PROPOSAL_RECEIPT_BYTES,
     MAX_RUN_METADATA_BYTES,
 )
@@ -369,6 +375,54 @@ class EventStoreContractMixin:
             normalized,
             self.store.get_proposal("run-1", "near-limit-proposal").normalized_request,
         )
+
+    def test_oversized_normalized_request_is_rejected_even_when_receipt_fits(self):
+        self.assertEqual(
+            MAX_NORMALIZED_REQUEST_BYTES,
+            MAX_EVENT_STORE_NORMALIZED_REQUEST_BYTES,
+        )
+        proposal_id = "oversized-normalized-request"
+        normalized = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(
+                JsonDocument.from_value(
+                    {"payload": "x" * (MAX_NORMALIZED_REQUEST_BYTES + 128)}
+                ),
+            ),
+            evidence=(),
+        )
+        protocol_request = {
+            "protocol_schema_version": 1,
+            "request_id": "oversized-normalized-request",
+            "operation": "propose_mutation",
+            "params": {
+                "run_id": "run-1",
+                "proposal_id": proposal_id,
+                **normalized.to_value(),
+            },
+        }
+        with self.assertRaises(ProtocolValidationError) as error:
+            encode_request(protocol_request)
+        self.assertEqual("PAYLOAD_TOO_LARGE", error.exception.code)
+
+        proposal_receipt = ProposalReceipt(
+            metadata("oversized-normalized-receipt"), proposal_id, normalized
+        )
+        encoded_receipt_size = len(
+            serialize_entry(JournalEntry(1, proposal_receipt)).encode("utf-8")
+        )
+        self.assertLess(encoded_receipt_size, MAX_PROPOSAL_RECEIPT_BYTES)
+
+        result = self.store.record_proposal(
+            "run-1",
+            proposal_id,
+            proposal_request_hash(normalized),
+            normalized,
+            proposal_receipt,
+        )
+        self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
+        self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
 
     def test_unknown_run_and_proposal_never_create_implicit_streams(self):
         normalized = request()

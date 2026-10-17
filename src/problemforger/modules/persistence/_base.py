@@ -24,6 +24,7 @@ from problemforger.core.journal import (
     VersionConflict,
     _has_identifier_content,
     deserialize_entry,
+    ecmascript_json_size,
     proposal_request_hash,
     proposal_status,
     serialize_entry,
@@ -47,6 +48,7 @@ from problemforger.ports.event_store import (
 DEFAULT_MAX_JOURNAL_PAGE_SIZE = 100
 MAX_RUN_METADATA_BYTES = 1_048_576
 MAX_JOURNAL_RECORD_BYTES = 1_048_576
+MAX_NORMALIZED_REQUEST_BYTES = MAX_JOURNAL_RECORD_BYTES
 MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES = 1_048_576
 MAX_PROPOSAL_RECEIPT_BYTES = MAX_JOURNAL_RECORD_BYTES + MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES
 MAX_APPEND_BATCH_BYTES = 4_194_304
@@ -100,6 +102,13 @@ def _max_serialized_record_bytes(record: object) -> int:
     if isinstance(record, ProposalReceipt):
         return MAX_PROPOSAL_RECEIPT_BYTES
     return MAX_JOURNAL_RECORD_BYTES
+
+
+def _normalized_request_within_bounds(request: NormalizedMutationRequest) -> bool:
+    try:
+        return ecmascript_json_size(request.to_value()) <= MAX_NORMALIZED_REQUEST_BYTES
+    except (OverflowError, TypeError, UnicodeEncodeError, ValueError):
+        return False
 
 
 def _valid_integer(value: object, *, minimum: int) -> bool:
@@ -270,6 +279,11 @@ class EventStoreState:
                     RecordProposalStatus.EXISTING,
                     proposal=self._snapshot_proposal(run_id, run, proposal_id, parts),
                     stored_request_hash=receipt.request_hash,
+                    supplied_request_hash=RequestHash(request_hash),
+                )
+            if not _normalized_request_within_bounds(normalized_request):
+                return RecordProposalResult(
+                    RecordProposalStatus.INVALID_PROPOSAL,
                     supplied_request_hash=RequestHash(request_hash),
                 )
             if not self._records_within_bounds(
@@ -772,6 +786,10 @@ class EventStoreState:
                 raise ValueError(f"duplicate record_id in run {run_id}")
             seen_ids.add(record_id)
             if isinstance(record, ProposalReceipt):
+                if not _normalized_request_within_bounds(record.request):
+                    raise ValueError(
+                        f"stored normalized request exceeds size limit for run {run_id}"
+                    )
                 if record.proposal_id in receipts:
                     raise ValueError(f"duplicate proposal receipt in run {run_id}")
                 receipts[record.proposal_id] = record

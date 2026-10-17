@@ -1305,6 +1305,7 @@ class SqliteEventStoreTests(unittest.TestCase):
             "run_head",
             "unknown_run",
             "oversized_record",
+            "oversized_normalized_request",
             "orphan_scoped_audit",
         )
         for corruption in corruptions:
@@ -1338,6 +1339,42 @@ class SqliteEventStoreTests(unittest.TestCase):
                             1,
                             "oversized-record",
                             serialize_entry(JournalEntry(1, oversized_record)),
+                        ),
+                    )
+                    connection.execute(
+                        "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"
+                    )
+                elif corruption == "oversized_normalized_request":
+                    normalized = NormalizedMutationRequest(
+                        request_schema_version=1,
+                        expected_graph_version=0,
+                        operations=(
+                            JsonDocument.from_value(
+                                {"payload": "x" * (MAX_NORMALIZED_REQUEST_BYTES + 128)}
+                            ),
+                        ),
+                        evidence=(),
+                    )
+                    oversized_receipt = ProposalReceipt(
+                        metadata("oversized-normalized-request-receipt"),
+                        "oversized-normalized-request",
+                        normalized,
+                    )
+                    serialized_receipt = serialize_entry(
+                        JournalEntry(1, oversized_receipt)
+                    )
+                    self.assertLess(
+                        len(serialized_receipt.encode("utf-8")),
+                        MAX_PROPOSAL_RECEIPT_BYTES,
+                    )
+                    connection.execute(
+                        "INSERT INTO journal(run_id, journal_position, record_id, record_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "run-1",
+                            1,
+                            "oversized-normalized-request-receipt",
+                            serialized_receipt,
                         ),
                     )
                     connection.execute(

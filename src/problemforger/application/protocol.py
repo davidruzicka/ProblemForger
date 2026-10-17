@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import re
 from typing import Any, Literal, NotRequired, TypedDict, TypeAlias, cast
 
@@ -16,6 +15,8 @@ from problemforger.core.journal import (
     CURRENT_REQUEST_SCHEMA_VERSION,
     JsonDocument,
     canonical_json_with_safe_integer_normalization,
+    ecmascript_json_number,
+    ecmascript_json_size,
 )
 
 
@@ -361,7 +362,7 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
                 canonical_json_with_safe_integer_normalization(sized).encode("utf-8")
             )
         elif canonicalization == "ecmascript-json-v1":
-            encoded_size = _protocol_json_size(sized)
+            encoded_size = ecmascript_json_size(sized)
         else:  # pragma: no cover - generated contract validation prevents this
             raise RuntimeError(f"unsupported size canonicalization: {canonicalization}")
         if encoded_size > schema["x-max-canonical-bytes"]:
@@ -371,68 +372,6 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
         version = value.get(version_field)
         if version is not None and version > value[position_field]:
             raise ProtocolValidationError(f"{name}.{version_field} cannot exceed {position_field}")
-
-
-def _ecmascript_number(value: float) -> str:
-    """Return the compact ECMAScript JSON spelling for a finite Python float."""
-    if not math.isfinite(value):
-        raise ValueError("JSON numbers must be finite")
-    if value == 0:
-        return "0"
-
-    number = repr(abs(value)).lower()
-    if "e" in number:
-        coefficient, exponent_text = number.split("e", 1)
-        exponent = int(exponent_text)
-    else:
-        coefficient = number
-        exponent = 0
-    integer_part, _, fractional_part = coefficient.partition(".")
-    digits = integer_part + fractional_part
-    leading_zeroes = len(digits) - len(digits.lstrip("0"))
-    digits = digits[leading_zeroes:].rstrip("0")
-    decimal_position = len(integer_part) + exponent - leading_zeroes
-
-    if decimal_position > 0 and decimal_position <= 21:
-        if decimal_position >= len(digits):
-            rendered = digits + ("0" * (decimal_position - len(digits)))
-        else:
-            rendered = f"{digits[:decimal_position]}.{digits[decimal_position:]}"
-    elif decimal_position <= 0 and decimal_position > -6:
-        rendered = f"0.{('0' * -decimal_position)}{digits}"
-    else:
-        scientific_exponent = decimal_position - 1
-        mantissa = digits[0] + (f".{digits[1:]}" if len(digits) > 1 else "")
-        exponent_sign = "+" if scientific_exponent >= 0 else ""
-        rendered = f"{mantissa}e{exponent_sign}{scientific_exponent}"
-
-    return f"-{rendered}" if value < 0 else rendered
-
-
-def _protocol_json_size(value: Any) -> int:
-    """Count compact UTF-8 JSON bytes using the TypeScript codec's number form."""
-    if value is None:
-        return 4
-    if type(value) is bool:
-        return 4 if value else 5
-    if isinstance(value, str):
-        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-    if type(value) is int:
-        return len(str(value))
-    if type(value) is float:
-        return len(_ecmascript_number(value))
-    if type(value) is list:
-        return 2 + max(len(value) - 1, 0) + sum(_protocol_json_size(item) for item in value)
-    if type(value) is dict:
-        return (
-            2
-            + max(len(value) - 1, 0)
-            + sum(
-                _protocol_json_size(key) + 1 + _protocol_json_size(item)
-                for key, item in value.items()
-            )
-        )
-    raise TypeError("value is not JSON serializable")
 
 
 def _canonical_json_value(value: Any) -> Any:
@@ -446,7 +385,7 @@ def _canonical_json_value(value: Any) -> Any:
     if type(value) is int:
         return ("number", str(value))
     if type(value) is float:
-        return ("number", _ecmascript_number(value))
+        return ("number", ecmascript_json_number(value))
     if type(value) is list:
         return ("array", tuple(_canonical_json_value(item) for item in value))
     if type(value) is dict:
