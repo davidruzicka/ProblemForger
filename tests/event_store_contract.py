@@ -424,6 +424,46 @@ class EventStoreContractMixin:
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
         self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
 
+    def test_normalized_requests_reject_unsafe_numbers_without_writes(self):
+        unsafe_numbers = (2**53, -(2**53), float(2**53), -float(2**53))
+        for field in ("operations", "evidence"):
+            for index, number in enumerate(unsafe_numbers):
+                with self.subTest(field=field, number=number, kind=type(number)):
+                    normalized = NormalizedMutationRequest(
+                        request_schema_version=1,
+                        expected_graph_version=0,
+                        operations=(),
+                        evidence=(),
+                    )
+                    normalized = replace(normalized, **{
+                        field: (JsonDocument.from_value({"nested": [number]}),)
+                    })
+                    proposal_id = f"unsafe-{field}-{index}"
+                    proposal_receipt = ProposalReceipt(
+                        metadata(f"{proposal_id}-receipt"), proposal_id, normalized
+                    )
+                    result = self.store.record_proposal(
+                        "run-1", proposal_id, proposal_receipt.request_hash,
+                        normalized, proposal_receipt,
+                    )
+                    self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
+                    self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+
+        valid = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value({"nested": [
+                2**53 - 1, -(2**53 - 1), float(2**53 - 1),
+                -float(2**53 - 1), 0.5, True, None,
+            ]}),),
+            evidence=(),
+        )
+        valid_receipt = ProposalReceipt(metadata("safe-receipt"), "safe", valid)
+        result = self.store.record_proposal(
+            "run-1", "safe", valid_receipt.request_hash, valid, valid_receipt
+        )
+        self.assertEqual(RecordProposalStatus.CREATED, result.status)
+
     def test_unknown_run_and_proposal_never_create_implicit_streams(self):
         normalized = request()
         proposal_receipt = receipt()

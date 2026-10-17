@@ -17,6 +17,7 @@ from problemforger.core.journal import (
     canonical_json_with_safe_integer_normalization,
     ecmascript_json_number,
     ecmascript_json_size,
+    validate_json_safe_integers,
 )
 
 
@@ -253,19 +254,10 @@ def _json_tree(value: Any, name: str) -> None:
     except (TypeError, ValueError, RecursionError) as error:
         raise ProtocolValidationError(f"{name} must contain only JSON values") from error
 
-    def check_numbers(item: Any) -> None:
-        if type(item) is int and abs(item) > MAX_SAFE_JSON_INTEGER:
-            raise ProtocolValidationError("JSON integers must be safe integers")
-        if type(item) is float and item.is_integer() and abs(item) > MAX_SAFE_JSON_INTEGER:
-            raise ProtocolValidationError("JSON integers must be safe integers")
-        if type(item) is list:
-            for child in item:
-                check_numbers(child)
-        elif type(item) is dict:
-            for child in item.values():
-                check_numbers(child)
-
-    check_numbers(value)
+    try:
+        validate_json_safe_integers(value)
+    except ValueError as error:
+        raise ProtocolValidationError(str(error)) from error
 
 
 def _integer(
@@ -555,9 +547,11 @@ def _normalize_decoded_numbers(value: Any, *, legacy_metadata: bool) -> Any:
 
 
 def _encode(value: Any, validator: Any) -> bytes:
-    validator(value)
     try:
+        validator(value)
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except ProtocolValidationError:
+        raise
     except (TypeError, ValueError, UnicodeEncodeError, RecursionError) as error:
         raise ProtocolValidationError("message is not valid UTF-8 JSON") from error
     if len(encoded) > MAX_PROTOCOL_MESSAGE_BYTES:
@@ -596,8 +590,11 @@ def _decode(payload: str | bytes, validator: Any) -> Any:
         and isinstance(value["result"].get("metadata_hash"), str)
         and value["result"]["metadata_hash"].startswith(legacy_prefix)
     )
-    value = _normalize_decoded_numbers(value, legacy_metadata=legacy_metadata)
-    return validator(value)
+    try:
+        value = _normalize_decoded_numbers(value, legacy_metadata=legacy_metadata)
+        return validator(value)
+    except RecursionError as error:
+        raise ProtocolValidationError("message exceeds supported JSON nesting") from error
 
 
 def encode_request(value: ProtocolRequest) -> bytes:

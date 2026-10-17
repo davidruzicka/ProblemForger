@@ -28,6 +28,7 @@ from problemforger.core.journal import (
     proposal_request_hash,
     proposal_status,
     serialize_entry,
+    validate_json_safe_integers,
 )
 from problemforger.ports.event_store import (
     AppendResult,
@@ -106,7 +107,9 @@ def _max_serialized_record_bytes(record: object) -> int:
 
 def _normalized_request_within_bounds(request: NormalizedMutationRequest) -> bool:
     try:
-        return ecmascript_json_size(request.to_value()) <= MAX_NORMALIZED_REQUEST_BYTES
+        value = request.to_value()
+        validate_json_safe_integers(value)
+        return ecmascript_json_size(value) <= MAX_NORMALIZED_REQUEST_BYTES
     except (OverflowError, TypeError, UnicodeEncodeError, ValueError):
         return False
 
@@ -788,7 +791,7 @@ class EventStoreState:
             if isinstance(record, ProposalReceipt):
                 if not _normalized_request_within_bounds(record.request):
                     raise ValueError(
-                        f"stored normalized request exceeds size limit for run {run_id}"
+                        f"stored normalized request violates public JSON limits for run {run_id}"
                     )
                 if record.proposal_id in receipts:
                     raise ValueError(f"duplicate proposal receipt in run {run_id}")

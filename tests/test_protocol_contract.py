@@ -43,6 +43,27 @@ class ProtocolContractTests(unittest.TestCase):
                 encoded = encode_response(fixture["message"], request)
                 self.assertEqual(decode_response(encoded, request), fixture["message"])
 
+    def test_deeply_nested_frames_raise_protocol_validation_errors(self) -> None:
+        request = deepcopy(self.fixtures["requests"][0]["message"])
+        request["operation"] = "get_graph"
+        request["params"] = {"run_id": "run-1", "limit": 1, "selection": {"deep": "marker"}}
+        response = deepcopy(next(
+            item["message"] for item in self.fixtures["responses"]
+            if item["label"] == "get_graph"
+        ))
+        response["result"]["nodes"] = [{"deep": "marker"}]
+        for depth in (700, 2000):
+            nested = "[" * depth + "0" + "]" * depth
+            for decoder, message in ((decode_request, request), (decode_response, response)):
+                payload = json.dumps(message).replace('"marker"', nested)
+                with self.subTest(depth=depth, decoder=decoder.__name__):
+                    try:
+                        decoded = decoder(payload)
+                    except ProtocolValidationError:
+                        continue
+                    self.assertLess(depth, 2000)
+                    self.assertEqual("get_graph", decoded["operation"])
+
     def test_invalid_request_fixtures_are_rejected(self) -> None:
         for fixture in self.fixtures["invalid_requests"]:
             with self.subTest(label=fixture["label"]):

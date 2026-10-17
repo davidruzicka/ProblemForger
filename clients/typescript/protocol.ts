@@ -146,6 +146,15 @@ function fail(message: string): never {
   throw new TypeError(message);
 }
 
+function withJsonRecursionGuard<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof RangeError) return fail('message exceeds supported JSON nesting');
+    throw error;
+  }
+}
+
 function object(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return fail(`${name} must be an object`);
   const prototype = Object.getPrototypeOf(value);
@@ -262,7 +271,7 @@ function pythonCanonicalJson(value: JsonValue): string {
 
 function legacyPythonCanonicalJson(value: JsonValue): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value) as string;
-  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : pythonCanonicalFloat(value);
+  if (typeof value === 'number') return Object.is(value, -0) || !Number.isInteger(value) ? pythonCanonicalFloat(value) : String(value);
   if (Array.isArray(value)) return `[${value.map(legacyPythonCanonicalJson).join(',')}]`;
   const fields = Object.keys(value).sort(compareCodePoints);
   return `{${fields.map((key) => `${JSON.stringify(key)}:${legacyPythonCanonicalJson(value[key]!)}`).join(',')}}`;
@@ -349,6 +358,10 @@ function validateShape(value: unknown, shape: Shape | string, name: string): voi
 }
 
 export function validateRequest(value: unknown): asserts value is ProtocolRequest {
+  withJsonRecursionGuard(() => validateRequestValue(value));
+}
+
+function validateRequestValue(value: unknown): asserts value is ProtocolRequest {
   jsonValue(value);
   validateShape(value, 'Request', 'request');
   const request = value as ProtocolRequest;
@@ -383,6 +396,10 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
 }
 
 export function validateResponse(value: unknown, request?: ProtocolRequest): asserts value is ProtocolResponse {
+  withJsonRecursionGuard(() => validateResponseValue(value, request));
+}
+
+function validateResponseValue(value: unknown, request?: ProtocolRequest): asserts value is ProtocolResponse {
   jsonValue(value);
   const response = object(value, 'response');
   const isError = Object.hasOwn(response, 'error');
@@ -575,27 +592,36 @@ function encodeJson(value: unknown): string {
 }
 
 export function encodeRequest(value: ProtocolRequest): string {
-  validateRequest(value);
-  return encodeJson(value);
+  return withJsonRecursionGuard(() => {
+    validateRequest(value);
+    return encodeJson(value);
+  });
 }
 
 export function decodeRequest(serialized: string | Uint8Array): ProtocolRequest {
-  const value = decodeJson(serialized);
-  validateRequest(value);
-  return value;
+  return withJsonRecursionGuard(() => {
+    const value = decodeJson(serialized);
+    validateRequest(value);
+    return value;
+  });
 }
 
 export function encodeResponse(value: ProtocolResponse, request?: ProtocolRequest): string {
+  return withJsonRecursionGuard(() => encodeResponseJson(value, request));
+}
+
+function encodeResponseJson(value: ProtocolResponse, request?: ProtocolRequest): string {
   validateResponse(value, request);
   let encoded = JSON.stringify(value) as string;
   if ('operation' in value && (value.operation === 'create_run' || value.operation === 'get_run')) {
     const legacyPrefix = protocolContract.$defs.MetadataHash['x-legacy-canonical-hash'].prefix;
     const runResult = value.result;
     const wire = legacyMetadataWire.get(runResult.run_metadata);
-    if (runResult.metadata_hash.startsWith(legacyPrefix) && wire !== undefined) {
+    if (runResult.metadata_hash.startsWith(legacyPrefix)) {
       const outputMetadata = rejectDuplicateKeys(encoded);
       if (outputMetadata !== undefined) {
-        encoded = `${encoded.slice(0, outputMetadata.start)}${wire.raw}${encoded.slice(outputMetadata.end)}`;
+        const metadataJson = wire?.raw ?? legacyPythonCanonicalJson(runResult.run_metadata);
+        encoded = `${encoded.slice(0, outputMetadata.start)}${metadataJson}${encoded.slice(outputMetadata.end)}`;
       }
     }
   }
@@ -604,7 +630,9 @@ export function encodeResponse(value: ProtocolResponse, request?: ProtocolReques
 }
 
 export function decodeResponse(serialized: string | Uint8Array, request?: ProtocolRequest): ProtocolResponse {
-  const value = decodeJson(serialized);
-  validateResponse(value, request);
-  return value;
+  return withJsonRecursionGuard(() => {
+    const value = decodeJson(serialized);
+    validateResponse(value, request);
+    return value;
+  });
 }

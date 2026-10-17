@@ -106,6 +106,22 @@ def _canonical_json(value: Any) -> str:
     return serialized
 
 
+def validate_json_safe_integers(value: Any) -> None:
+    """Reject integer-valued JSON numbers outside the public safe range."""
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if (
+            type(item) is int
+            or (type(item) is float and item.is_integer())
+        ) and abs(item) > MAX_SAFE_JSON_INTEGER:
+            raise ValueError("JSON integers must be safe integers")
+        if type(item) is list:
+            pending.extend(item)
+        elif type(item) is dict:
+            pending.extend(item.values())
+
+
 def ecmascript_json_number(value: float) -> str:
     """Return the compact ECMAScript JSON spelling for a finite float."""
     if not math.isfinite(value):

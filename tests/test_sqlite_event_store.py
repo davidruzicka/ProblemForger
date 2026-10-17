@@ -1306,6 +1306,8 @@ class SqliteEventStoreTests(unittest.TestCase):
             "unknown_run",
             "oversized_record",
             "oversized_normalized_request",
+            "unsafe_request_integer",
+            "unsafe_request_float",
             "orphan_scoped_audit",
         )
         for corruption in corruptions:
@@ -1344,13 +1346,20 @@ class SqliteEventStoreTests(unittest.TestCase):
                     connection.execute(
                         "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"
                     )
-                elif corruption == "oversized_normalized_request":
+                elif corruption in {
+                    "oversized_normalized_request", "unsafe_request_integer", "unsafe_request_float"
+                }:
+                    invalid_payload = (
+                        "x" * (MAX_NORMALIZED_REQUEST_BYTES + 128)
+                        if corruption == "oversized_normalized_request"
+                        else 2**53 if corruption == "unsafe_request_integer" else -float(2**53)
+                    )
                     normalized = NormalizedMutationRequest(
                         request_schema_version=1,
                         expected_graph_version=0,
                         operations=(
                             JsonDocument.from_value(
-                                {"payload": "x" * (MAX_NORMALIZED_REQUEST_BYTES + 128)}
+                                {"payload": {"nested": [invalid_payload]}}
                             ),
                         ),
                         evidence=(),

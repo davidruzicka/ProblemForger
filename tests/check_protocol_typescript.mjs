@@ -6,9 +6,23 @@ import {
   decodeResponse,
   encodeRequest,
   encodeResponse,
+  validateRequest,
+  validateResponse,
 } from '../clients/typescript/protocol.ts';
 
 const fixture = JSON.parse(await readFile(process.argv[2], 'utf8'));
+
+for (const depth of [6000, 20000]) {
+  const nested = '['.repeat(depth) + '0' + ']'.repeat(depth);
+  const requestJson = `{"protocol_schema_version":1,"request_id":"deep","operation":"get_graph","params":{"run_id":"run-1","limit":1,"selection":{"deep":${nested}}}}`;
+  const responseJson = `{"protocol_schema_version":1,"request_id":"deep","operation":"get_graph","result":{"run_id":"run-1","graph_schema_version":1,"graph_version":0,"nodes":[{"deep":${nested}}],"edges":[],"next_cursor":null,"has_more":false}}`;
+  assert.throws(() => decodeRequest(requestJson), TypeError, `deep request at ${depth}`);
+  assert.throws(() => decodeResponse(responseJson), TypeError, `deep response at ${depth}`);
+  assert.throws(() => encodeRequest(JSON.parse(requestJson)), TypeError, `deep request encoding at ${depth}`);
+  assert.throws(() => encodeResponse(JSON.parse(responseJson)), TypeError, `deep response encoding at ${depth}`);
+  assert.throws(() => validateRequest(JSON.parse(requestJson)), TypeError, `deep request validation at ${depth}`);
+  assert.throws(() => validateResponse(JSON.parse(responseJson)), TypeError, `deep response validation at ${depth}`);
+}
 
 for (const { label, message } of fixture.requests) {
   assert.deepEqual(decodeRequest(encodeRequest(message)), message, `${label} request`);
@@ -256,6 +270,18 @@ for (const schemaVersionToken of ['1.0', '1e0']) {
 const reencodedLegacyMetadata = encodeResponse(legacyMetadataResponse);
 assert.match(reencodedLegacyMetadata, /"integral":1\.0/);
 assert.deepEqual(decodeResponse(reencodedLegacyMetadata), legacyMetadataResponse);
+
+const negativeZeroJson = legacyMetadataResponseJson
+  .replace('"integral":1.0', '"zero":-0.0')
+  .replace('a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996',
+    '12572925cbe5490b712f37fb9ca7e1f519b5c64d4024c2fe188ce499a04e1b1d');
+for (const response of [JSON.parse(negativeZeroJson), structuredClone(decodeResponse(negativeZeroJson))]) {
+  validateResponse(response);
+  const encoded = encodeResponse(response);
+  assert.match(encoded, /"zero":-0\.0/);
+  assert.ok(Object.is(decodeResponse(encoded).result.run_metadata.data.zero, -0));
+}
+assert.throws(() => validateResponse(JSON.parse(negativeZeroJson.replace('-0.0', '0'))), TypeError);
 assert.throws(
   () => decodeResponse(legacyMetadataResponseJson.replace('"integral":1.0', '"integral":2')),
   undefined,
