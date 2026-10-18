@@ -403,19 +403,36 @@ function validateProposalResult(result: ProposalResult, expectedGraphVersion?: n
 function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?: number, limit?: number): void {
   if (limit !== undefined && result.records.length > limit) return fail('audit records exceed the requested limit');
   let previousPosition = afterJournalPosition ?? 0;
-  const committedVersions = new Map<string, number>();
+  // Records of one proposal must form a sequence a durable journal can produce.
+  const terminals = new Map<string, PublicAuditRecord>();
+  const seenProposals = new Set<string>();
   const proposalsWithEvents = new Set<string>();
+  let previous: PublicAuditRecord | undefined;
   for (const record of result.records) {
     if (record.run_id !== result.run_id) return fail('audit record run_id does not match response run_id');
     if (record.journal_position <= previousPosition) return fail('audit records must be ordered by journal_position');
     previousPosition = record.journal_position;
-    if (record.record_type === 'graph_changed' || record.outcome === 'COMMIT') {
-      const version = committedVersions.get(record.proposal_id!) ?? record.graph_version!;
-      if (version !== record.graph_version) return fail('records of one committed proposal must share graph_version');
-      committedVersions.set(record.proposal_id!, version);
-      if (record.record_type === 'graph_changed') proposalsWithEvents.add(record.proposal_id!);
-      else if (proposalsWithEvents.has(record.proposal_id!)) return fail('graph_changed records must follow their COMMIT decision');
+    const proposalId = record.proposal_id;
+    if (record.record_type === 'proposal_receipt' && seenProposals.has(proposalId!)) {
+      return fail("proposal_receipt must precede the proposal's other records");
     }
+    if (record.record_type === 'mutation_decision' || record.record_type === 'proposal_abandoned') {
+      if (terminals.has(proposalId!)) return fail('a proposal has at most one terminal record');
+      if (proposalsWithEvents.has(proposalId!)) return fail('graph_changed records must follow their COMMIT decision');
+      terminals.set(proposalId!, record);
+    }
+    if (record.record_type === 'graph_changed') {
+      const terminal = terminals.get(proposalId!);
+      if (terminal !== undefined && terminal.outcome !== 'COMMIT') return fail('graph_changed requires a COMMIT decision');
+      if (previous !== undefined && (
+        previous.proposal_id !== proposalId
+        || (previous.record_type !== 'mutation_decision' && previous.record_type !== 'graph_changed')
+        || previous.graph_version !== record.graph_version
+      )) return fail('graph_changed records must directly follow their COMMIT decision at its graph_version');
+      proposalsWithEvents.add(proposalId!);
+    }
+    if (proposalId !== undefined) seenProposals.add(proposalId);
+    previous = record;
   }
   if (result.records.length === 0 && afterJournalPosition === undefined) return fail('validating an empty audit page requires its request cursor');
   if (result.next_after_journal_position !== previousPosition) return fail('audit cursor must equal the final record or supplied empty-page cursor');

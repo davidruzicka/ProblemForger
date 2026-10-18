@@ -167,6 +167,28 @@ class ProtocolSchemaTests(unittest.TestCase):
         ]
         message["result"]["next_after_journal_position"] = 3
         cls.cases.append({"label": "graph_changed before its COMMIT decision", "kind": "response", "message": message, "request": cls.requests["get_audit_timeline"], "valid": False})
+        receipt = {"record_type": "proposal_receipt", "run_id": "run-1", "proposal_id": "p", "lifecycle_state": "PENDING"}
+        commit = {"record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "p", "outcome": "COMMIT", "graph_version": 1}
+        reject = {"record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "p", "outcome": "REJECT", "reason_code": "r", "graph_version": 0}
+        escalate = {**reject, "outcome": "ESCALATE"}
+        event = {"record_type": "graph_changed", "run_id": "run-1", "proposal_id": "p", "graph_version": 1}
+        other = {"record_type": "non_terminal_audit", "run_id": "run-1", "proposal_id": "q"}
+        for label, sequence, valid in (
+            ("contiguous commit batch", (receipt, commit, event, event), True),
+            ("events continue a batch from the previous page", (event, other, {"record_type": "non_terminal_audit", "run_id": "run-1"}), True),
+            ("page-start graph_changed before its COMMIT decision", (event, commit), False),
+            ("second terminal record for one proposal", (receipt, reject, escalate), False),
+            ("graph_changed after a non-commit outcome", (receipt, reject, event), False),
+            ("receipt after the proposal's decision", (commit, receipt), False),
+            ("record between a COMMIT and its events", (commit, other, event), False),
+        ):
+            message = deepcopy(cls.responses["get_audit_timeline"])
+            message["result"]["records"] = [
+                {"journal_position": position, **record}
+                for position, record in enumerate(sequence, start=1)
+            ]
+            message["result"]["next_after_journal_position"] = len(sequence)
+            cls.cases.append({"label": label, "kind": "response", "message": message, "request": cls.requests["get_audit_timeline"], "valid": valid})
         metadata_vector = deepcopy(cls.responses["get_run"])
         metadata_vector["result"]["run_metadata"] = {
             "metadata_schema_version": 1,

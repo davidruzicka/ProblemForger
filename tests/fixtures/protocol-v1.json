@@ -218,8 +218,8 @@
             {"journal_position": 1, "record_type": "proposal_receipt", "run_id": "run-1", "proposal_id": "proposal-1", "lifecycle_state": "PENDING"},
             {"journal_position": 2, "record_type": "non_terminal_audit", "run_id": "run-1", "proposal_id": "proposal-1"},
             {"journal_position": 3, "record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "proposal-1", "outcome": "COMMIT", "graph_version": 1},
-            {"journal_position": 4, "record_type": "proposal_abandoned", "run_id": "run-1", "proposal_id": "proposal-2", "lifecycle_state": "ABANDONED", "reason_code": "RECOVERY_INPUT_MISSING"},
-            {"journal_position": 5, "record_type": "graph_changed", "run_id": "run-1", "proposal_id": "proposal-1", "graph_version": 1}
+            {"journal_position": 4, "record_type": "graph_changed", "run_id": "run-1", "proposal_id": "proposal-1", "graph_version": 1},
+            {"journal_position": 5, "record_type": "proposal_abandoned", "run_id": "run-1", "proposal_id": "proposal-2", "lifecycle_state": "ABANDONED", "reason_code": "RECOVERY_INPUT_MISSING"}
           ],
           "next_after_journal_position": 5,
           "has_more": false

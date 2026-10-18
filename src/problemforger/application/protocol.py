@@ -436,8 +436,11 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
     if limit is not None and len(records) > limit:
         raise ProtocolValidationError("audit records exceed the requested limit", code="INVALID_LIMIT")
     previous_position = after_journal_position or 0
-    committed_versions: dict[str, int] = {}
+    # Records of one proposal must form a sequence a durable journal can produce.
+    terminals: dict[str, dict[str, Any]] = {}
+    seen_proposals: set[str] = set()
     proposals_with_events: set[str] = set()
+    previous: dict[str, Any] | None = None
     for record in records:
         if record["run_id"] != result["run_id"]:
             raise ProtocolValidationError("audit record run_id does not match response run_id")
@@ -445,14 +448,32 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         if position <= previous_position:
             raise ProtocolValidationError("audit records must be ordered by journal_position")
         previous_position = position
-        if record["record_type"] == "graph_changed" or record.get("outcome") == "COMMIT":
-            version = committed_versions.setdefault(record["proposal_id"], record["graph_version"])
-            if version != record["graph_version"]:
-                raise ProtocolValidationError("records of one committed proposal must share graph_version")
-            if record["record_type"] == "graph_changed":
-                proposals_with_events.add(record["proposal_id"])
-            elif record["proposal_id"] in proposals_with_events:
+        proposal_id = record.get("proposal_id")
+        record_type = record["record_type"]
+        if record_type == "proposal_receipt" and proposal_id in seen_proposals:
+            raise ProtocolValidationError("proposal_receipt must precede the proposal's other records")
+        if record_type in {"mutation_decision", "proposal_abandoned"}:
+            if proposal_id in terminals:
+                raise ProtocolValidationError("a proposal has at most one terminal record")
+            if proposal_id in proposals_with_events:
                 raise ProtocolValidationError("graph_changed records must follow their COMMIT decision")
+            terminals[proposal_id] = record
+        if record_type == "graph_changed":
+            terminal = terminals.get(proposal_id)
+            if terminal is not None and terminal.get("outcome") != "COMMIT":
+                raise ProtocolValidationError("graph_changed requires a COMMIT decision")
+            if previous is not None and (
+                previous.get("proposal_id") != proposal_id
+                or previous["record_type"] not in {"mutation_decision", "graph_changed"}
+                or previous["graph_version"] != record["graph_version"]
+            ):
+                raise ProtocolValidationError(
+                    "graph_changed records must directly follow their COMMIT decision at its graph_version"
+                )
+            proposals_with_events.add(proposal_id)
+        if proposal_id is not None:
+            seen_proposals.add(proposal_id)
+        previous = record
     if not records and after_journal_position is None:
         raise ProtocolValidationError("validating an empty audit page requires its request cursor")
     if result["next_after_journal_position"] != previous_position:

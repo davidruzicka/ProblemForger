@@ -156,11 +156,14 @@ and `PENDING` lifecycle state; `non_terminal_audit` may include a proposal ID;
 version, plus a reason code for non-`COMMIT` outcomes; `proposal_abandoned`
 requires a proposal ID, `ABANDONED` lifecycle state, and reason code;
 `graph_changed` requires a proposal ID and graph version. A `COMMIT` decision
-and every `graph_changed` record carry a positive graph version, and when a
-page contains several of them for one proposal they must share that version
-and the decision must precede the events, because they project one atomic
-commit batch. Fields from other record kinds
-are rejected. Normalized operations, evidence content, raw
+and every `graph_changed` record carry a positive graph version. Within one
+page, records of one proposal must be a sequence the durable journal can
+produce: its `proposal_receipt` precedes its other records, it has at most one
+terminal record (`mutation_decision` or `proposal_abandoned`), and its
+`graph_changed` records follow a `COMMIT` decision directly, sharing its graph
+version, because they project one atomic commit batch. A page may start with
+the remaining events of a batch whose decision is on the previous page. Fields
+from other record kinds are rejected. Normalized operations, evidence content, raw
 outputs, credentials, and internal recovery inputs are never part of public
 proposal or audit results.
 
