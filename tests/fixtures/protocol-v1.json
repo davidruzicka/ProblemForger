@@ -207,6 +207,26 @@
       }
     },
     {
+      "label": "get_audit_timeline_record_kinds",
+      "message": {
+        "protocol_schema_version": 1,
+        "request_id": "req-audit",
+        "operation": "get_audit_timeline",
+        "result": {
+          "run_id": "run-1",
+          "records": [
+            {"journal_position": 1, "record_type": "proposal_receipt", "run_id": "run-1", "proposal_id": "proposal-1", "lifecycle_state": "PENDING"},
+            {"journal_position": 2, "record_type": "non_terminal_audit", "run_id": "run-1", "proposal_id": "proposal-1"},
+            {"journal_position": 3, "record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "proposal-1", "outcome": "COMMIT", "graph_version": 1},
+            {"journal_position": 4, "record_type": "proposal_abandoned", "run_id": "run-1", "proposal_id": "proposal-2", "lifecycle_state": "ABANDONED", "reason_code": "RECOVERY_INPUT_MISSING"},
+            {"journal_position": 5, "record_type": "graph_changed", "run_id": "run-1", "proposal_id": "proposal-1", "graph_version": 2}
+          ],
+          "next_after_journal_position": 5,
+          "has_more": false
+        }
+      }
+    },
+    {
       "label": "unknown_run",
       "message": {
         "protocol_schema_version": 1,
@@ -277,6 +297,22 @@
     {
       "label": "non_safe_integer",
       "message": {"protocol_schema_version": 1, "request_id": "req", "operation": "get_run", "result": {"run_id": "run-1", "run_metadata": {"metadata_schema_version": 1, "data": {}}, "metadata_hash": "sha256:problemforger-run-metadata-v2:22d5b23cf00f6b9a761c9acaac898378b8977ba571f07c90cc4b4f068abcacd8", "graph_version": 9007199254740992, "last_journal_position": 1, "created": false}}
+    },
+    {
+      "label": "unknown_audit_record_kind",
+      "message": {"protocol_schema_version": 1, "request_id": "req-audit", "operation": "get_audit_timeline", "result": {"run_id": "run-1", "records": [{"journal_position": 1, "record_type": "bogus", "run_id": "run-1", "lifecycle_state": "PENDING", "outcome": "COMMIT"}], "next_after_journal_position": 1, "has_more": false}}
+    },
+    {
+      "label": "audit_record_mixes_lifecycle_and_governance",
+      "message": {"protocol_schema_version": 1, "request_id": "req-audit", "operation": "get_audit_timeline", "result": {"run_id": "run-1", "records": [{"journal_position": 1, "record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "proposal-1", "lifecycle_state": "PENDING", "outcome": "COMMIT", "graph_version": 1}], "next_after_journal_position": 1, "has_more": false}}
+    },
+    {
+      "label": "audit_receipt_missing_lifecycle_state",
+      "message": {"protocol_schema_version": 1, "request_id": "req-audit", "operation": "get_audit_timeline", "result": {"run_id": "run-1", "records": [{"journal_position": 1, "record_type": "proposal_receipt", "run_id": "run-1", "proposal_id": "proposal-1"}], "next_after_journal_position": 1, "has_more": false}}
+    },
+    {
+      "label": "audit_non_commit_missing_reason",
+      "message": {"protocol_schema_version": 1, "request_id": "req-audit", "operation": "get_audit_timeline", "result": {"run_id": "run-1", "records": [{"journal_position": 1, "record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "proposal-1", "outcome": "REJECT", "graph_version": 0}], "next_after_journal_position": 1, "has_more": false}}
     }
   ]
 }

@@ -12,7 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_KEYWORDS = {
     "$ref", "type", "const", "enum", "minimum", "maximum", "pattern", "properties",
-    "required", "additionalProperties", "items", "maxItems", "allOf", "if", "then",
+    "required", "additionalProperties", "items", "maxItems", "allOf", "oneOf", "if", "then",
     "x-error-code", "x-const-error-code", "x-max-canonical-bytes", "x-size-fields",
     "x-size-canonicalization", "x-max-utf8-bytes",
     "x-version-position", "x-canonical-hash", "x-legacy-canonical-hash",
@@ -26,6 +26,7 @@ def check_schema(rule: dict, definitions: dict) -> None:
     if "$ref" in rule and rule["$ref"] not in {f"#/$defs/{name}" for name in definitions}:
         raise ValueError(f"unknown protocol schema reference: {rule['$ref']}")
     children = [*rule.get("properties", {}).values(), *rule.get("allOf", [])]
+    children.extend(rule.get("oneOf", []))
     children.extend(rule[key] for key in ("items", "if", "then") if key in rule)
     for child in children:
         check_schema(child, definitions)
@@ -71,6 +72,7 @@ def generate(root: Path = ROOT, *, check: bool = False) -> None:
     aliases = {
         "Operation": list(contract["x-operations"]),
         "ProposalState": list(contract["x-proposal-states"]),
+        "AuditRecordType": contract["$defs"]["AuditRecord"]["properties"]["record_type"]["enum"],
         "AuditLifecycleState": contract["$defs"]["AuditRecord"]["properties"]["lifecycle_state"]["enum"],
         "AuditOutcome": contract["$defs"]["AuditRecord"]["properties"]["outcome"]["enum"],
         "ErrorCode": contract["$defs"]["Error"]["properties"]["code"]["enum"],

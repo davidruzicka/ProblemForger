@@ -8,7 +8,7 @@ import re
 from typing import Any, Literal, NotRequired, TypedDict, TypeAlias, cast
 
 from problemforger.application._protocol_contract import (
-    CONTRACT, AuditLifecycleState, AuditOutcome, ErrorCode, Operation, ProposalState,
+    CONTRACT, AuditLifecycleState, AuditOutcome, AuditRecordType, ErrorCode, Operation, ProposalState,
 )
 from problemforger.core.journal import (
     CURRENT_PROTOCOL_SCHEMA_VERSION,
@@ -163,7 +163,7 @@ class ProposalResult(TypedDict):
 
 class PublicAuditRecord(TypedDict):
     journal_position: int
-    record_type: str
+    record_type: AuditRecordType
     run_id: str
     proposal_id: NotRequired[str]
     lifecycle_state: NotRequired[AuditLifecycleState]
@@ -336,6 +336,16 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
                 _validate_shape(item, schema["items"], f"{name} item")
     for rule in schema.get("allOf", []):
         _validate_shape(value, rule, name)
+    if "oneOf" in schema:
+        matches = 0
+        for rule in schema["oneOf"]:
+            try:
+                _validate_shape(value, rule, name)
+            except ProtocolValidationError:
+                continue
+            matches += 1
+        if matches != 1:
+            raise ProtocolValidationError(f"{name} does not match exactly one allowed shape", code=code)
     if "if" in schema:
         try:
             _validate_shape(value, schema["if"], name)

@@ -17,6 +17,7 @@ export type JsonObject = { [key: string]: JsonValue };
 export type Operation = keyof typeof protocolContract['x-operations'];
 export type ProposalStatus = keyof typeof protocolContract['x-proposal-states'];
 export type GovernanceOutcome = typeof protocolContract.$defs.AuditRecord.properties.outcome.enum[number];
+export type AuditRecordType = typeof protocolContract.$defs.AuditRecord.properties.record_type.enum[number];
 
 export type RunMetadata = { metadata_schema_version: 1; data: JsonObject };
 export type RequestBase<O extends Operation, P> = {
@@ -85,7 +86,7 @@ export type ProposalResult = {
 };
 export type PublicAuditRecord = {
   journal_position: number;
-  record_type: string;
+  record_type: AuditRecordType;
   run_id: string;
   proposal_id?: string;
   lifecycle_state?: typeof protocolContract.$defs.AuditRecord.properties.lifecycle_state.enum[number];
@@ -129,6 +130,7 @@ type Shape = {
   items?: Shape;
   maxItems?: number;
   allOf?: readonly Shape[];
+  oneOf?: readonly Shape[];
   if?: Shape;
   then?: Shape;
   'x-error-code'?: string;
@@ -303,6 +305,14 @@ function legacyPythonCanonicalJson(value: JsonValue): string {
   return `{${fields.map((key) => `${JSON.stringify(key)}:${legacyPythonCanonicalJson(value[key]!)}`).join(',')}}`;
 }
 
+function legacyMetadataWireMatchesSnapshot(
+  metadata: RunMetadata,
+  wire: LegacyMetadataWire | undefined,
+): wire is LegacyMetadataWire {
+  return wire !== undefined
+    && canonicalJson(JSON.parse(wire.canonical) as JsonValue) === canonicalJson(metadata);
+}
+
 function runMetadataHash(metadata: RunMetadata, version: 1 | 2): string {
   const definition = protocolContract.$defs.MetadataHash;
   const rule = version === 1
@@ -311,7 +321,7 @@ function runMetadataHash(metadata: RunMetadata, version: 1 | 2): string {
   const wire = version === 1 ? legacyMetadataWire.get(metadata) : undefined;
   const canonical = version === 2
     ? pythonCanonicalJson(metadata)
-    : wire !== undefined && canonicalJson(JSON.parse(wire.canonical) as JsonValue) === canonicalJson(metadata)
+    : legacyMetadataWireMatchesSnapshot(metadata, wire)
       ? wire.canonical
       : legacyPythonCanonicalJson(metadata);
   const digest = createHash(rule.algorithm)
@@ -360,6 +370,18 @@ function validateShape(value: unknown, shape: Shape | string, name: string): voi
     if (schema.items !== undefined) for (const item of value) validateShape(item, schema.items, `${name} item`);
   }
   for (const rule of schema.allOf ?? []) validateShape(value, rule, name);
+  if (schema.oneOf !== undefined) {
+    let matches = 0;
+    for (const rule of schema.oneOf) {
+      try {
+        validateShape(value, rule, name);
+        matches += 1;
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+      }
+    }
+    if (matches !== 1) return fail(`${name} does not match exactly one allowed shape`);
+  }
   if (schema.if !== undefined) {
     let matches = true;
     try { validateShape(value, schema.if, name); }
@@ -651,7 +673,9 @@ function encodeResponseJson(value: ProtocolResponse, request?: ProtocolRequest):
     if (runResult.metadata_hash.startsWith(legacyPrefix)) {
       const outputMetadata = rejectDuplicateKeys(encoded);
       if (outputMetadata !== undefined) {
-        const metadataJson = wire?.raw ?? legacyPythonCanonicalJson(runResult.run_metadata);
+        const metadataJson = legacyMetadataWireMatchesSnapshot(runResult.run_metadata, wire)
+          ? wire.raw
+          : legacyPythonCanonicalJson(runResult.run_metadata);
         encoded = `${encoded.slice(0, outputMetadata.start)}${metadataJson}${encoded.slice(outputMetadata.end)}`;
       }
     }

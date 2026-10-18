@@ -551,7 +551,14 @@
           "$ref": "#/$defs/PositiveInteger"
         },
         "record_type": {
-          "$ref": "#/$defs/Identifier"
+          "$ref": "#/$defs/Identifier",
+          "enum": [
+            "proposal_receipt",
+            "non_terminal_audit",
+            "mutation_decision",
+            "proposal_abandoned",
+            "graph_changed"
+          ]
         },
         "run_id": {
           "$ref": "#/$defs/Identifier"
@@ -578,6 +585,79 @@
         "run_id"
       ],
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "journal_position": {"$ref": "#/$defs/PositiveInteger"},
+            "record_type": {"const": "proposal_receipt"},
+            "run_id": {"$ref": "#/$defs/Identifier"},
+            "proposal_id": {"$ref": "#/$defs/Identifier"},
+            "lifecycle_state": {"const": "PENDING"}
+          },
+          "required": ["journal_position", "record_type", "run_id", "proposal_id", "lifecycle_state"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "journal_position": {"$ref": "#/$defs/PositiveInteger"},
+            "record_type": {"const": "non_terminal_audit"},
+            "run_id": {"$ref": "#/$defs/Identifier"},
+            "proposal_id": {"$ref": "#/$defs/Identifier"}
+          },
+          "required": ["journal_position", "record_type", "run_id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "journal_position": {"$ref": "#/$defs/PositiveInteger"},
+            "record_type": {"const": "mutation_decision"},
+            "run_id": {"$ref": "#/$defs/Identifier"},
+            "proposal_id": {"$ref": "#/$defs/Identifier"},
+            "outcome": {"enum": ["COMMIT", "REJECT", "RETRY", "ESCALATE", "CONFLICT"]},
+            "reason_code": {"$ref": "#/$defs/Identifier"},
+            "graph_version": {"$ref": "#/$defs/SafeInteger"}
+          },
+          "required": ["journal_position", "record_type", "run_id", "proposal_id", "outcome", "graph_version"],
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {"properties": {"outcome": {"enum": ["REJECT", "RETRY", "ESCALATE", "CONFLICT"]}}},
+              "then": {
+                "properties": {"reason_code": {"$ref": "#/$defs/Identifier"}},
+                "required": ["reason_code"]
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "journal_position": {"$ref": "#/$defs/PositiveInteger"},
+            "record_type": {"const": "proposal_abandoned"},
+            "run_id": {"$ref": "#/$defs/Identifier"},
+            "proposal_id": {"$ref": "#/$defs/Identifier"},
+            "lifecycle_state": {"const": "ABANDONED"},
+            "reason_code": {"$ref": "#/$defs/Identifier"}
+          },
+          "required": ["journal_position", "record_type", "run_id", "proposal_id", "lifecycle_state", "reason_code"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "journal_position": {"$ref": "#/$defs/PositiveInteger"},
+            "record_type": {"const": "graph_changed"},
+            "run_id": {"$ref": "#/$defs/Identifier"},
+            "proposal_id": {"$ref": "#/$defs/Identifier"},
+            "graph_version": {"$ref": "#/$defs/SafeInteger"}
+          },
+          "required": ["journal_position", "record_type", "run_id", "proposal_id", "graph_version"],
+          "additionalProperties": false
+        }
+      ],
       "x-version-position": [
         "graph_version",
         "journal_position"

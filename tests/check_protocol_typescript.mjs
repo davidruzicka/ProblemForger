@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   MAX_PROTOCOL_MESSAGE_BYTES,
@@ -292,6 +293,22 @@ for (const schemaVersionToken of ['1.0', '1e0']) {
 const reencodedLegacyMetadata = encodeResponse(legacyMetadataResponse);
 assert.match(reencodedLegacyMetadata, /"integral":1\.0/);
 assert.deepEqual(decodeResponse(reencodedLegacyMetadata), legacyMetadataResponse);
+
+const editedLegacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
+editedLegacyMetadataResponse.result.run_metadata.data.integral = 2;
+const editedLegacyMetadataCanonical = '{"data":{"integral":2},"metadata_schema_version":1}';
+const editedLegacyMetadataDigest = createHash('sha256')
+  .update('problemforger.run-metadata.v1\0', 'utf8')
+  .update(editedLegacyMetadataCanonical, 'utf8')
+  .digest('hex');
+editedLegacyMetadataResponse.result.metadata_hash = `sha256:problemforger-run-metadata-v1:${editedLegacyMetadataDigest}`;
+const reencodedEditedLegacyMetadata = encodeResponse(editedLegacyMetadataResponse);
+assert.match(reencodedEditedLegacyMetadata, /"integral":2/);
+assert.deepEqual(
+  decodeResponse(reencodedEditedLegacyMetadata),
+  editedLegacyMetadataResponse,
+  'edited legacy metadata discards stale cached wire text',
+);
 
 const hookedLegacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
 Object.defineProperty(hookedLegacyMetadataResponse, 'toJSON', {

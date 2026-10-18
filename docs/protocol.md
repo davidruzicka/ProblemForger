@@ -157,11 +157,16 @@ preserve it, while `CONFLICT` reports a different graph version. A committed
 result may still include a nullable `reason_code`.
 
 Audit results contain `run_id`, a bounded `records` array,
-`next_after_journal_position`, and `has_more`. Each public record contains only
-`journal_position`, `record_type`, `run_id`, and optional proposal/lifecycle,
-outcome/reason, and graph-version metadata. Unknown result fields are rejected;
-normalized operations, evidence content, raw outputs, credentials, and internal
-recovery inputs are never part of public proposal or audit results.
+`next_after_journal_position`, and `has_more`. Each public record is a
+discriminated union on `record_type`: `proposal_receipt` requires a proposal ID
+and `PENDING` lifecycle state; `non_terminal_audit` may include a proposal ID;
+`mutation_decision` requires a proposal ID, governance outcome, and graph
+version, plus a reason code for non-`COMMIT` outcomes; `proposal_abandoned`
+requires a proposal ID, `ABANDONED` lifecycle state, and reason code;
+`graph_changed` requires a proposal ID and graph version. Fields from other
+record kinds are rejected. Normalized operations, evidence content, raw
+outputs, credentials, and internal recovery inputs are never part of public
+proposal or audit results.
 
 Protocol errors use `{ "protocol_schema_version": 1, "request_id": "...",
 "error": { "code": "...", "message": "..." } }`. Error codes include
