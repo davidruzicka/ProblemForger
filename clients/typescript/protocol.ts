@@ -404,6 +404,7 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
   if (limit !== undefined && result.records.length > limit) return fail('audit records exceed the requested limit');
   let previousPosition = afterJournalPosition ?? 0;
   const committedVersions = new Map<string, number>();
+  const proposalsWithEvents = new Set<string>();
   for (const record of result.records) {
     if (record.run_id !== result.run_id) return fail('audit record run_id does not match response run_id');
     if (record.journal_position <= previousPosition) return fail('audit records must be ordered by journal_position');
@@ -412,6 +413,8 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
       const version = committedVersions.get(record.proposal_id!) ?? record.graph_version!;
       if (version !== record.graph_version) return fail('records of one committed proposal must share graph_version');
       committedVersions.set(record.proposal_id!, version);
+      if (record.record_type === 'graph_changed') proposalsWithEvents.add(record.proposal_id!);
+      else if (proposalsWithEvents.has(record.proposal_id!)) return fail('graph_changed records must follow their COMMIT decision');
     }
   }
   if (result.records.length === 0 && afterJournalPosition === undefined) return fail('validating an empty audit page requires its request cursor');

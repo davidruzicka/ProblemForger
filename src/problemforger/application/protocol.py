@@ -437,6 +437,7 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         raise ProtocolValidationError("audit records exceed the requested limit", code="INVALID_LIMIT")
     previous_position = after_journal_position or 0
     committed_versions: dict[str, int] = {}
+    proposals_with_events: set[str] = set()
     for record in records:
         if record["run_id"] != result["run_id"]:
             raise ProtocolValidationError("audit record run_id does not match response run_id")
@@ -448,6 +449,10 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
             version = committed_versions.setdefault(record["proposal_id"], record["graph_version"])
             if version != record["graph_version"]:
                 raise ProtocolValidationError("records of one committed proposal must share graph_version")
+            if record["record_type"] == "graph_changed":
+                proposals_with_events.add(record["proposal_id"])
+            elif record["proposal_id"] in proposals_with_events:
+                raise ProtocolValidationError("graph_changed records must follow their COMMIT decision")
     if not records and after_journal_position is None:
         raise ProtocolValidationError("validating an empty audit page requires its request cursor")
     if result["next_after_journal_position"] != previous_position:

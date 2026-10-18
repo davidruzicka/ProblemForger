@@ -158,6 +158,15 @@ class ProtocolSchemaTests(unittest.TestCase):
                 records.append({**graph_changed, "graph_version": event_version})
             message["result"]["next_after_journal_position"] = records[-1]["journal_position"]
             cls.cases.append({"label": label, "kind": "response", "message": message, "request": cls.requests["get_audit_timeline"], "valid": valid})
+        message = deepcopy(cls.responses["get_audit_timeline"])
+        receipt_record, decision_record = message["result"]["records"]
+        message["result"]["records"] = [
+            receipt_record,
+            {**graph_changed, "journal_position": 2},
+            {**decision_record, "journal_position": 3},
+        ]
+        message["result"]["next_after_journal_position"] = 3
+        cls.cases.append({"label": "graph_changed before its COMMIT decision", "kind": "response", "message": message, "request": cls.requests["get_audit_timeline"], "valid": False})
         metadata_vector = deepcopy(cls.responses["get_run"])
         metadata_vector["result"]["run_metadata"] = {
             "metadata_schema_version": 1,
