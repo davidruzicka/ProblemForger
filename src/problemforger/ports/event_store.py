@@ -23,6 +23,7 @@ from problemforger.core.journal import (
     RunId,
     VersionConflict,
     canonical_json_with_safe_integer_normalization,
+    validate_json_safe_integers,
 )
 
 
@@ -85,6 +86,7 @@ class RunMetadata:
             raise ValueError("unsupported run metadata schema version")
         if not isinstance(self.data, JsonDocument) or not isinstance(self.data.value, dict):
             raise TypeError("run metadata must be a JSON object")
+        validate_json_safe_integers(self.data.value)
 
     @classmethod
     def from_value(cls, value: object) -> RunMetadata:

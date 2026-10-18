@@ -10,7 +10,7 @@ from problemforger.config.event_store import (
     SqliteEventStoreConfig,
 )
 from problemforger.config.registry import default_registry
-from problemforger.core.journal import JsonDocument
+from problemforger.core.journal import MAX_SAFE_JSON_INTEGER, JsonDocument
 from event_store_contract import EventStoreContractMixin
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
 from problemforger.ports.event_store import CreateRunStatus, RunMetadata, StoreErrorCode
@@ -49,6 +49,25 @@ class EventStoreConfigurationTests(unittest.TestCase):
             RunMetadata(JsonDocument.from_value({}), metadata_schema_version=1.0)
         with self.assertRaises(TypeError):
             RunMetadata(JsonDocument.from_value([]))
+
+    def test_run_metadata_rejects_unsafe_integer_values_recursively(self):
+        for unsafe_number in (
+            2**53,
+            -(2**53),
+            float(2**53),
+            -float(2**53),
+        ):
+            with self.subTest(unsafe_number=unsafe_number):
+                with self.assertRaisesRegex(ValueError, "JSON integers must be safe integers"):
+                    RunMetadata.from_value({"nested": [{"value": unsafe_number}]})
+
+        metadata = RunMetadata.from_value(
+            {"nested": [MAX_SAFE_JSON_INTEGER, -MAX_SAFE_JSON_INTEGER]}
+        )
+        self.assertEqual(
+            {"nested": [MAX_SAFE_JSON_INTEGER, -MAX_SAFE_JSON_INTEGER]},
+            metadata.data.value,
+        )
 
     def test_run_metadata_hash_has_a_stable_canonical_v2_vector(self):
         first = RunMetadata.from_value({"b": 2, "a": {"y": 2, "x": 1}})

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import gc
+import hashlib
 import json
 import multiprocessing
 import os
@@ -1301,6 +1302,7 @@ class SqliteEventStoreTests(unittest.TestCase):
         corruptions = (
             "metadata_shape",
             "metadata_hash",
+            "unsafe_run_metadata",
             "blank_run_id",
             "run_head",
             "unknown_run",
@@ -1322,6 +1324,21 @@ class SqliteEventStoreTests(unittest.TestCase):
                     connection.execute("UPDATE runs SET metadata_json = '[]' WHERE run_id = 'run-1'")
                 elif corruption == "metadata_hash":
                     connection.execute("UPDATE runs SET metadata_hash = 'sha256:wrong' WHERE run_id = 'run-1'")
+                elif corruption == "unsafe_run_metadata":
+                    unsafe_metadata_json = JsonDocument.from_value(
+                        {"metadata_schema_version": 1, "data": {"nested": [2**53]}}
+                    ).canonical_json
+                    unsafe_metadata_hash = (
+                        "sha256:problemforger-run-metadata-v2:"
+                        + hashlib.sha256(
+                            b"problemforger.run-metadata.v2\0"
+                            + unsafe_metadata_json.encode("utf-8")
+                        ).hexdigest()
+                    )
+                    connection.execute(
+                        "UPDATE runs SET metadata_json = ?, metadata_hash = ? WHERE run_id = 'run-1'",
+                        (unsafe_metadata_json, unsafe_metadata_hash),
+                    )
                 elif corruption == "blank_run_id":
                     connection.execute("UPDATE runs SET run_id = '' WHERE run_id = 'run-1'")
                 elif corruption == "run_head":

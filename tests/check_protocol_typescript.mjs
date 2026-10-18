@@ -40,6 +40,28 @@ for (const { label, message } of fixture.invalid_responses) {
 
 const textEncoder = new TextEncoder();
 const getRunRequest = fixture.requests.find(({ label }) => label === 'get_run').message;
+const hookedGetRunRequest = structuredClone(getRunRequest);
+Object.defineProperty(hookedGetRunRequest, 'toJSON', {
+  enumerable: false,
+  value: () => ({ not_a_request: true }),
+});
+assert.deepEqual(
+  decodeRequest(encodeRequest(hookedGetRunRequest)),
+  getRunRequest,
+  'request serialization ignores non-enumerable toJSON hooks',
+);
+
+const hookedNestedGetRunRequest = structuredClone(getRunRequest);
+Object.defineProperty(hookedNestedGetRunRequest.params, 'toJSON', {
+  enumerable: false,
+  value: () => undefined,
+});
+assert.deepEqual(
+  decodeRequest(encodeRequest(hookedNestedGetRunRequest)),
+  getRunRequest,
+  'nested request serialization ignores non-enumerable toJSON hooks',
+);
+
 const encodedGetRunRequest = textEncoder.encode(JSON.stringify(getRunRequest));
 assert.deepEqual(decodeRequest(encodedGetRunRequest), getRunRequest, 'UTF-8 byte request frame');
 
@@ -270,6 +292,17 @@ for (const schemaVersionToken of ['1.0', '1e0']) {
 const reencodedLegacyMetadata = encodeResponse(legacyMetadataResponse);
 assert.match(reencodedLegacyMetadata, /"integral":1\.0/);
 assert.deepEqual(decodeResponse(reencodedLegacyMetadata), legacyMetadataResponse);
+
+const hookedLegacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
+Object.defineProperty(hookedLegacyMetadataResponse, 'toJSON', {
+  enumerable: false,
+  value: () => ({ not_a_response: true }),
+});
+assert.equal(
+  encodeResponse(hookedLegacyMetadataResponse),
+  legacyMetadataResponseJson,
+  'response serialization ignores toJSON hooks and preserves legacy metadata wire values',
+);
 
 const negativeZeroJson = legacyMetadataResponseJson
   .replace('"integral":1.0', '"zero":-0.0')

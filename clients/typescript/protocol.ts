@@ -200,6 +200,32 @@ function jsonValue(value: unknown, active = new Set<object>()): asserts value is
   return fail('value is not JSON serializable');
 }
 
+function inertJsonSnapshot(value: unknown, active = new Set<object>()): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (active.has(value)) return fail('JSON values cannot be cyclic');
+  active.add(value);
+
+  if (Array.isArray(value)) {
+    const snapshot: unknown[] = [];
+    Object.defineProperty(snapshot, 'toJSON', { value: undefined });
+    for (let index = 0; index < value.length; index += 1) {
+      snapshot[index] = inertJsonSnapshot(value[index], active);
+    }
+    active.delete(value);
+    return snapshot;
+  }
+
+  const source = object(value, 'JSON value');
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  const wire = legacyMetadataWire.get(source);
+  if (wire !== undefined) legacyMetadataWire.set(snapshot, wire);
+  for (const [key, item] of Object.entries(source)) {
+    snapshot[key] = inertJsonSnapshot(item, active);
+  }
+  active.delete(value);
+  return snapshot;
+}
+
 function identifierUnicode(value: string, name: string): void {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
@@ -593,8 +619,9 @@ function encodeJson(value: unknown): string {
 
 export function encodeRequest(value: ProtocolRequest): string {
   return withJsonRecursionGuard(() => {
-    validateRequest(value);
-    return encodeJson(value);
+    const snapshot = inertJsonSnapshot(value);
+    validateRequest(snapshot);
+    return encodeJson(snapshot);
   });
 }
 
@@ -611,11 +638,15 @@ export function encodeResponse(value: ProtocolResponse, request?: ProtocolReques
 }
 
 function encodeResponseJson(value: ProtocolResponse, request?: ProtocolRequest): string {
-  validateResponse(value, request);
-  let encoded = JSON.stringify(value) as string;
-  if ('operation' in value && (value.operation === 'create_run' || value.operation === 'get_run')) {
+  const snapshot = inertJsonSnapshot(value) as ProtocolResponse;
+  const requestSnapshot = request === undefined
+    ? undefined
+    : inertJsonSnapshot(request) as ProtocolRequest;
+  validateResponse(snapshot, requestSnapshot);
+  let encoded = JSON.stringify(snapshot) as string;
+  if ('operation' in snapshot && (snapshot.operation === 'create_run' || snapshot.operation === 'get_run')) {
     const legacyPrefix = protocolContract.$defs.MetadataHash['x-legacy-canonical-hash'].prefix;
-    const runResult = value.result;
+    const runResult = snapshot.result;
     const wire = legacyMetadataWire.get(runResult.run_metadata);
     if (runResult.metadata_hash.startsWith(legacyPrefix)) {
       const outputMetadata = rejectDuplicateKeys(encoded);
