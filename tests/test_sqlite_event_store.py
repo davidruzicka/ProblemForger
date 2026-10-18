@@ -1436,36 +1436,26 @@ class SqliteEventStoreTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     SqliteEventStore(path)
 
-    def test_legacy_integral_float_metadata_hash_is_preserved_on_open(self):
+    def test_v1_metadata_hash_row_fails_closed_on_open(self):
         store = self.open_store()
         metadata = RunMetadata.from_value({"integral": 1.0})
         self.assertEqual(CreateRunStatus.CREATED, store.create_run("run-1", metadata).status)
         store.close()
 
-        legacy_json = JsonDocument.from_value(metadata.to_value()).canonical_json
+        unsupported_json = JsonDocument.from_value(metadata.to_value()).canonical_json
+        digest = hashlib.sha256(
+            b"problemforger.run-metadata.v1\0" + unsupported_json.encode("utf-8")
+        ).hexdigest()
         connection = sqlite3.connect(self.path)
         connection.execute(
             "UPDATE runs SET metadata_json = ?, metadata_hash = ? WHERE run_id = ?",
-            (legacy_json, metadata.legacy_metadata_hash, "run-1"),
+            (unsupported_json, f"sha256:problemforger-run-metadata-v1:{digest}", "run-1"),
         )
         connection.commit()
         connection.close()
 
-        store = self.open_store()
-        snapshot = store.get_run("run-1")
-        self.assertEqual(metadata.legacy_metadata_hash, snapshot.metadata_hash)
-        retry = store.create_run("run-1", RunMetadata.from_value({"integral": 1}))
-        self.assertEqual(CreateRunStatus.EXISTING, retry.status)
-        self.assertEqual(metadata.legacy_metadata_hash, retry.metadata_hash)
-        store.close()
-
-        connection = sqlite3.connect(self.path)
-        row = connection.execute(
-            "SELECT metadata_json, metadata_hash FROM runs WHERE run_id = ?", ("run-1",)
-        ).fetchone()
-        connection.close()
-        self.assertEqual(legacy_json, row[0])
-        self.assertEqual(metadata.legacy_metadata_hash, row[1])
+        with self.assertRaisesRegex(ValueError, "stored metadata hash mismatch"):
+            self.open_store()
 
 
 if __name__ == "__main__":

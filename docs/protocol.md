@@ -33,9 +33,7 @@ Run creation is durable and idempotent: `create_run(run_id, run_metadata)`
 registers an empty version-zero run before any proposal is accepted. A repeat
 create returns the existing registration only when the supplied metadata has the
 same v2 canonical serialization; otherwise it returns an explicit
-`RUN_METADATA_CONFLICT` without changing the journal. For an existing v1
-registration, a v2-equivalent retry returns the stored v1 hash and preserves
-that identity. Reopen/restart preserves the registration, journal, and current
+`RUN_METADATA_CONFLICT` without changing the journal. Reopen/restart preserves the registration, journal, and current
 graph version; reopening preserves the persisted journal and current graph
 version. Version zero and an empty journal apply only to a newly created run;
 reopening never resets a non-empty journal or graph version. No operation
@@ -81,22 +79,17 @@ client-computed hash. The hash binds the expected graph version, operations,
 and immutable evidence identities described in
 [PROPOSAL-RECOVERY](#spec-protocol-proposal-recovery).
 
-`metadata_hash` binds the complete `run_metadata` object. Its prefix selects a
-hash version. New runs use v2: `run-metadata-json-v2` sorts object keys by
-Unicode code point, uses compact JSON separators, emits non-ASCII scalar values
-as UTF-8, and normalizes safe integer-valued numbers before serialization.
-Other finite numbers use the shortest round-trip decimal spelling with Python
-JSON exponent formatting (for example, `0.00001` is serialized as `1e-05`).
-The SHA-256 input is the v2 domain separator followed by this canonical JSON.
-Legacy v1 hashes retain the original Python JSON canonicalization, where a
-float such as `1.0` remains distinct from integer `1`. Existing SQLite v1 rows
-keep their stored JSON and hash when opened; reading them does not change their
-identity. Both codecs validate v1 and v2 hashes on successful `create_run` and
-`get_run` responses. The contract records both schemes under
-`$defs.MetadataHash`. For v1 metadata, Python retains integral float values in
-`run_metadata.data`, and TypeScript retains their wire number tokens for hash
-verification and re-encoding; all other decoded safe integral numbers are
-exposed as integers where the language distinguishes integers from floats.
+`metadata_hash` binds the complete `run_metadata` object with the
+`sha256:problemforger-run-metadata-v2:` prefix. `run-metadata-json-v2` sorts
+object keys by Unicode code point, uses compact JSON separators, emits
+non-ASCII scalar values as UTF-8, and normalizes safe integer-valued numbers
+before serialization. Other finite numbers use the shortest round-trip decimal
+spelling with Python JSON exponent formatting (for example, `0.00001` is
+serialized as `1e-05`). The SHA-256 input is the v2 domain separator followed
+by this canonical JSON. The contract records the scheme under
+`$defs.MetadataHash`, and both codecs validate it on successful `create_run`
+and `get_run` responses. No other metadata hash version is accepted: a durable
+store whose run rows carry another hash fails closed when opened.
 
 All protocol integers are non-negative JSON safe integers (at most
 `2^53 - 1`), except `limit`, which is a positive safe integer from 1 through
@@ -112,8 +105,7 @@ integer range so JavaScript cannot round them during parsing. Every JSON string
 and object key must contain valid Unicode scalar values encodable as UTF-8;
 lone UTF-16 surrogates are rejected. Integer fields accept any JSON number
 whose parsed value is a safe integer, including equivalent spellings such as
-`1.0` and `1e0`; both codecs expose the parsed integral value as an integer,
-except for legacy v1 metadata floats retained to preserve their hash identity.
+`1.0` and `1e0`; both codecs expose the parsed integral value as an integer.
 Audit-timeline records are returned in ascending `journal_position` order and
 use an exclusive cursor. For a non-empty page,
 `next_after_journal_position` equals the final record's position; for an empty

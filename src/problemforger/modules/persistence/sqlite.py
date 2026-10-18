@@ -599,11 +599,10 @@ class SqliteEventStore(EventStoreState):
                 JsonDocument.from_value(value["data"]),
                 metadata_schema_version=value["metadata_schema_version"],
             )
-            valid_hashes = {
-                metadata.metadata_hash: metadata.canonical_json,
-                metadata.legacy_metadata_hash: metadata.legacy_canonical_json,
-            }
-            if valid_hashes.get(row["metadata_hash"]) != row["metadata_json"]:
+            if (
+                metadata.metadata_hash != row["metadata_hash"]
+                or metadata.canonical_json != row["metadata_json"]
+            ):
                 raise ValueError(f"stored metadata hash mismatch for run {row['run_id']}")
             run_id = row["run_id"]
             if not _valid_identifier(run_id):

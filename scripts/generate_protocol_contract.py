@@ -15,7 +15,7 @@ SCHEMA_KEYWORDS = {
     "required", "additionalProperties", "items", "maxItems", "allOf", "oneOf", "if", "then",
     "x-error-code", "x-const-error-code", "x-max-canonical-bytes", "x-size-fields",
     "x-size-canonicalization", "x-max-utf8-bytes",
-    "x-version-position", "x-canonical-hash", "x-legacy-canonical-hash",
+    "x-version-position", "x-canonical-hash",
 }
 
 

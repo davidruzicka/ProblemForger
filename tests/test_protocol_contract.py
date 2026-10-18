@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import unittest
 
+from problemforger.application._protocol_contract import CONTRACT
 from problemforger.application.protocol import (
     MAX_PROTOCOL_MESSAGE_BYTES,
     ProtocolValidationError,
@@ -14,7 +16,9 @@ from problemforger.application.protocol import (
     decode_response,
     encode_request,
     encode_response,
+    validate_response,
 )
+from problemforger.core.journal import JsonDocument
 from problemforger.ports.event_store import RunMetadata
 
 
@@ -265,34 +269,32 @@ class ProtocolContractTests(unittest.TestCase):
             type(decoded["result"]["run_metadata"]["data"]["integral_float"]), int
         )
 
-    def test_legacy_metadata_hash_preserves_integral_float_wire_identity(self) -> None:
+    def test_contract_metadata_hash_rule_matches_store_hash(self) -> None:
+        rule = CONTRACT["$defs"]["MetadataHash"]["x-canonical-hash"]
+        metadata = RunMetadata.from_value({"b": [1.0, 0.5], "a": "\u00e9"})
+        digest = hashlib.new(
+            rule["algorithm"],
+            rule["domain_separator"].encode("utf-8") + metadata.canonical_json.encode("utf-8"),
+        ).hexdigest()
+
+        self.assertEqual(f"{rule['prefix']}{digest}", metadata.metadata_hash)
+
+    def test_v1_metadata_hash_is_rejected(self) -> None:
         metadata = RunMetadata.from_value({"integral": 1.0})
+        digest = hashlib.sha256(
+            b"problemforger.run-metadata.v1\0"
+            + JsonDocument.from_value(metadata.to_value()).canonical_json.encode("utf-8")
+        ).hexdigest()
         response = deepcopy(
             next(item["message"] for item in self.fixtures["responses"] if item["label"] == "get_run")
         )
         response["result"]["run_metadata"] = metadata.to_value()
-        response["result"]["metadata_hash"] = metadata.legacy_metadata_hash
+        response["result"]["metadata_hash"] = f"sha256:problemforger-run-metadata-v1:{digest}"
 
-        encoded = encode_response(response)
-        self.assertIn(b'"integral":1.0', encoded)
-        decoded = decode_response(encoded)
-
-        self.assertEqual(metadata.legacy_metadata_hash, decoded["result"]["metadata_hash"])
-        self.assertIs(
-            type(decoded["result"]["run_metadata"]["data"]["integral"]), float
-        )
-        self.assertEqual(1.0, decoded["result"]["run_metadata"]["data"]["integral"])
-        self.assertIn(b'"integral":1.0', encode_response(decoded))
-
-        for schema_version_token in (b"1.0", b"1e0"):
-            variant = encoded.replace(
-                b'"metadata_schema_version":1,',
-                b'"metadata_schema_version":' + schema_version_token + b",",
-                1,
-            )
-            decoded_variant = decode_response(variant)
-            self.assertEqual(metadata.legacy_metadata_hash, decoded_variant["result"]["metadata_hash"])
-            self.assertEqual(1, decoded_variant["result"]["run_metadata"]["metadata_schema_version"])
+        with self.assertRaises(ProtocolValidationError):
+            validate_response(response)
+        with self.assertRaises(ProtocolValidationError):
+            decode_response(json.dumps(response))
 
     def test_newly_created_run_response_has_zero_versions(self) -> None:
         response = deepcopy(

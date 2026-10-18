@@ -81,18 +81,6 @@ class EventStoreConfigurationTests(unittest.TestCase):
             first.metadata_hash,
         )
 
-    def test_v1_and_v2_metadata_hashes_preserve_distinct_float_identity(self):
-        with_float = RunMetadata.from_value({"integral": 1.0})
-        with_integer = RunMetadata.from_value({"integral": 1})
-
-        self.assertNotEqual(with_float.legacy_metadata_hash, with_integer.legacy_metadata_hash)
-        self.assertEqual(with_float.metadata_hash, with_integer.metadata_hash)
-        self.assertEqual(
-            "sha256:problemforger-run-metadata-v1:"
-            "a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996",
-            with_float.legacy_metadata_hash,
-        )
-
     def test_run_metadata_hash_normalizes_safe_integral_floats(self):
         with_float = RunMetadata.from_value(
             {"first": {"enabled": True}, "second": 2, "integral_float": 1.0}

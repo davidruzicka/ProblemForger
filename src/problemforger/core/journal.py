@@ -53,7 +53,8 @@ class VersionConflict:
             raise ValueError("VersionConflict requires different expected and actual versions")
 
 
-def _require_identifier(value: str, name: str) -> None:
+def require_identifier(value: object, name: str) -> None:
+    """Validate the identifier rule shared by journal, store, and telemetry."""
     if not isinstance(value, str) or not _has_identifier_content(value):
         raise ValueError(f"{name} must be a non-empty string")
     try:
@@ -283,8 +284,8 @@ class RecordMetadata:
     causation_id: CausationId | None = None
 
     def __post_init__(self) -> None:
-        _require_identifier(self.run_id, "run_id")
-        _require_identifier(self.record_id, "record_id")
+        require_identifier(self.run_id, "run_id")
+        require_identifier(self.record_id, "record_id")
         _require_integer(
             self.record_schema_version,
             "record_schema_version",
@@ -309,9 +310,9 @@ class RecordMetadata:
             raise ValueError("recorded_at must include a timezone")
         object.__setattr__(self, "recorded_at", self.recorded_at.astimezone(timezone.utc))
         if self.correlation_id is not None:
-            _require_identifier(self.correlation_id, "correlation_id")
+            require_identifier(self.correlation_id, "correlation_id")
         if self.causation_id is not None:
-            _require_identifier(self.causation_id, "causation_id")
+            require_identifier(self.causation_id, "causation_id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,7 +364,7 @@ def proposal_request_hash(request: NormalizedMutationRequest) -> RequestHash:
 
 
 def _validate_request_hash(value: str) -> None:
-    _require_identifier(value, "request_hash")
+    require_identifier(value, "request_hash")
     if not value.startswith(REQUEST_HASH_PREFIX):
         raise ValueError("request_hash must use the supported SHA-256 request-hash version")
     digest = value[len(REQUEST_HASH_PREFIX) :]
@@ -386,7 +387,7 @@ class CRunRecoveryContext:
             "effective_governance_policy_identity",
         ):
             value = getattr(self, name)
-            _require_identifier(value, name)
+            require_identifier(value, name)
             if value.strip().casefold() == "none":
                 raise ValueError(f"{name} must not use the NONE sentinel")
 
@@ -403,7 +404,7 @@ class ProposalReceipt:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.request, NormalizedMutationRequest):
             raise TypeError("request must be NormalizedMutationRequest")
         if self.c_run_recovery_context is not None and not isinstance(
@@ -450,7 +451,7 @@ class MutationDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         _validate_request_hash(self.request_hash)
         _require_integer(self.expected_graph_version, "expected_graph_version", minimum=0)
         _require_integer(self.resulting_graph_version, "resulting_graph_version", minimum=0)
@@ -472,9 +473,9 @@ class MutationDecision:
             if self.resulting_graph_version != self.expected_graph_version:
                 raise ValueError("non-commit, non-conflict outcomes do not advance graph_version")
         if outcome is not GovernanceOutcome.COMMIT:
-            _require_identifier(self.reason_code or "", "reason_code")
+            require_identifier(self.reason_code or "", "reason_code")
         elif self.reason_code is not None:
-            _require_identifier(self.reason_code, "reason_code")
+            require_identifier(self.reason_code, "reason_code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,9 +490,9 @@ class ProposalAbandoned:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         _validate_request_hash(self.request_hash)
-        _require_identifier(self.reason_code, "reason_code")
+        require_identifier(self.reason_code, "reason_code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -506,9 +507,9 @@ class NonTerminalAuditRecord:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.audit_type, "audit_type")
+        require_identifier(self.audit_type, "audit_type")
         if self.proposal_id is not None:
-            _require_identifier(self.proposal_id, "proposal_id")
+            require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.payload, JsonDocument):
             raise TypeError("payload must be a JsonDocument")
         _require_object(self.payload.value, "audit payload")
@@ -555,9 +556,9 @@ class GraphChangedEvent:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         _require_integer(self.graph_version, "graph_version", minimum=1)
-        _require_identifier(self.event_type, "event_type")
+        require_identifier(self.event_type, "event_type")
         _require_integer(self.event_schema_version, "event_schema_version", minimum=1)
         if self.event_schema_version != CURRENT_EVENT_SCHEMA_VERSION:
             raise ValueError(

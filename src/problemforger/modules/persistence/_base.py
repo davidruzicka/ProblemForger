@@ -10,7 +10,6 @@ from problemforger.core.journal import (
     GraphChangedEvent,
     JournalEntry,
     JsonDocument,
-    MAX_IDENTIFIER_UTF8_BYTES,
     MutationDecision,
     NonTerminalAuditRecord,
     NormalizedMutationRequest,
@@ -22,11 +21,11 @@ from problemforger.core.journal import (
     RequestHash,
     RunId,
     VersionConflict,
-    _has_identifier_content,
     deserialize_entry,
     ecmascript_json_size,
     proposal_request_hash,
     proposal_status,
+    require_identifier,
     serialize_entry,
     validate_json_safe_integers,
 )
@@ -88,12 +87,9 @@ class _ProposalParts:
 
 
 def _valid_identifier(value: object) -> bool:
-    if not isinstance(value, str) or not _has_identifier_content(value):
-        return False
     try:
-        if len(value.encode("utf-8")) > MAX_IDENTIFIER_UTF8_BYTES:
-            return False
-    except UnicodeEncodeError:
+        require_identifier(value, "identifier")
+    except ValueError:
         return False
     return True
 
@@ -110,7 +106,7 @@ def _normalized_request_within_bounds(request: NormalizedMutationRequest) -> boo
         value = request.to_value()
         validate_json_safe_integers(value)
         return ecmascript_json_size(value) <= MAX_NORMALIZED_REQUEST_BYTES
-    except (OverflowError, TypeError, UnicodeEncodeError, ValueError):
+    except (OverflowError, RecursionError, TypeError, UnicodeEncodeError, ValueError):
         return False
 
 
@@ -768,10 +764,7 @@ class EventStoreState:
     @staticmethod
     def validate_loaded_run(run_id: str, run: _RunState) -> None:
         """Fail closed if durable rows cannot be interpreted as a valid journal."""
-        if run.metadata_hash not in {
-            run.metadata.metadata_hash,
-            run.metadata.legacy_metadata_hash,
-        }:
+        if run.metadata_hash != run.metadata.metadata_hash:
             raise ValueError(f"stored metadata hash mismatch for run {run_id}")
         seen_ids: set[str] = set()
         receipts: dict[str, ProposalReceipt] = {}

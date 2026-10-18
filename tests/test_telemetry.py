@@ -166,6 +166,8 @@ class TelemetryObservationTests(unittest.TestCase):
             {**value, "run_id": 1},
             {**value, "proposal_id": ""},
             {**value, "proposal_id": "\ufeff"},
+            {**value, "run_id": "r" * 257},
+            {**value, "proposal_id": "\u00e9" * 129},
             {**value, "causation_id": ""},
             {**value, "correlation_id": ""},
             {**value, "journal_position": "2"},

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from hashlib import sha256
 from typing import Protocol, TypeAlias
 
 from problemforger.core.journal import (
@@ -30,21 +31,8 @@ from problemforger.core.journal import (
 AuditRecord: TypeAlias = NonTerminalAuditRecord | MutationDecision | ProposalAbandoned
 
 
-def _run_metadata_hash(canonical_json: str, *, version: int) -> str:
-    from hashlib import sha256
-
-    if version == 1:
-        domain = b"problemforger.run-metadata.v1\0"
-        prefix = "sha256:problemforger-run-metadata-v1:"
-    elif version == 2:
-        domain = b"problemforger.run-metadata.v2\0"
-        prefix = "sha256:problemforger-run-metadata-v2:"
-    else:
-        raise ValueError(f"unsupported run metadata hash version: {version}")
-    digest = sha256(
-        domain + canonical_json.encode("utf-8")
-    ).hexdigest()
-    return f"{prefix}{digest}"
+_RUN_METADATA_HASH_PREFIX = "sha256:problemforger-run-metadata-v2:"
+_RUN_METADATA_HASH_DOMAIN = b"problemforger.run-metadata.v2\0"
 
 
 class StoreDurability(str, Enum):
@@ -76,6 +64,7 @@ class RunMetadata:
 
     data: JsonDocument
     metadata_schema_version: int = 1
+    canonical_json: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if (
@@ -87,6 +76,12 @@ class RunMetadata:
         if not isinstance(self.data, JsonDocument) or not isinstance(self.data.value, dict):
             raise TypeError("run metadata must be a JSON object")
         validate_json_safe_integers(self.data.value)
+        # Cached because store paths compare and size megabyte-scale metadata repeatedly.
+        object.__setattr__(
+            self,
+            "canonical_json",
+            canonical_json_with_safe_integer_normalization(self.to_value()),
+        )
 
     @classmethod
     def from_value(cls, value: object) -> RunMetadata:
@@ -99,22 +94,11 @@ class RunMetadata:
         }
 
     @property
-    def canonical_json(self) -> str:
-        return canonical_json_with_safe_integer_normalization(self.to_value())
-
-    @property
     def metadata_hash(self) -> str:
-        return _run_metadata_hash(self.canonical_json, version=2)
-
-    @property
-    def legacy_canonical_json(self) -> str:
-        """Return the original v1 serialization used by existing run identities."""
-        return JsonDocument.from_value(self.to_value()).canonical_json
-
-    @property
-    def legacy_metadata_hash(self) -> str:
-        """Return the pre-normalization v1 hash for existing durable runs."""
-        return _run_metadata_hash(self.legacy_canonical_json, version=1)
+        digest = sha256(
+            _RUN_METADATA_HASH_DOMAIN + self.canonical_json.encode("utf-8")
+        ).hexdigest()
+        return f"{_RUN_METADATA_HASH_PREFIX}{digest}"
 
 
 @dataclass(frozen=True, slots=True)

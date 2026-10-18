@@ -104,12 +104,10 @@ Run metadata schema v1 is `RunMetadata(metadata_schema_version=1, data=<JSON
 object>)`. New runs use metadata-hash v2 over the canonical JSON object
 `{"metadata_schema_version":1,"data":<object>}`. V2 normalizes safe
 integer-valued floats before hashing and uses the
-`sha256:problemforger-run-metadata-v2:<lowercase hex digest>` prefix. Existing
-SQLite rows with v1 hashes retain their stored JSON and hash when opened; their
-`sha256:problemforger-run-metadata-v1:` identity remains stable. The hash prefix
-selects the canonicalization version, and both protocol codecs validate v1 and
-v2 responses. Metadata schema version and hash version are separate. Any hash
-input change requires a new hash version.
+`sha256:problemforger-run-metadata-v2:<lowercase hex digest>` prefix. Stores
+and protocol codecs accept only this hash version; a stored run with any other
+hash fails closed on open. Metadata schema version and hash version are
+separate. Any hash input change requires a new hash version.
 
 Conceptual port contract:
 
@@ -159,7 +157,7 @@ current_graph_version(run_id)
 
 Requirements:
 
-- persist run registration before accepting proposals; `create_run` is idempotent when supplied metadata has the same v2 canonical serialization as the existing metadata, returning the stored hash version and identity (including for a legacy v1 registration); a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal. Version zero and an empty journal apply only to a newly created run; reopening preserves the persisted journal and current graph version and retains the registration; every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
+- persist run registration before accepting proposals; `create_run` is idempotent when supplied metadata has the same v2 canonical serialization as the existing metadata, returning the stored identity; a mismatch returns `RUN_METADATA_CONFLICT` without changing the journal. Version zero and an empty journal apply only to a newly created run; reopening preserves the persisted journal and current graph version and retains the registration; every operation against an unknown run returns `NOT_FOUND` rather than creating an implicit empty stream;
 - canonicalize and hash `run_metadata` under a versioned metadata schema before comparing idempotent retries; return the stored hash so callers can audit that they addressed the intended run;
 - `record_proposal` returns `IDEMPOTENCY_CONFLICT` with the stored and supplied canonical request hashes when an existing `(run_id, proposal_id)` has a different request hash; it does not evaluate or mutate the proposal;
 - enforce the [proposal identity/recovery contract](protocol.md#spec-protocol-proposal-recovery), including atomic receipt uniqueness and serialized recovery;

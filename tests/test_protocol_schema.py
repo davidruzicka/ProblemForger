@@ -161,10 +161,16 @@ class ProtocolSchemaTests(unittest.TestCase):
             },
         }
         metadata_vector["result"]["metadata_hash"] = (
+            "sha256:problemforger-run-metadata-v2:"
+            "8089a94198886cb17100966f63f7f0068382ace70000fcca9e9a4ff14711d8ce"
+        )
+        cls.cases.append({"label": "metadata hash canonicalization", "kind": "response", "message": metadata_vector, "request": None, "valid": True})
+        v1_hash = deepcopy(metadata_vector)
+        v1_hash["result"]["metadata_hash"] = (
             "sha256:problemforger-run-metadata-v1:"
             "82b1b785163f37f33779143c6cd9c80b6b8007c2625ee547bc8e06f9a556d145"
         )
-        cls.cases.append({"label": "metadata hash canonicalization", "kind": "response", "message": metadata_vector, "request": None, "valid": True})
+        cls.cases.append({"label": "v1 metadata hash", "kind": "response", "message": v1_hash, "request": None, "valid": False})
         for label in ("create_run", "get_run"):
             invalid_hash = deepcopy(cls.responses[label])
             invalid_hash["result"]["run_metadata"]["data"]["unbound"] = True

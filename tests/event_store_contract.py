@@ -424,6 +424,25 @@ class EventStoreContractMixin:
         self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
         self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
 
+    def test_deeply_nested_normalized_request_is_rejected_without_writes(self):
+        nested: dict[str, object] = {}
+        for _ in range(500):
+            nested = {"a": nested}
+        normalized = NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value(nested),),
+            evidence=(),
+        )
+        proposal_receipt = ProposalReceipt(metadata("deep-receipt"), "deep", normalized)
+
+        result = self.store.record_proposal(
+            "run-1", "deep", proposal_receipt.request_hash, normalized, proposal_receipt,
+        )
+
+        self.assertEqual(RecordProposalStatus.INVALID_PROPOSAL, result.status)
+        self.assertEqual(0, self.store.get_run("run-1").last_journal_position)
+
     def test_normalized_requests_reject_unsafe_numbers_without_writes(self):
         unsafe_numbers = (2**53, -(2**53), float(2**53), -float(2**53))
         for field in ("operations", "evidence"):

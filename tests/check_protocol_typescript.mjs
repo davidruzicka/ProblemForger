@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   MAX_PROTOCOL_MESSAGE_BYTES,
@@ -88,6 +87,13 @@ assert.throws(
   undefined,
   'response frame rejects a UTF-8 BOM',
 );
+for (const prefix of ['\uFEFF', '\u00A0', '\u2028']) {
+  assert.throws(
+    () => decodeResponse(`${prefix}${JSON.stringify(protocolErrorResponse)}`),
+    TypeError,
+    `string response rejects leading U+${prefix.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`,
+  );
+}
 
 const oversizedFrame = new Uint8Array(MAX_PROTOCOL_MESSAGE_BYTES + 1).fill(0xff);
 assert.throws(
@@ -273,70 +279,39 @@ assert.deepEqual(
   'create_run response accepts canonically equal metadata with reordered keys',
 );
 
-const legacyMetadataResponseJson = '{"protocol_schema_version":1,"request_id":"legacy-run","operation":"get_run","result":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"integral":1.0}},"metadata_hash":"sha256:problemforger-run-metadata-v1:a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996","graph_version":0,"last_journal_position":0,"created":false}}';
-const legacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
-assert.equal(legacyMetadataResponse.result.run_metadata.data.integral, 1);
+const metadataResponseJson = '{"protocol_schema_version":1,"request_id":"run-lookup","operation":"get_run","result":{"run_id":"run-1","run_metadata":{"metadata_schema_version":1,"data":{"integral":1}},"metadata_hash":"sha256:problemforger-run-metadata-v2:21a5aa289cfc55f57c9cc718c44e61922ccb82ef386d570c916dcacb682d922f","graph_version":0,"last_journal_position":0,"created":false}}';
+const metadataResponse = decodeResponse(metadataResponseJson.replace('"integral":1', '"integral":1.0'));
+assert.equal(metadataResponse.result.run_metadata.data.integral, 1);
+assert.equal(encodeResponse(metadataResponse), metadataResponseJson);
 for (const schemaVersionToken of ['1.0', '1e0']) {
-  const legacySchemaVersionJson = legacyMetadataResponseJson.replace(
+  const schemaVersionJson = metadataResponseJson.replace(
     '"metadata_schema_version":1,',
     `"metadata_schema_version":${schemaVersionToken},`,
   );
-  const decodedLegacySchemaVersion = decodeResponse(legacySchemaVersionJson);
-  assert.equal(decodedLegacySchemaVersion.result.run_metadata.metadata_schema_version, 1);
-  assert.equal(decodedLegacySchemaVersion.result.metadata_hash, legacyMetadataResponse.result.metadata_hash);
-  assert.deepEqual(
-    decodeResponse(encodeResponse(decodedLegacySchemaVersion)),
-    decodedLegacySchemaVersion,
-    `legacy metadata hash normalizes schema version ${schemaVersionToken}`,
-  );
+  assert.deepEqual(decodeResponse(schemaVersionJson), metadataResponse, `metadata schema version ${schemaVersionToken}`);
 }
-const reencodedLegacyMetadata = encodeResponse(legacyMetadataResponse);
-assert.match(reencodedLegacyMetadata, /"integral":1\.0/);
-assert.deepEqual(decodeResponse(reencodedLegacyMetadata), legacyMetadataResponse);
 
-const editedLegacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
-editedLegacyMetadataResponse.result.run_metadata.data.integral = 2;
-const editedLegacyMetadataCanonical = '{"data":{"integral":2},"metadata_schema_version":1}';
-const editedLegacyMetadataDigest = createHash('sha256')
-  .update('problemforger.run-metadata.v1\0', 'utf8')
-  .update(editedLegacyMetadataCanonical, 'utf8')
-  .digest('hex');
-editedLegacyMetadataResponse.result.metadata_hash = `sha256:problemforger-run-metadata-v1:${editedLegacyMetadataDigest}`;
-const reencodedEditedLegacyMetadata = encodeResponse(editedLegacyMetadataResponse);
-assert.match(reencodedEditedLegacyMetadata, /"integral":2/);
-assert.deepEqual(
-  decodeResponse(reencodedEditedLegacyMetadata),
-  editedLegacyMetadataResponse,
-  'edited legacy metadata discards stale cached wire text',
-);
-
-const hookedLegacyMetadataResponse = decodeResponse(legacyMetadataResponseJson);
-Object.defineProperty(hookedLegacyMetadataResponse, 'toJSON', {
+const hookedMetadataResponse = decodeResponse(metadataResponseJson);
+Object.defineProperty(hookedMetadataResponse, 'toJSON', {
   enumerable: false,
   value: () => ({ not_a_response: true }),
 });
 assert.equal(
-  encodeResponse(hookedLegacyMetadataResponse),
-  legacyMetadataResponseJson,
-  'response serialization ignores toJSON hooks and preserves legacy metadata wire values',
+  encodeResponse(hookedMetadataResponse),
+  metadataResponseJson,
+  'response serialization ignores toJSON hooks',
 );
 
-const negativeZeroJson = legacyMetadataResponseJson
-  .replace('"integral":1.0', '"zero":-0.0')
-  .replace('a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996',
-    '12572925cbe5490b712f37fb9ca7e1f519b5c64d4024c2fe188ce499a04e1b1d');
-for (const response of [JSON.parse(negativeZeroJson), structuredClone(decodeResponse(negativeZeroJson))]) {
-  validateResponse(response);
-  const encoded = encodeResponse(response);
-  assert.match(encoded, /"zero":-0\.0/);
-  assert.ok(Object.is(decodeResponse(encoded).result.run_metadata.data.zero, -0));
-}
-assert.throws(() => validateResponse(JSON.parse(negativeZeroJson.replace('-0.0', '0'))), TypeError);
 assert.throws(
-  () => decodeResponse(legacyMetadataResponseJson.replace('"integral":1.0', '"integral":2')),
-  undefined,
-  'legacy metadata hash remains bound to the original value',
+  () => decodeResponse(metadataResponseJson.replace('"integral":1', '"integral":2')),
+  TypeError,
+  'metadata hash remains bound to the original value',
 );
+const v1MetadataResponseJson = metadataResponseJson
+  .replace('"integral":1', '"integral":1.0')
+  .replace('run-metadata-v2:21a5aa289cfc55f57c9cc718c44e61922ccb82ef386d570c916dcacb682d922f',
+    'run-metadata-v1:a7c1e9ebc8fc5b623960ac6944f198d4666d33d6aa671e8354f928fc6c579996');
+assert.throws(() => decodeResponse(v1MetadataResponseJson), TypeError, 'v1 metadata hashes are rejected');
 
 for (const [label, enabled] of [['different metadata value', false], ['boolean and number metadata differ', 1]]) {
   const invalid = structuredClone(canonicalCreateRunResponse);

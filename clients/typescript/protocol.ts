@@ -141,8 +141,6 @@ type Shape = {
   'x-version-position'?: readonly string[];
 };
 const definitions = protocolContract.$defs as unknown as Readonly<Record<string, Shape>>;
-type LegacyMetadataWire = { canonical: string; raw: string };
-const legacyMetadataWire = new WeakMap<object, LegacyMetadataWire>();
 
 function fail(message: string): never {
   throw new TypeError(message);
@@ -219,8 +217,6 @@ function inertJsonSnapshot(value: unknown, active = new Set<object>()): unknown 
 
   const source = object(value, 'JSON value');
   const snapshot = Object.create(null) as Record<string, unknown>;
-  const wire = legacyMetadataWire.get(source);
-  if (wire !== undefined) legacyMetadataWire.set(snapshot, wire);
   for (const [key, item] of Object.entries(source)) {
     snapshot[key] = inertJsonSnapshot(item, active);
   }
@@ -263,8 +259,6 @@ function compareCodePoints(left: string, right: string): number {
 }
 
 function pythonCanonicalFloat(value: number): string {
-  if (Object.is(value, -0)) return '-0.0';
-  if (Number.isInteger(value)) return `${String(value)}.0`;
   const source = value.toString().toLowerCase();
   const negative = source.startsWith('-');
   const unsigned = negative ? source.slice(1) : source;
@@ -297,36 +291,11 @@ function pythonCanonicalJson(value: JsonValue): string {
   return `{${fields.map((key) => `${JSON.stringify(key)}:${pythonCanonicalJson(value[key]!)}`).join(',')}}`;
 }
 
-function legacyPythonCanonicalJson(value: JsonValue): string {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value) as string;
-  if (typeof value === 'number') return Object.is(value, -0) || !Number.isInteger(value) ? pythonCanonicalFloat(value) : String(value);
-  if (Array.isArray(value)) return `[${value.map(legacyPythonCanonicalJson).join(',')}]`;
-  const fields = Object.keys(value).sort(compareCodePoints);
-  return `{${fields.map((key) => `${JSON.stringify(key)}:${legacyPythonCanonicalJson(value[key]!)}`).join(',')}}`;
-}
-
-function legacyMetadataWireMatchesSnapshot(
-  metadata: RunMetadata,
-  wire: LegacyMetadataWire | undefined,
-): wire is LegacyMetadataWire {
-  return wire !== undefined
-    && canonicalJson(JSON.parse(wire.canonical) as JsonValue) === canonicalJson(metadata);
-}
-
-function runMetadataHash(metadata: RunMetadata, version: 1 | 2): string {
-  const definition = protocolContract.$defs.MetadataHash;
-  const rule = version === 1
-    ? definition['x-legacy-canonical-hash']
-    : definition['x-canonical-hash'];
-  const wire = version === 1 ? legacyMetadataWire.get(metadata) : undefined;
-  const canonical = version === 2
-    ? pythonCanonicalJson(metadata)
-    : legacyMetadataWireMatchesSnapshot(metadata, wire)
-      ? wire.canonical
-      : legacyPythonCanonicalJson(metadata);
+function runMetadataHash(metadata: RunMetadata): string {
+  const rule = protocolContract.$defs.MetadataHash['x-canonical-hash'];
   const digest = createHash(rule.algorithm)
     .update(rule.domain_separator, 'utf8')
-    .update(canonical, 'utf8')
+    .update(pythonCanonicalJson(metadata), 'utf8')
     .digest('hex');
   return `${rule.prefix}${digest}`;
 }
@@ -458,9 +427,7 @@ function validateResponseValue(value: unknown, request?: ProtocolRequest): asser
     validateShape(result, protocolContract['x-operations'][operation].result, `${operation} result`);
     if (operation === 'create_run' || operation === 'get_run') {
       const runResult = result as unknown as RunResult;
-      const legacyPrefix = protocolContract.$defs.MetadataHash['x-legacy-canonical-hash'].prefix;
-      const hashVersion = runResult.metadata_hash.startsWith(legacyPrefix) ? 1 : 2;
-      if (runMetadataHash(runResult.run_metadata, hashVersion) !== runResult.metadata_hash) {
+      if (runMetadataHash(runResult.run_metadata) !== runResult.metadata_hash) {
         return fail('metadata_hash does not match run_metadata');
       }
     }
@@ -490,11 +457,10 @@ function validateResponseValue(value: unknown, request?: ProtocolRequest): asser
   }
 }
 
-function rejectDuplicateKeys(text: string): (LegacyMetadataWire & { start: number; end: number }) | undefined {
+function rejectDuplicateKeys(text: string): void {
   let offset = 0;
-  let runMetadataWire: (LegacyMetadataWire & { start: number; end: number }) | undefined;
   const whitespace = () => {
-    while (offset < text.length && /\s/.test(text[offset]!)) offset += 1;
+    while (offset < text.length && /[ \t\n\r]/.test(text[offset]!)) offset += 1;
   };
   const parseString = (): string => {
     const start = offset;
@@ -507,20 +473,15 @@ function rejectDuplicateKeys(text: string): (LegacyMetadataWire & { start: numbe
     }
     return fail('message is not valid JSON');
   };
-  const parseValue = (path: string[]): string => {
+  const parseValue = (): void => {
     whitespace();
-    const start = offset;
-    const captureCanonical = path.length >= 2 && path[0] === 'result' && path[1] === 'run_metadata';
     const character = text[offset];
-    let canonical: string;
     if (character === '"') {
-      const value = parseString();
-      canonical = captureCanonical ? JSON.stringify(value) : '';
+      parseString();
     } else if (character === '{') {
       offset += 1;
       whitespace();
       const keys = new Set<string>();
-      const fields: Array<[string, string]> = [];
       if (text[offset] === '}') {
         offset += 1;
       } else while (offset < text.length) {
@@ -532,8 +493,7 @@ function rejectDuplicateKeys(text: string): (LegacyMetadataWire & { start: numbe
         whitespace();
         if (text[offset] !== ':') return fail('message is not valid JSON');
         offset += 1;
-        const childCanonical = parseValue([...path, key]);
-        if (captureCanonical) fields.push([key, childCanonical]);
+        parseValue();
         whitespace();
         if (text[offset] === '}') {
           offset += 1;
@@ -543,19 +503,13 @@ function rejectDuplicateKeys(text: string): (LegacyMetadataWire & { start: numbe
         offset += 1;
       }
       if (text[offset - 1] !== '}') return fail('message is not valid JSON');
-      if (captureCanonical) {
-        fields.sort(([left], [right]) => compareCodePoints(left, right));
-        canonical = `{${fields.map(([key, value]) => `${JSON.stringify(key)}:${value}`).join(',')}}`;
-      } else canonical = '';
     } else if (character === '[') {
       offset += 1;
       whitespace();
-      const items: string[] = [];
       if (text[offset] === ']') {
         offset += 1;
       } else while (offset < text.length) {
-        const itemCanonical = parseValue([...path, String(items.length)]);
-        if (captureCanonical) items.push(itemCanonical);
+        parseValue();
         whitespace();
         if (text[offset] === ']') {
           offset += 1;
@@ -565,46 +519,22 @@ function rejectDuplicateKeys(text: string): (LegacyMetadataWire & { start: numbe
         offset += 1;
       }
       if (text[offset - 1] !== ']') return fail('message is not valid JSON');
-      canonical = captureCanonical ? `[${items.join(',')}]` : '';
     } else if (text.startsWith('true', offset)) {
       offset += 4;
-      canonical = captureCanonical ? 'true' : '';
     } else if (text.startsWith('false', offset)) {
       offset += 5;
-      canonical = captureCanonical ? 'false' : '';
     } else if (text.startsWith('null', offset)) {
       offset += 4;
-      canonical = captureCanonical ? 'null' : '';
     } else {
       const match = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(offset));
       if (match === null) return fail('message is not valid JSON');
-      const token = match[0];
-      offset += token.length;
-      const number = Number(token);
-      const preserveLegacyFloat = captureCanonical
-        && path.length >= 3
-        && path[0] === 'result'
-        && path[1] === 'run_metadata'
-        && path[2] === 'data';
-      canonical = captureCanonical
-        ? preserveLegacyFloat && /[.eE]/.test(token)
-          ? Number.isFinite(number) ? pythonCanonicalFloat(number) : token
-          : Number.isSafeInteger(number)
-            ? String(BigInt(number))
-            : Number.isFinite(number) ? pythonCanonicalFloat(number) : token
-        : '';
+      offset += match[0].length;
     }
-    const end = offset;
-    if (path.length === 2 && path[0] === 'result' && path[1] === 'run_metadata') {
-      runMetadataWire = { start, end, canonical, raw: text.slice(start, end) };
-    }
-    return canonical;
   };
 
-  parseValue([]);
+  parseValue();
   whitespace();
   if (offset !== text.length) return fail('message is not valid JSON');
-  return runMetadataWire;
 }
 
 function decodeJson(serialized: string | Uint8Array): unknown {
@@ -619,18 +549,13 @@ function decodeJson(serialized: string | Uint8Array): unknown {
     text = new TextDecoder('utf-8', { fatal: true }).decode(serialized);
   }
   if (byteLength(text) > MAX_PROTOCOL_MESSAGE_BYTES) return fail('message exceeds 4 MiB');
-  const metadataWire = rejectDuplicateKeys(text);
-  const value = JSON.parse(text) as unknown;
-  if (metadataWire !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    const response = value as Record<string, unknown>;
-    if ((response.operation === 'create_run' || response.operation === 'get_run') && response.result !== null && typeof response.result === 'object') {
-      const metadata = (response.result as Record<string, unknown>).run_metadata;
-      if (metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)) {
-        legacyMetadataWire.set(metadata, metadataWire);
-      }
-    }
+  try {
+    rejectDuplicateKeys(text);
+    return JSON.parse(text) as unknown;
+  } catch (error) {
+    if (error instanceof SyntaxError) return fail('message is not valid JSON');
+    throw error;
   }
-  return value;
 }
 
 function encodeJson(value: unknown): string {
@@ -665,23 +590,7 @@ function encodeResponseJson(value: ProtocolResponse, request?: ProtocolRequest):
     ? undefined
     : inertJsonSnapshot(request) as ProtocolRequest;
   validateResponse(snapshot, requestSnapshot);
-  let encoded = JSON.stringify(snapshot) as string;
-  if ('operation' in snapshot && (snapshot.operation === 'create_run' || snapshot.operation === 'get_run')) {
-    const legacyPrefix = protocolContract.$defs.MetadataHash['x-legacy-canonical-hash'].prefix;
-    const runResult = snapshot.result;
-    const wire = legacyMetadataWire.get(runResult.run_metadata);
-    if (runResult.metadata_hash.startsWith(legacyPrefix)) {
-      const outputMetadata = rejectDuplicateKeys(encoded);
-      if (outputMetadata !== undefined) {
-        const metadataJson = legacyMetadataWireMatchesSnapshot(runResult.run_metadata, wire)
-          ? wire.raw
-          : legacyPythonCanonicalJson(runResult.run_metadata);
-        encoded = `${encoded.slice(0, outputMetadata.start)}${metadataJson}${encoded.slice(outputMetadata.end)}`;
-      }
-    }
-  }
-  if (byteLength(encoded) > MAX_PROTOCOL_MESSAGE_BYTES) return fail('message exceeds 4 MiB');
-  return encoded;
+  return encodeJson(snapshot);
 }
 
 export function decodeResponse(serialized: string | Uint8Array, request?: ProtocolRequest): ProtocolResponse {
