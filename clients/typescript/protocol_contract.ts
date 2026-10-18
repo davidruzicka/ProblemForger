@@ -867,6 +867,22 @@ export const protocolContract = {
                   "reason_code"
                 ]
               }
+            },
+            {
+              "if": {
+                "properties": {
+                  "outcome": {
+                    "const": "COMMIT"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "graph_version": {
+                    "$ref": "#/$defs/PositiveInteger"
+                  }
+                }
+              }
             }
           ]
         },
@@ -918,7 +934,7 @@ export const protocolContract = {
               "$ref": "#/$defs/Identifier"
             },
             "graph_version": {
-              "$ref": "#/$defs/SafeInteger"
+              "$ref": "#/$defs/PositiveInteger"
             }
           },
           "required": [

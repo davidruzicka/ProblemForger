@@ -623,6 +623,10 @@
                 "properties": {"reason_code": {"$ref": "#/$defs/Identifier"}},
                 "required": ["reason_code"]
               }
+            },
+            {
+              "if": {"properties": {"outcome": {"const": "COMMIT"}}},
+              "then": {"properties": {"graph_version": {"$ref": "#/$defs/PositiveInteger"}}}
             }
           ]
         },
@@ -646,7 +650,7 @@
             "record_type": {"const": "graph_changed"},
             "run_id": {"$ref": "#/$defs/Identifier"},
             "proposal_id": {"$ref": "#/$defs/Identifier"},
-            "graph_version": {"$ref": "#/$defs/SafeInteger"}
+            "graph_version": {"$ref": "#/$defs/PositiveInteger"}
           },
           "required": ["journal_position", "record_type", "run_id", "proposal_id", "graph_version"],
           "additionalProperties": false

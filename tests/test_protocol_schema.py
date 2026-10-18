@@ -144,6 +144,20 @@ class ProtocolSchemaTests(unittest.TestCase):
             else:
                 message["result"]["records"][0]["graph_version"] = 99
             cls.cases.append({"label": f"{label} impossible version", "kind": "response", "message": message, "valid": False})
+        graph_changed = {"journal_position": 3, "record_type": "graph_changed", "run_id": "run-1", "proposal_id": "proposal-1", "graph_version": 1}
+        for label, decision_version, event_version, valid in (
+            ("committed audit batch", 1, 1, True),
+            ("COMMIT decision at version zero", 0, None, False),
+            ("graph_changed at version zero", 1, 0, False),
+            ("COMMIT decision and graph_changed disagree", 1, 2, False),
+        ):
+            message = deepcopy(cls.responses["get_audit_timeline"])
+            records = message["result"]["records"]
+            records[1]["graph_version"] = decision_version
+            if event_version is not None:
+                records.append({**graph_changed, "graph_version": event_version})
+            message["result"]["next_after_journal_position"] = records[-1]["journal_position"]
+            cls.cases.append({"label": label, "kind": "response", "message": message, "request": cls.requests["get_audit_timeline"], "valid": valid})
         metadata_vector = deepcopy(cls.responses["get_run"])
         metadata_vector["result"]["run_metadata"] = {
             "metadata_schema_version": 1,

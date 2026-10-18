@@ -155,8 +155,11 @@ and `PENDING` lifecycle state; `non_terminal_audit` may include a proposal ID;
 `mutation_decision` requires a proposal ID, governance outcome, and graph
 version, plus a reason code for non-`COMMIT` outcomes; `proposal_abandoned`
 requires a proposal ID, `ABANDONED` lifecycle state, and reason code;
-`graph_changed` requires a proposal ID and graph version. Fields from other
-record kinds are rejected. Normalized operations, evidence content, raw
+`graph_changed` requires a proposal ID and graph version. A `COMMIT` decision
+and every `graph_changed` record carry a positive graph version, and when a
+page contains several of them for one proposal they must share that version,
+because they project one atomic commit batch. Fields from other record kinds
+are rejected. Normalized operations, evidence content, raw
 outputs, credentials, and internal recovery inputs are never part of public
 proposal or audit results.
 
