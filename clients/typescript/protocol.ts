@@ -456,7 +456,8 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
         previous.proposal_id !== proposalId
         || (previous.record_type !== 'mutation_decision' && previous.record_type !== 'graph_changed')
         || previous.graph_version !== record.graph_version
-      )) return fail('graph_changed records must directly follow their COMMIT decision at its graph_version');
+        || previous.journal_position + 1 !== record.journal_position
+      )) return fail('graph_changed records must directly follow their COMMIT decision at its graph_version and position');
       proposalsWithEvents.add(proposalId!);
     }
     if (proposalId !== undefined) seenProposals.add(proposalId);

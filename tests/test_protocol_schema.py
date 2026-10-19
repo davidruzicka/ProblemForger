@@ -201,6 +201,7 @@ class ProtocolSchemaTests(unittest.TestCase):
             ("continued batch event not adjacent to the cursor", 10, ({**event, "journal_position": 15},), False),
             ("decision advances past a visible commit", 10, (commit_of("p", 5), event_of("p", 5), {**reject, "proposal_id": "q", "graph_version": 6}), False),
             ("decision reports the version of a visible commit", 10, (commit_of("p", 5), event_of("p", 5), {**reject, "proposal_id": "q", "graph_version": 5}), True),
+            ("commit batch with a position gap", 0, (receipt, commit, {**event, "journal_position": 10}), False),
             ("version unknown again after a gap", 10, (commit_of("p", 5), event_of("p", 5), {**reject, "proposal_id": "q", "graph_version": 6, "journal_position": 20}), True),
             ("COMMIT skips a version in a journal prefix", 0, (receipt, commit_of("p", 2), event_of("p", 2)), False),
             ("decision misreports the version in a journal prefix", 0, (receipt, {**reject, "graph_version": 1}), False),

@@ -160,8 +160,8 @@ and every `graph_changed` record carry a positive graph version. Within one
 page, records of one proposal must be a sequence the durable journal can
 produce: its `proposal_receipt` precedes its other records, it has at most one
 terminal record (`mutation_decision` or `proposal_abandoned`), and its
-`graph_changed` records follow a `COMMIT` decision directly, sharing its graph
-version, because they project one atomic commit batch. A page with a non-zero
+`graph_changed` records follow a `COMMIT` decision directly, at consecutive
+journal positions and sharing its graph version, because they project one atomic commit batch. A page with a non-zero
 cursor may start with the remaining events of a batch whose decision is on the
 previous page; such a page starts at the position right after its cursor. A
 `COMMIT` decision is followed directly by its own

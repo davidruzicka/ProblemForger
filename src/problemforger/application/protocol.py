@@ -502,9 +502,10 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
                 previous.get("proposal_id") != proposal_id
                 or previous["record_type"] not in {"mutation_decision", "graph_changed"}
                 or previous["graph_version"] != record["graph_version"]
+                or previous["journal_position"] + 1 != position
             ):
                 raise ProtocolValidationError(
-                    "graph_changed records must directly follow their COMMIT decision at its graph_version"
+                    "graph_changed records must directly follow their COMMIT decision at its graph_version and position"
                 )
             proposals_with_events.add(proposal_id)
         if proposal_id is not None:
