@@ -161,9 +161,12 @@ page, records of one proposal must be a sequence the durable journal can
 produce: its `proposal_receipt` precedes its other records, it has at most one
 terminal record (`mutation_decision` or `proposal_abandoned`), and its
 `graph_changed` records follow a `COMMIT` decision directly, sharing its graph
-version, because they project one atomic commit batch. A page may start with
-the remaining events of a batch whose decision is on the previous page. Fields
-from other record kinds are rejected. Normalized operations, evidence content, raw
+version, because they project one atomic commit batch. A page with a non-zero
+cursor may start with the remaining events of a batch whose decision is on the
+previous page. Across proposals, each `COMMIT` decision has a higher graph
+version than every earlier record on the page, and no record has a graph
+version below the last committed one. Fields from other record kinds are
+rejected. Normalized operations, evidence content, raw
 outputs, credentials, and internal recovery inputs are never part of public
 proposal or audit results.
 

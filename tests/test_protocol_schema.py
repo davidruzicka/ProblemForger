@@ -173,22 +173,34 @@ class ProtocolSchemaTests(unittest.TestCase):
         escalate = {**reject, "outcome": "ESCALATE"}
         event = {"record_type": "graph_changed", "run_id": "run-1", "proposal_id": "p", "graph_version": 1}
         other = {"record_type": "non_terminal_audit", "run_id": "run-1", "proposal_id": "q"}
-        for label, sequence, valid in (
-            ("contiguous commit batch", (receipt, commit, event, event), True),
-            ("events continue a batch from the previous page", (event, other, {"record_type": "non_terminal_audit", "run_id": "run-1"}), True),
-            ("page-start graph_changed before its COMMIT decision", (event, commit), False),
-            ("second terminal record for one proposal", (receipt, reject, escalate), False),
-            ("graph_changed after a non-commit outcome", (receipt, reject, event), False),
-            ("receipt after the proposal's decision", (commit, receipt), False),
-            ("record between a COMMIT and its events", (commit, other, event), False),
+        def commit_of(proposal_id, version):
+            return {**commit, "proposal_id": proposal_id, "graph_version": version}
+
+        def event_of(proposal_id, version):
+            return {**event, "proposal_id": proposal_id, "graph_version": version}
+
+        for label, cursor, sequence, valid in (
+            ("contiguous commit batch", 0, (receipt, commit, event, event), True),
+            ("commits advance graph_version across proposals", 0, (commit, event, commit_of("q", 2), event_of("q", 2)), True),
+            ("events continue a batch from the previous page", 10, (event, other, {"record_type": "non_terminal_audit", "run_id": "run-1"}), True),
+            ("graph_changed at the start of the journal", 0, (event,), False),
+            ("page-start graph_changed before its COMMIT decision", 10, (event, commit), False),
+            ("second terminal record for one proposal", 0, (receipt, reject, escalate), False),
+            ("graph_changed after a non-commit outcome", 0, (receipt, reject, event), False),
+            ("receipt after the proposal's decision", 0, (commit, receipt), False),
+            ("record between a COMMIT and its events", 0, (commit, other, event), False),
+            ("later commit does not advance graph_version", 0, (commit, event, commit_of("q", 1), event_of("q", 1)), False),
+            ("decision below the committed graph_version", 0, (commit, event, {**reject, "proposal_id": "q"}), False),
         ):
             message = deepcopy(cls.responses["get_audit_timeline"])
             message["result"]["records"] = [
                 {"journal_position": position, **record}
-                for position, record in enumerate(sequence, start=1)
+                for position, record in enumerate(sequence, start=cursor + 1)
             ]
-            message["result"]["next_after_journal_position"] = len(sequence)
-            cls.cases.append({"label": label, "kind": "response", "message": message, "request": cls.requests["get_audit_timeline"], "valid": valid})
+            message["result"]["next_after_journal_position"] = cursor + len(sequence)
+            request = deepcopy(cls.requests["get_audit_timeline"])
+            request["params"]["after_journal_position"] = cursor
+            cls.cases.append({"label": label, "kind": "response", "message": message, "request": request, "valid": valid})
         metadata_vector = deepcopy(cls.responses["get_run"])
         metadata_vector["result"]["run_metadata"] = {
             "metadata_schema_version": 1,

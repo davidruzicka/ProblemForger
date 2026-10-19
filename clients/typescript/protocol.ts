@@ -407,12 +407,20 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
   const terminals = new Map<string, PublicAuditRecord>();
   const seenProposals = new Set<string>();
   const proposalsWithEvents = new Set<string>();
+  let committedVersion = 0;
   let previous: PublicAuditRecord | undefined;
   for (const record of result.records) {
     if (record.run_id !== result.run_id) return fail('audit record run_id does not match response run_id');
     if (record.journal_position <= previousPosition) return fail('audit records must be ordered by journal_position');
     previousPosition = record.journal_position;
     const proposalId = record.proposal_id;
+    if (record.graph_version !== undefined) {
+      if (record.graph_version < committedVersion) return fail('audit graph_version cannot decrease below a committed version');
+      if (record.outcome === 'COMMIT') {
+        if (record.graph_version === committedVersion) return fail('each COMMIT must advance graph_version');
+        committedVersion = record.graph_version;
+      }
+    }
     if (record.record_type === 'proposal_receipt' && seenProposals.has(proposalId!)) {
       return fail("proposal_receipt must precede the proposal's other records");
     }
@@ -424,6 +432,7 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
     if (record.record_type === 'graph_changed') {
       const terminal = terminals.get(proposalId!);
       if (terminal !== undefined && terminal.outcome !== 'COMMIT') return fail('graph_changed requires a COMMIT decision');
+      if (previous === undefined && afterJournalPosition === 0) return fail('graph_changed cannot start the journal');
       if (previous !== undefined && (
         previous.proposal_id !== proposalId
         || (previous.record_type !== 'mutation_decision' && previous.record_type !== 'graph_changed')
