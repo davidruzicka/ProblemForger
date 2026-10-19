@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 import weakref
 
-from event_store_contract import audit_record, decision, graph_event, metadata, receipt, request
+from event_store_contract import audit_record, decision, graph_event, metadata, near_limit_requests, receipt, request
 from problemforger.application.protocol import MAX_NORMALIZED_REQUEST_BYTES, encode_request
 from problemforger.core.journal import (
     CRunRecoveryContext,
@@ -243,42 +243,35 @@ class SqliteEventStoreTests(unittest.TestCase):
     def test_reopen_recovers_near_limit_proposal_receipt(self):
         store = self.open_store()
         self._create_run(store)
-        payload = "x" * (MAX_NORMALIZED_REQUEST_BYTES - 100)
-        normalized = NormalizedMutationRequest(
-            request_schema_version=1,
-            expected_graph_version=0,
-            operations=(JsonDocument.from_value({"payload": payload}),),
-            evidence=(),
-        )
-        encode_request({
-            "protocol_schema_version": 1,
-            "request_id": "near-limit-request",
-            "operation": "propose_mutation",
-            "params": {
-                "run_id": "run-1",
-                "proposal_id": "near-limit",
-                **normalized.to_value(),
-            },
-        })
-        proposal_receipt = ProposalReceipt(
-            metadata("near-limit-receipt"), "near-limit", normalized
-        )
-        result = store.record_proposal(
-            "run-1",
-            "near-limit",
-            proposal_request_hash(normalized),
-            normalized,
-            proposal_receipt,
-        )
-        self.assertEqual(RecordProposalStatus.CREATED, result.status)
-        serialized = serialize_entry(store.read_journal("run-1", limit=1).records[0])
-        self.assertLessEqual(len(serialized.encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
+        requests = near_limit_requests()
+        for label, normalized in requests.items():
+            proposal_id = f"near-limit-{label.replace(' ', '-')}"
+            encode_request({
+                "protocol_schema_version": 1,
+                "request_id": "near-limit-request",
+                "operation": "propose_mutation",
+                "params": {"run_id": "run-1", "proposal_id": proposal_id, **normalized.to_value()},
+            })
+            proposal_receipt = ProposalReceipt(
+                metadata(f"{proposal_id}-receipt"), proposal_id, normalized
+            )
+            result = store.record_proposal(
+                "run-1",
+                proposal_id,
+                proposal_request_hash(normalized),
+                normalized,
+                proposal_receipt,
+            )
+            self.assertEqual(RecordProposalStatus.CREATED, result.status, label)
+        for entry in store.read_journal("run-1", limit=10).records:
+            self.assertLessEqual(len(serialize_entry(entry).encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
         store.close()
 
         reopened = self.open_store()
-        recovered = reopened.get_proposal("run-1", "near-limit")
-        self.assertEqual(ProposalStatus.PENDING, recovered.status)
-        self.assertEqual(normalized, recovered.normalized_request)
+        for label, normalized in requests.items():
+            recovered = reopened.get_proposal("run-1", f"near-limit-{label.replace(' ', '-')}")
+            self.assertEqual(ProposalStatus.PENDING, recovered.status)
+            self.assertEqual(normalized, recovered.normalized_request)
         reopened.close()
 
     def test_reopen_preserves_independent_nonterminal_audit_records(self):

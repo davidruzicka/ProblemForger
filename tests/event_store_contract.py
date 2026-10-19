@@ -24,6 +24,7 @@ from problemforger.core.journal import (
     ProposalStatus,
     RecordMetadata,
     VersionConflict,
+    ecmascript_json_size,
     proposal_request_hash,
     serialize_entry,
 )
@@ -59,6 +60,25 @@ def request(expected_version: int = 0, proposal_id: str = "proposal-1") -> Norma
         operations=(JsonDocument.from_value({"op": "add_node", "id": proposal_id}),),
         evidence=(JsonDocument.from_value({"content_digest": f"sha256:{proposal_id}"}),),
     )
+
+
+def near_limit_requests() -> dict[str, NormalizedMutationRequest]:
+    """Return requests at the public size limit, including worst-case number expansion."""
+    def single_operation(document: object) -> NormalizedMutationRequest:
+        return NormalizedMutationRequest(
+            request_schema_version=1,
+            expected_graph_version=0,
+            operations=(JsonDocument.from_value(document),),
+            evidence=(),
+        )
+
+    # Each -0.0 counts as "0" in ECMAScript sizing but is stored as "-0.0".
+    base_size = ecmascript_json_size(single_operation({"values": []}).to_value())
+    count = (MAX_NORMALIZED_REQUEST_BYTES - base_size + 1) // 2
+    return {
+        "string": single_operation({"payload": "x" * (MAX_NORMALIZED_REQUEST_BYTES - 100)}),
+        "negative zero": single_operation({"values": [-0.0] * count}),
+    }
 
 
 def receipt(
@@ -340,41 +360,37 @@ class EventStoreContractMixin:
         self.assertFalse(second_page.has_more)
 
     def test_near_limit_mutation_request_persists_and_recovers(self):
-        payload = "x" * (MAX_NORMALIZED_REQUEST_BYTES - 100)
-        normalized = NormalizedMutationRequest(
-            request_schema_version=1,
-            expected_graph_version=0,
-            operations=(JsonDocument.from_value({"payload": payload}),),
-            evidence=(),
-        )
-        protocol_request = {
-            "protocol_schema_version": 1,
-            "request_id": "near-limit-request",
-            "operation": "propose_mutation",
-            "params": {
-                "run_id": "run-1",
-                "proposal_id": "near-limit-proposal",
-                **normalized.to_value(),
-            },
-        }
-        encode_request(protocol_request)
-        proposal_receipt = ProposalReceipt(
-            metadata("near-limit-receipt"), "near-limit-proposal", normalized
-        )
-        result = self.store.record_proposal(
-            "run-1",
-            "near-limit-proposal",
-            proposal_request_hash(normalized),
-            normalized,
-            proposal_receipt,
-        )
-        self.assertEqual(RecordProposalStatus.CREATED, result.status)
-        serialized = serialize_entry(self.store.read_journal("run-1", limit=1).records[0])
-        self.assertLessEqual(len(serialized.encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
-        self.assertEqual(
-            normalized,
-            self.store.get_proposal("run-1", "near-limit-proposal").normalized_request,
-        )
+        for label, normalized in near_limit_requests().items():
+            with self.subTest(label):
+                proposal_id = f"near-limit-{label.replace(' ', '-')}"
+                self.assertLessEqual(
+                    ecmascript_json_size(normalized.to_value()), MAX_NORMALIZED_REQUEST_BYTES
+                )
+                encode_request({
+                    "protocol_schema_version": 1,
+                    "request_id": "near-limit-request",
+                    "operation": "propose_mutation",
+                    "params": {"run_id": "run-1", "proposal_id": proposal_id, **normalized.to_value()},
+                })
+                proposal_receipt = ProposalReceipt(
+                    metadata(f"{proposal_id}-receipt"), proposal_id, normalized
+                )
+                result = self.store.record_proposal(
+                    "run-1",
+                    proposal_id,
+                    proposal_request_hash(normalized),
+                    normalized,
+                    proposal_receipt,
+                )
+                self.assertEqual(RecordProposalStatus.CREATED, result.status)
+                stored = self.store.get_proposal("run-1", proposal_id)
+                serialized = serialize_entry(
+                    self.store.read_journal(
+                        "run-1", after_journal_position=stored.last_journal_position - 1, limit=1
+                    ).records[0]
+                )
+                self.assertLessEqual(len(serialized.encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
+                self.assertEqual(normalized, stored.normalized_request)
 
     def test_oversized_normalized_request_is_rejected_even_when_receipt_fits(self):
         self.assertEqual(

@@ -386,9 +386,10 @@ Restart recovery of an incomplete receipt applies only to durable providers;
 `MemoryEventStore` cannot claim process-restart recovery.
 
 The initial providers cap run metadata and ordinary serialized journal records
-at 1 MiB. A proposal receipt may use up to 2 MiB: its normalized request is
-limited to 1 MiB, with another 1 MiB reserved for its durable envelope and
-canonical-number expansion. Identifiers stored in the envelope are capped at
+at 1 MiB. A proposal receipt may use up to 3.5 MiB plus 2 bytes: its normalized
+request is limited to 1 MiB in ECMAScript JSON, its durable Python JSON can be at
+most 2.5 times that plus 2 bytes (for example `-0.0` is stored for a counted
+`0`), and another 1 MiB is reserved for the durable envelope. Identifiers stored in the envelope are capped at
 256 UTF-8 bytes. Atomic append batches and journal pages remain capped at 4 MiB;
 pages also default to 100 records and stop before either limit, exposing
 continuation through the cursor. Larger evidence belongs in immutable versioned
