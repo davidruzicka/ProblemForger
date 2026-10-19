@@ -414,6 +414,9 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
     if (record.journal_position <= previousPosition) return fail('audit records must be ordered by journal_position');
     previousPosition = record.journal_position;
     const proposalId = record.proposal_id;
+    if (previous?.outcome === 'COMMIT' && (record.record_type !== 'graph_changed' || proposalId !== previous.proposal_id)) {
+      return fail('a COMMIT decision must be followed by its graph_changed records');
+    }
     if (record.graph_version !== undefined) {
       if (record.graph_version < maxVersion) return fail('audit graph_version cannot decrease');
       if (record.outcome === 'COMMIT' && record.graph_version === maxVersion) return fail('each COMMIT must advance graph_version');
@@ -441,6 +444,7 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
     if (proposalId !== undefined) seenProposals.add(proposalId);
     previous = record;
   }
+  if (previous?.outcome === 'COMMIT' && !result.has_more) return fail('a complete audit page cannot end with a COMMIT decision');
   if (result.records.length === 0 && afterJournalPosition === undefined) return fail('validating an empty audit page requires its request cursor');
   if (result.next_after_journal_position !== previousPosition) return fail('audit cursor must equal the final record or supplied empty-page cursor');
 }

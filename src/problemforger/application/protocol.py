@@ -451,6 +451,10 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         previous_position = position
         proposal_id = record.get("proposal_id")
         record_type = record["record_type"]
+        if previous is not None and previous.get("outcome") == "COMMIT" and (
+            record_type != "graph_changed" or proposal_id != previous["proposal_id"]
+        ):
+            raise ProtocolValidationError("a COMMIT decision must be followed by its graph_changed records")
         if "graph_version" in record:
             if record["graph_version"] < max_version:
                 raise ProtocolValidationError("audit graph_version cannot decrease")
@@ -483,6 +487,8 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         if proposal_id is not None:
             seen_proposals.add(proposal_id)
         previous = record
+    if previous is not None and previous.get("outcome") == "COMMIT" and not result["has_more"]:
+        raise ProtocolValidationError("a complete audit page cannot end with a COMMIT decision")
     if not records and after_journal_position is None:
         raise ProtocolValidationError("validating an empty audit page requires its request cursor")
     if result["next_after_journal_position"] != previous_position:

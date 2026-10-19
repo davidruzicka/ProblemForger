@@ -187,12 +187,14 @@ class ProtocolSchemaTests(unittest.TestCase):
             ("page-start graph_changed before its COMMIT decision", 10, (event, commit_of("p", 2)), False),
             ("second terminal record for one proposal", 0, (receipt, reject, escalate), False),
             ("graph_changed after a non-commit outcome", 0, (receipt, reject, event), False),
-            ("receipt after the proposal's decision", 0, (commit, receipt), False),
+            ("receipt after the proposal's decision", 0, (reject, receipt), False),
             ("record between a COMMIT and its events", 0, (commit, other, event), False),
             ("later commit does not advance graph_version", 0, (commit, event, commit_of("q", 1), event_of("q", 1)), False),
             ("decision below the committed graph_version", 0, (commit, event, {**reject, "proposal_id": "q"}), False),
             ("COMMIT reuses a continued batch's graph_version", 10, (event_of("p", 5), commit_of("q", 5)), False),
             ("COMMIT does not exceed a non-commit decision's graph_version", 10, ({**reject, "proposal_id": "q", "graph_version": 3}, commit_of("p", 3)), False),
+            ("COMMIT ends a complete page without events", 0, (receipt, commit), False),
+            ("COMMIT followed by another record", 0, (commit, other), False),
         ):
             message = deepcopy(cls.responses["get_audit_timeline"])
             message["result"]["records"] = [
@@ -200,6 +202,7 @@ class ProtocolSchemaTests(unittest.TestCase):
                 for position, record in enumerate(sequence, start=cursor + 1)
             ]
             message["result"]["next_after_journal_position"] = cursor + len(sequence)
+            message["result"]["has_more"] = False
             request = deepcopy(cls.requests["get_audit_timeline"])
             request["params"]["after_journal_position"] = cursor
             cls.cases.append({"label": label, "kind": "response", "message": message, "request": request, "valid": valid})

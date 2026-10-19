@@ -202,7 +202,7 @@
             {"journal_position": 2, "record_type": "mutation_decision", "run_id": "run-1", "proposal_id": "proposal-1", "outcome": "COMMIT", "graph_version": 1}
           ],
           "next_after_journal_position": 2,
-          "has_more": false
+          "has_more": true
         }
       }
     },
