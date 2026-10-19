@@ -408,13 +408,18 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
   const seenProposals = new Set<string>();
   const proposalsWithEvents = new Set<string>();
   let maxVersion = 0;
-  // A page read from cursor 0 without position gaps reveals the exact graph version.
-  let knownVersion = afterJournalPosition === 0 ? 0 : undefined;
+  // Without position gaps, the graph version is exact from cursor 0 or from the
+  // first record that reports one; a gap may hide records and resets both.
+  let journalPrefix = afterJournalPosition === 0;
+  let knownVersion = journalPrefix ? 0 : undefined;
   let previous: PublicAuditRecord | undefined;
   for (const record of result.records) {
     if (record.run_id !== result.run_id) return fail('audit record run_id does not match response run_id');
     if (record.journal_position <= previousPosition) return fail('audit records must be ordered by journal_position');
-    if (record.journal_position !== previousPosition + 1) knownVersion = undefined;
+    if (record.journal_position !== previousPosition + 1) {
+      journalPrefix = false;
+      knownVersion = undefined;
+    }
     previousPosition = record.journal_position;
     const proposalId = record.proposal_id;
     if (previous?.outcome === 'COMMIT' && (record.record_type !== 'graph_changed' || proposalId !== previous.proposal_id)) {
@@ -426,14 +431,14 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
       maxVersion = record.graph_version;
       if (knownVersion !== undefined) {
         const expectedVersion = knownVersion + (record.outcome === 'COMMIT' ? 1 : 0);
-        if (record.graph_version !== expectedVersion) return fail('audit graph_version must match the journal prefix');
-        knownVersion = expectedVersion;
+        if (record.graph_version !== expectedVersion) return fail('audit graph_version must match the known graph version');
       }
+      knownVersion = record.graph_version;
     }
     if (record.record_type === 'proposal_receipt' && seenProposals.has(proposalId!)) {
       return fail("proposal_receipt must precede the proposal's other records");
     }
-    if (knownVersion !== undefined && proposalId !== undefined && record.record_type !== 'proposal_receipt' && !seenProposals.has(proposalId)) {
+    if (journalPrefix && proposalId !== undefined && record.record_type !== 'proposal_receipt' && !seenProposals.has(proposalId)) {
       return fail('a journal prefix must contain the proposal_receipt first');
     }
     if (record.record_type === 'mutation_decision' || record.record_type === 'proposal_abandoned') {

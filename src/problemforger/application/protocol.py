@@ -441,8 +441,10 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
     seen_proposals: set[str] = set()
     proposals_with_events: set[str] = set()
     max_version = 0
-    # A page read from cursor 0 without position gaps reveals the exact graph version.
-    known_version = 0 if after_journal_position == 0 else None
+    # Without position gaps, the graph version is exact from cursor 0 or from the
+    # first record that reports one; a gap may hide records and resets both.
+    journal_prefix = after_journal_position == 0
+    known_version = 0 if journal_prefix else None
     previous: dict[str, Any] | None = None
     for record in records:
         if record["run_id"] != result["run_id"]:
@@ -451,6 +453,7 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         if position <= previous_position:
             raise ProtocolValidationError("audit records must be ordered by journal_position")
         if position != previous_position + 1:
+            journal_prefix = False
             known_version = None
         previous_position = position
         proposal_id = record.get("proposal_id")
@@ -468,12 +471,12 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
             if known_version is not None:
                 expected_version = known_version + (record.get("outcome") == "COMMIT")
                 if record["graph_version"] != expected_version:
-                    raise ProtocolValidationError("audit graph_version must match the journal prefix")
-                known_version = expected_version
+                    raise ProtocolValidationError("audit graph_version must match the known graph version")
+            known_version = record["graph_version"]
         if record_type == "proposal_receipt" and proposal_id in seen_proposals:
             raise ProtocolValidationError("proposal_receipt must precede the proposal's other records")
         if (
-            known_version is not None
+            journal_prefix
             and proposal_id is not None
             and record_type != "proposal_receipt"
             and proposal_id not in seen_proposals
