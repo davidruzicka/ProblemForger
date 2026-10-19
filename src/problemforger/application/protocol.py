@@ -472,6 +472,13 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
                 known_version = expected_version
         if record_type == "proposal_receipt" and proposal_id in seen_proposals:
             raise ProtocolValidationError("proposal_receipt must precede the proposal's other records")
+        if (
+            known_version is not None
+            and proposal_id is not None
+            and record_type != "proposal_receipt"
+            and proposal_id not in seen_proposals
+        ):
+            raise ProtocolValidationError("a journal prefix must contain the proposal_receipt first")
         if record_type in {"mutation_decision", "proposal_abandoned"}:
             if proposal_id in terminals:
                 raise ProtocolValidationError("a proposal has at most one terminal record")
@@ -482,6 +489,12 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
             terminal = terminals.get(proposal_id)
             if terminal is not None and terminal.get("outcome") != "COMMIT":
                 raise ProtocolValidationError("graph_changed requires a COMMIT decision")
+            if (
+                previous is None
+                and after_journal_position is not None
+                and position != after_journal_position + 1
+            ):
+                raise ProtocolValidationError("a continued commit batch must start right after the cursor")
             if previous is not None and (
                 previous.get("proposal_id") != proposal_id
                 or previous["record_type"] not in {"mutation_decision", "graph_changed"}

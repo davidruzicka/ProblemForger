@@ -433,6 +433,9 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
     if (record.record_type === 'proposal_receipt' && seenProposals.has(proposalId!)) {
       return fail("proposal_receipt must precede the proposal's other records");
     }
+    if (knownVersion !== undefined && proposalId !== undefined && record.record_type !== 'proposal_receipt' && !seenProposals.has(proposalId)) {
+      return fail('a journal prefix must contain the proposal_receipt first');
+    }
     if (record.record_type === 'mutation_decision' || record.record_type === 'proposal_abandoned') {
       if (terminals.has(proposalId!)) return fail('a proposal has at most one terminal record');
       if (proposalsWithEvents.has(proposalId!)) return fail('graph_changed records must follow their COMMIT decision');
@@ -441,6 +444,9 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
     if (record.record_type === 'graph_changed') {
       const terminal = terminals.get(proposalId!);
       if (terminal !== undefined && terminal.outcome !== 'COMMIT') return fail('graph_changed requires a COMMIT decision');
+      if (previous === undefined && afterJournalPosition !== undefined && record.journal_position !== afterJournalPosition + 1) {
+        return fail('a continued commit batch must start right after the cursor');
+      }
       if (previous !== undefined && (
         previous.proposal_id !== proposalId
         || (previous.record_type !== 'mutation_decision' && previous.record_type !== 'graph_changed')

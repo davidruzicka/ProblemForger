@@ -163,13 +163,16 @@ terminal record (`mutation_decision` or `proposal_abandoned`), and its
 `graph_changed` records follow a `COMMIT` decision directly, sharing its graph
 version, because they project one atomic commit batch. A page with a non-zero
 cursor may start with the remaining events of a batch whose decision is on the
-previous page. A `COMMIT` decision is followed directly by its own
+previous page; such a page starts at the position right after its cursor. A
+`COMMIT` decision is followed directly by its own
 `graph_changed` records; it may end a page only when `has_more` is true.
 Across proposals, graph versions on a page never decrease, and each `COMMIT`
 decision has a higher graph version than every earlier record on the page.
 When a page is read from cursor 0 and its positions have no gaps, the graph
 version is known exactly: it starts at 0, each `COMMIT` raises it by one, and
-every other record with a graph version reports the current version. Fields from other record kinds are
+every other record with a graph version reports the current version. Within
+such a gap-free prefix, each proposal-scoped record follows that proposal's
+`proposal_receipt`. Fields from other record kinds are
 rejected. Normalized operations, evidence content, raw
 outputs, credentials, and internal recovery inputs are never part of public
 proposal or audit results.
