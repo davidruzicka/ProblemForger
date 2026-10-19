@@ -184,13 +184,15 @@ class ProtocolSchemaTests(unittest.TestCase):
             ("commits advance graph_version across proposals", 0, (commit, event, commit_of("q", 2), event_of("q", 2)), True),
             ("events continue a batch from the previous page", 10, (event, other, {"record_type": "non_terminal_audit", "run_id": "run-1"}), True),
             ("graph_changed at the start of the journal", 0, (event,), False),
-            ("page-start graph_changed before its COMMIT decision", 10, (event, commit), False),
+            ("page-start graph_changed before its COMMIT decision", 10, (event, commit_of("p", 2)), False),
             ("second terminal record for one proposal", 0, (receipt, reject, escalate), False),
             ("graph_changed after a non-commit outcome", 0, (receipt, reject, event), False),
             ("receipt after the proposal's decision", 0, (commit, receipt), False),
             ("record between a COMMIT and its events", 0, (commit, other, event), False),
             ("later commit does not advance graph_version", 0, (commit, event, commit_of("q", 1), event_of("q", 1)), False),
             ("decision below the committed graph_version", 0, (commit, event, {**reject, "proposal_id": "q"}), False),
+            ("COMMIT reuses a continued batch's graph_version", 10, (event_of("p", 5), commit_of("q", 5)), False),
+            ("COMMIT does not exceed a non-commit decision's graph_version", 10, ({**reject, "proposal_id": "q", "graph_version": 3}, commit_of("p", 3)), False),
         ):
             message = deepcopy(cls.responses["get_audit_timeline"])
             message["result"]["records"] = [

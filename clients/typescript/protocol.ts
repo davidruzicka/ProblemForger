@@ -407,7 +407,7 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
   const terminals = new Map<string, PublicAuditRecord>();
   const seenProposals = new Set<string>();
   const proposalsWithEvents = new Set<string>();
-  let committedVersion = 0;
+  let maxVersion = 0;
   let previous: PublicAuditRecord | undefined;
   for (const record of result.records) {
     if (record.run_id !== result.run_id) return fail('audit record run_id does not match response run_id');
@@ -415,11 +415,9 @@ function validateAuditResult(result: AuditTimelineResult, afterJournalPosition?:
     previousPosition = record.journal_position;
     const proposalId = record.proposal_id;
     if (record.graph_version !== undefined) {
-      if (record.graph_version < committedVersion) return fail('audit graph_version cannot decrease below a committed version');
-      if (record.outcome === 'COMMIT') {
-        if (record.graph_version === committedVersion) return fail('each COMMIT must advance graph_version');
-        committedVersion = record.graph_version;
-      }
+      if (record.graph_version < maxVersion) return fail('audit graph_version cannot decrease');
+      if (record.outcome === 'COMMIT' && record.graph_version === maxVersion) return fail('each COMMIT must advance graph_version');
+      maxVersion = record.graph_version;
     }
     if (record.record_type === 'proposal_receipt' && seenProposals.has(proposalId!)) {
       return fail("proposal_receipt must precede the proposal's other records");

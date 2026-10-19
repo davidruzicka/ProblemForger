@@ -440,7 +440,7 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
     terminals: dict[str, dict[str, Any]] = {}
     seen_proposals: set[str] = set()
     proposals_with_events: set[str] = set()
-    committed_version = 0
+    max_version = 0
     previous: dict[str, Any] | None = None
     for record in records:
         if record["run_id"] != result["run_id"]:
@@ -452,12 +452,11 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         proposal_id = record.get("proposal_id")
         record_type = record["record_type"]
         if "graph_version" in record:
-            if record["graph_version"] < committed_version:
-                raise ProtocolValidationError("audit graph_version cannot decrease below a committed version")
-            if record.get("outcome") == "COMMIT":
-                if record["graph_version"] == committed_version:
-                    raise ProtocolValidationError("each COMMIT must advance graph_version")
-                committed_version = record["graph_version"]
+            if record["graph_version"] < max_version:
+                raise ProtocolValidationError("audit graph_version cannot decrease")
+            if record.get("outcome") == "COMMIT" and record["graph_version"] == max_version:
+                raise ProtocolValidationError("each COMMIT must advance graph_version")
+            max_version = record["graph_version"]
         if record_type == "proposal_receipt" and proposal_id in seen_proposals:
             raise ProtocolValidationError("proposal_receipt must precede the proposal's other records")
         if record_type in {"mutation_decision", "proposal_abandoned"}:
