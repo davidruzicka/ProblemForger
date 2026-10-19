@@ -441,6 +441,8 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
     seen_proposals: set[str] = set()
     proposals_with_events: set[str] = set()
     max_version = 0
+    # A page read from cursor 0 without position gaps reveals the exact graph version.
+    known_version = 0 if after_journal_position == 0 else None
     previous: dict[str, Any] | None = None
     for record in records:
         if record["run_id"] != result["run_id"]:
@@ -448,6 +450,8 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
         position = record["journal_position"]
         if position <= previous_position:
             raise ProtocolValidationError("audit records must be ordered by journal_position")
+        if position != previous_position + 1:
+            known_version = None
         previous_position = position
         proposal_id = record.get("proposal_id")
         record_type = record["record_type"]
@@ -461,6 +465,11 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
             if record.get("outcome") == "COMMIT" and record["graph_version"] == max_version:
                 raise ProtocolValidationError("each COMMIT must advance graph_version")
             max_version = record["graph_version"]
+            if known_version is not None:
+                expected_version = known_version + (record.get("outcome") == "COMMIT")
+                if record["graph_version"] != expected_version:
+                    raise ProtocolValidationError("audit graph_version must match the journal prefix")
+                known_version = expected_version
         if record_type == "proposal_receipt" and proposal_id in seen_proposals:
             raise ProtocolValidationError("proposal_receipt must precede the proposal's other records")
         if record_type in {"mutation_decision", "proposal_abandoned"}:
@@ -473,8 +482,6 @@ def _validate_audit_result(result: dict[str, Any], after_journal_position: int |
             terminal = terminals.get(proposal_id)
             if terminal is not None and terminal.get("outcome") != "COMMIT":
                 raise ProtocolValidationError("graph_changed requires a COMMIT decision")
-            if previous is None and after_journal_position == 0:
-                raise ProtocolValidationError("graph_changed cannot start the journal")
             if previous is not None and (
                 previous.get("proposal_id") != proposal_id
                 or previous["record_type"] not in {"mutation_decision", "graph_changed"}
