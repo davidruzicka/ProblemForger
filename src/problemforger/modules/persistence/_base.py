@@ -22,9 +22,12 @@ from problemforger.core.journal import (
     RunId,
     VersionConflict,
     deserialize_entry,
+    ecmascript_json_size,
     proposal_request_hash,
     proposal_status,
+    require_identifier,
     serialize_entry,
+    validate_json_safe_integers,
 )
 from problemforger.ports.event_store import (
     AppendResult,
@@ -45,6 +48,14 @@ from problemforger.ports.event_store import (
 DEFAULT_MAX_JOURNAL_PAGE_SIZE = 100
 MAX_RUN_METADATA_BYTES = 1_048_576
 MAX_JOURNAL_RECORD_BYTES = 1_048_576
+MAX_NORMALIZED_REQUEST_BYTES = MAX_JOURNAL_RECORD_BYTES
+# The request limit counts ECMAScript JSON; durable Python JSON spells a number at
+# most 3 bytes longer ("0" -> "-0.0") and each number costs at least 2 counted bytes.
+MAX_DURABLE_NORMALIZED_REQUEST_BYTES = MAX_NORMALIZED_REQUEST_BYTES * 5 // 2 + 2
+MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES = 1_048_576
+MAX_PROPOSAL_RECEIPT_BYTES = (
+    MAX_DURABLE_NORMALIZED_REQUEST_BYTES + MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES
+)
 MAX_APPEND_BATCH_BYTES = 4_194_304
 MAX_JOURNAL_PAGE_BYTES = 4_194_304
 _HASH_PREFIX = "sha256:problemforger-request-v1:"
@@ -81,13 +92,27 @@ class _ProposalParts:
 
 
 def _valid_identifier(value: object) -> bool:
-    if not isinstance(value, str) or not value.strip():
-        return False
     try:
-        value.encode("utf-8")
-    except UnicodeEncodeError:
+        require_identifier(value, "identifier")
+    except ValueError:
         return False
     return True
+
+
+def _max_serialized_record_bytes(record: object) -> int:
+    """Return the storage cap for this serialized journal record."""
+    if isinstance(record, ProposalReceipt):
+        return MAX_PROPOSAL_RECEIPT_BYTES
+    return MAX_JOURNAL_RECORD_BYTES
+
+
+def _normalized_request_within_bounds(request: NormalizedMutationRequest) -> bool:
+    try:
+        value = request.to_value()
+        validate_json_safe_integers(value)
+        return ecmascript_json_size(value) <= MAX_NORMALIZED_REQUEST_BYTES
+    except (OverflowError, RecursionError, TypeError, UnicodeEncodeError, ValueError):
+        return False
 
 
 def _valid_integer(value: object, *, minimum: int) -> bool:
@@ -173,10 +198,10 @@ class EventStoreState:
             metadata_hash = run_metadata.metadata_hash
             existing = self._runs.get(run_id)
             if existing is not None:
-                if existing.metadata_hash == metadata_hash:
+                if existing.metadata.canonical_json == run_metadata.canonical_json:
                     return CreateRunResult(
                         CreateRunStatus.EXISTING,
-                        metadata_hash=metadata_hash,
+                        metadata_hash=existing.metadata_hash,
                         run=self._snapshot(run_id, existing),
                     )
                 return CreateRunResult(
@@ -258,6 +283,11 @@ class EventStoreState:
                     RecordProposalStatus.EXISTING,
                     proposal=self._snapshot_proposal(run_id, run, proposal_id, parts),
                     stored_request_hash=receipt.request_hash,
+                    supplied_request_hash=RequestHash(request_hash),
+                )
+            if not _normalized_request_within_bounds(normalized_request):
+                return RecordProposalResult(
+                    RecordProposalStatus.INVALID_PROPOSAL,
                     supplied_request_hash=RequestHash(request_hash),
                 )
             if not self._records_within_bounds(
@@ -702,7 +732,7 @@ class EventStoreState:
                 )
             except (TypeError, ValueError, UnicodeEncodeError):
                 return False
-            if encoded_size > MAX_JOURNAL_RECORD_BYTES:
+            if encoded_size > _max_serialized_record_bytes(record):
                 return False
             total_bytes += encoded_size
             if total_bytes > MAX_APPEND_BATCH_BYTES:
@@ -739,7 +769,7 @@ class EventStoreState:
     @staticmethod
     def validate_loaded_run(run_id: str, run: _RunState) -> None:
         """Fail closed if durable rows cannot be interpreted as a valid journal."""
-        if run.metadata.metadata_hash != run.metadata_hash:
+        if run.metadata_hash != run.metadata.metadata_hash:
             raise ValueError(f"stored metadata hash mismatch for run {run_id}")
         seen_ids: set[str] = set()
         receipts: dict[str, ProposalReceipt] = {}
@@ -757,6 +787,10 @@ class EventStoreState:
                 raise ValueError(f"duplicate record_id in run {run_id}")
             seen_ids.add(record_id)
             if isinstance(record, ProposalReceipt):
+                if not _normalized_request_within_bounds(record.request):
+                    raise ValueError(
+                        f"stored normalized request violates public JSON limits for run {run_id}"
+                    )
                 if record.proposal_id in receipts:
                     raise ValueError(f"duplicate proposal receipt in run {run_id}")
                 receipts[record.proposal_id] = record

@@ -15,6 +15,7 @@ from problemforger.core.journal import (
     JsonDocument,
     ProposalId,
     RunId,
+    require_identifier,
 )
 
 
@@ -43,15 +44,6 @@ _NON_EMPTY_LABEL_ATTRIBUTE_KEYS = frozenset(
         "diagnostic_code",
     }
 )
-
-
-def _require_identifier(value: object, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{name} must be a non-empty string")
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise ValueError(f"{name} must be valid UTF-8") from error
 
 
 def _redact_sensitive_attributes(value: object, *, key: str | None = None) -> object:
@@ -131,8 +123,8 @@ class TelemetryObservation:
                 "unsupported observation schema version: "
                 f"{self.observation_schema_version}"
             )
-        _require_identifier(self.run_id, "run_id")
-        _require_identifier(self.event_type, "event_type")
+        require_identifier(self.run_id, "run_id")
+        require_identifier(self.event_type, "event_type")
         if not isinstance(self.observed_at, datetime):
             raise TypeError("observed_at must be a datetime")
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
@@ -144,7 +136,7 @@ class TelemetryObservation:
             (self.causation_id, "causation_id"),
         ):
             if value is not None:
-                _require_identifier(value, name)
+                require_identifier(value, name)
         if self.journal_position is not None:
             _require_integer(self.journal_position, "journal_position", minimum=1)
         if not isinstance(self.attributes, JsonDocument):

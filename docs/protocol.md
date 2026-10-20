@@ -27,18 +27,229 @@ Initial operations should cover:
 
 All run-scoped v1 commands and queries carry `run_id` explicitly. There is no ambient/session-selected run context in the domain/application protocol; a transport may maintain connections or sessions, but it must not infer or override the target run. Missing/unknown/mismatched `run_id` is an explicit protocol error.
 
+`run_id` identifies the durable v1 graph/journal execution scope; it is not a harness-session identifier. The v1 protocol defines no product-level `Problem` identity or cross-run operations and makes no one-to-one mapping claim between a product-level Problem and a run.
+
 Run creation is durable and idempotent: `create_run(run_id, run_metadata)`
 registers an empty version-zero run before any proposal is accepted. A repeat
 create returns the existing registration only when the supplied metadata has the
-same canonical serialization and metadata hash; otherwise it returns an explicit
-`RUN_METADATA_CONFLICT` without changing the journal. Reopen/restart preserves
-that registration. For an existing run, reopening preserves the persisted
-journal and current graph version. Version zero and an empty journal apply only
-to a newly created run; reopening never resets a non-empty journal or graph
-version. No operation implicitly creates a run from an arbitrary ID; unknown
-runs return `NOT_FOUND`.
+same v2 canonical serialization; otherwise it returns an explicit
+`RUN_METADATA_CONFLICT` without changing the journal. Reopen/restart preserves the registration, journal, and current
+graph version; reopening preserves the persisted journal and current graph
+version. Version zero and an empty journal apply only to a newly created run;
+reopening never resets a non-empty journal or graph version. No operation
+implicitly creates a run from an arbitrary ID; unknown runs return `NOT_FOUND`.
 
-The exact wire schema is finalized in P1.
+P1.7 defines the v1 application message shapes below. The service carries one
+complete UTF-8 JSON message per JSONL frame under ADR 0010; the application
+schema does not depend on that framing.
+
+### Version 1 request and response schema
+
+Every request is a closed JSON object with these fields:
+
+```json
+{
+  "protocol_schema_version": 1,
+  "request_id": "request-123",
+  "operation": "get_run",
+  "params": {"run_id": "run-123"}
+}
+```
+
+`request_id` and identifiers are non-empty UTF-8 strings capped at 256 bytes.
+`operation` is one of
+`create_run`, `get_run`, `get_graph`, `propose_mutation`, `get_proposal`, or
+`get_audit_timeline`. Unknown envelope or operation fields are rejected in v1.
+Every operation, including `create_run`, carries an explicit `run_id`.
+
+| Operation | Required `params` | Optional `params` |
+| --- | --- | --- |
+| `create_run` | `run_id`, `run_metadata` | — |
+| `get_run` | `run_id` | — |
+| `get_graph` | `run_id`, `limit` | `selection`, `after_cursor` |
+| `propose_mutation` | `run_id`, `proposal_id`, `request_schema_version`, `expected_graph_version`, `operations`, `evidence` | — |
+| `get_proposal` | `run_id`, `proposal_id` | — |
+| `get_audit_timeline` | `run_id`, `limit` | `after_journal_position` |
+
+`run_metadata` is `{ "metadata_schema_version": 1, "data": <JSON object> }`.
+Mutation `operations` and `evidence` are ordered arrays of JSON objects and
+`request_schema_version` is 1. The service computes the canonical request hash
+after normalization; clients send the proposal ID and request, not a
+client-computed hash. The hash binds the expected graph version, operations,
+and immutable evidence identities described in
+[PROPOSAL-RECOVERY](#spec-protocol-proposal-recovery).
+
+`metadata_hash` binds the complete `run_metadata` object with the
+`sha256:problemforger-run-metadata-v2:` prefix. `run-metadata-json-v2` sorts
+object keys by Unicode code point, uses compact JSON separators, emits
+non-ASCII scalar values as UTF-8, and normalizes safe integer-valued numbers
+before serialization. Other finite numbers use the shortest round-trip decimal
+spelling with Python JSON exponent formatting (for example, `0.00001` is
+serialized as `1e-05`). The SHA-256 input is the v2 domain separator followed
+by this canonical JSON. The contract records the scheme under
+`$defs.MetadataHash`, and both codecs validate it on successful `create_run`
+and `get_run` responses. No other metadata hash version is accepted: a durable
+store whose run rows carry another hash fails closed when opened.
+
+All protocol integers are non-negative JSON safe integers (at most
+`2^53 - 1`), except `limit`, which is a positive safe integer from 1 through
+100. Graph results contain explicit `nodes` and `edges` arrays, a
+`graph_schema_version`, the current `graph_version`, and bounded continuation
+metadata. The `get_graph` limit applies to the combined number of nodes and
+edges; the `get_audit_timeline` limit applies to returned records. Neither
+response may exceed its originating request's limit, and both remain capped
+at 100 records. `selection` is a JSON object whose meaning is defined by the
+graph schema; this P1 contract does not finalize the P2 node/edge ontology.
+Integer-valued numbers inside JSON objects are also restricted to the safe
+integer range so JavaScript cannot round them during parsing. Every JSON string
+and object key must contain valid Unicode scalar values encodable as UTF-8;
+lone UTF-16 surrogates are rejected. Integer fields accept any JSON number
+whose parsed value is a safe integer, including equivalent spellings such as
+`1.0` and `1e0`; both codecs expose the parsed integral value as an integer.
+Audit-timeline records are returned in ascending `journal_position` order and
+use an exclusive cursor. For a non-empty page,
+`next_after_journal_position` equals the final record's position; for an empty
+page, it remains equal to the supplied cursor, defaulting to 0, and
+`has_more` is false. Clients validate empty pages against the originating
+request so a non-zero cursor is preserved.
+
+Every successful response is a closed object with
+`protocol_schema_version`, the matching `request_id`, the matching `operation`,
+and an operation-specific `result`. Run results contain `run_id`,
+`run_metadata`, `metadata_hash`, `graph_version`, `last_journal_position`, and
+`created`. Graph results contain `run_id`, `graph_schema_version`,
+`graph_version`, `nodes`, `edges`, `next_cursor`, and `has_more`. Proposal
+results contain `run_id`, `proposal_id`, `status`, service-computed
+`request_hash`, nullable `reason_code`, nullable `resulting_graph_version`,
+and `journal_position`. Proposal `status` is `PENDING`, `ABANDONED`, `COMMIT`,
+`REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; `PENDING` is not an outcome,
+`ABANDONED` is operational recovery status, and `RETRY` ends the current
+proposal attempt. A semantic retry uses a new proposal ID.
+
+When the originating request is available, clients pass it to the response
+codec. Python and TypeScript validate matching `request_id` for success and
+error responses; successful responses must also match the request's
+`operation` and `run_id`, proposal responses must match `proposal_id`, and graph
+and audit pages must not contain more records than the requested `limit`.
+With a `create_run` request, successful response metadata must be canonically
+equal to the requested metadata; differing metadata is a
+`RUN_METADATA_CONFLICT`, not a successful response. A response marked
+`created: true` must report both `graph_version` and
+`last_journal_position` as zero. Such a response is valid only for `create_run`,
+and a `get_run` response always has `created: false`. Every run result must
+also satisfy `graph_version <= last_journal_position`, because each
+graph-version advance requires at least one durable journal record.
+The same bound applies to every non-null proposal or audit graph version and
+its associated `journal_position`.
+Every `COMMIT` proposal result has a positive `resulting_graph_version`, even
+when a `get_proposal` response is validated without its originating mutation.
+For a `propose_mutation` request, a committed result advances
+`expected_graph_version` exactly once; `REJECT`, `RETRY`, and `ESCALATE`
+preserve it, while `CONFLICT` reports a different graph version. A committed
+result may still include a nullable `reason_code`.
+
+Audit results contain `run_id`, a bounded `records` array,
+`next_after_journal_position`, and `has_more`. Each public record is a
+discriminated union on `record_type`: `proposal_receipt` requires a proposal ID
+and `PENDING` lifecycle state; `non_terminal_audit` may include a proposal ID;
+`mutation_decision` requires a proposal ID, governance outcome, and graph
+version, plus a reason code for non-`COMMIT` outcomes; `proposal_abandoned`
+requires a proposal ID, `ABANDONED` lifecycle state, and reason code;
+`graph_changed` requires a proposal ID and graph version. A `COMMIT` decision
+and every `graph_changed` record carry a positive graph version. Within one
+page, records of one proposal must be a sequence the durable journal can
+produce: its `proposal_receipt` precedes its other records, it has at most one
+terminal record (`mutation_decision` or `proposal_abandoned`), and its
+`graph_changed` records follow a `COMMIT` decision directly, at consecutive
+journal positions and sharing its graph version, because they project one atomic commit batch. A page with a non-zero
+cursor may start with the remaining events of a batch whose decision is on the
+previous page; such a page starts at the position right after its cursor. A
+`COMMIT` decision is followed directly by its own
+`graph_changed` records; it may end a page only when `has_more` is true.
+Across proposals, graph versions on a page never decrease, and each `COMMIT`
+decision has a higher graph version than every earlier record on the page.
+Between position gaps the graph version is known exactly once it is
+established, either by cursor 0 (version 0) or by the first record that reports
+a graph version: afterwards each `COMMIT` raises it by one and every other
+record with a graph version reports the current version. A position gap may
+hide records, so it makes the version unknown again. When a page
+is read from cursor 0 and has no gaps, each proposal-scoped record follows that
+proposal's `proposal_receipt`. Fields from other record kinds are
+rejected. Normalized operations, evidence content, raw
+outputs, credentials, and internal recovery inputs are never part of public
+proposal or audit results.
+
+Protocol errors use `{ "protocol_schema_version": 1, "request_id": "...",
+"error": { "code": "...", "message": "..." } }`. Error codes include
+`PROTOCOL_ERROR`, `UNSUPPORTED_PROTOCOL_VERSION`, `UNAUTHORIZED`, `NOT_FOUND`,
+`RUN_METADATA_CONFLICT`, `IDEMPOTENCY_CONFLICT`, `INVALID_LIMIT`, and
+`PAYLOAD_TOO_LARGE`. The process-startup `STORE_IN_USE` error has a null
+`request_id` and is not a proposal/governance result. Transport failures produce
+no protocol response. `CONFLICT` remains a durable governance status, distinct
+from `REJECT` and from transport failure.
+
+Each encoded request and response is capped at 4 MiB; `run_metadata` and the
+normalized mutation request are each capped at 1 MiB. The metadata limit uses
+the `run-metadata-json-v2` durable canonical form, including safe-integer
+normalization and Python-compatible float spelling. The normalized mutation
+limit uses compact UTF-8 JSON with ECMAScript number formatting. Graph and
+audit pages are capped at 100 records and 4 MiB. A client must split or
+reference larger evidence rather than exceed these limits. Python and
+TypeScript v1 codecs share the same fixture set and reject malformed shapes,
+duplicate JSON object keys, unsupported versions, non-finite values, and unsafe
+integers. The metadata and normalized-mutation subdocument limits count the
+respective canonical forms above, so both codecs apply the same
+durable/protocol size boundaries.
+
+### Declarative contract and code invariants
+
+All protocol validation is deterministic. The representation separates fixed
+declarations from comparisons between actual values or durable records.
+[The v1 contract](../contracts/protocol-v1.json) defines the fixed declarations
+once; both codecs consume generated copies of that data.
+
+| Rule | Definition |
+| --- | --- |
+| Required/optional fields, closed objects, JSON types, versions, integer bounds, string/hash formats, and payload/page limits | Contract `$defs` and fixed limit annotations |
+| Operation parameters and results | `x-operations` |
+| Proposal states, nullability, required reasons, graph-effect categories, and state-specific version bounds | `x-proposal-states` |
+| Permitted proposal lifecycle advances | `x-proposal-transitions` |
+| Error codes and allowed null/non-null request IDs | `x-errors` |
+| Request/response IDs, operation, run/proposal identity, canonical metadata equality, and metadata-hash binding | Code invariants |
+| Graph version versus journal position; expected versus resulting graph version | Code invariants, with field pairs/effect categories supplied by data |
+| Combined graph-page size, request-relative page limits, audit ordering, run identity, and continuation cursors | Code invariants |
+| Valid JSON/UTF-8, duplicate-key rejection, safe numbers, canonical byte counting, and frame limits | Shared codec primitives enforcing wire invariants |
+| Durable receipts, one terminal result, atomic commits, replay identity, and recovery | Existing domain/EventStore invariants under ADR 0006 |
+
+`ABSENT` is a lifecycle boundary, not a wire status. A new receipt advances
+`ABSENT` to `PENDING`; a pending receipt can advance to any declared terminal
+state. Terminal states have no outgoing advances. Lookup and same-identity
+transport replay preserve the current state and journal; they are not new
+transitions. Governance `RETRY` remains terminal for that proposal ID.
+Provider conformance tests execute every source/target pair exposed by receipt
+and finalization operations against both memory and SQLite.
+
+The contract uses a bounded set of schema keywords: local `$ref`, `type`,
+`properties`, `required`, `additionalProperties`, `items`, `maxItems`,
+`minimum`, `maximum`, `pattern`, `const`, `enum`, `allOf`, and `if`/`then`.
+The generator expands finite operation, state, and error tables into enums and
+conditional shapes. Limit/error annotations supply fixed values; the
+`x-version-position` annotation selects the fields for the shared comparison
+invariant. There is no expression evaluator or third-party schema dependency.
+Unsupported schema keywords and missing local references fail generation.
+
+`Identifier.pattern` fixes the blank-character set independently of Python
+`strip()` and JavaScript `trim()`: Unicode White_Space plus U+001C–U+001F and
+U+FEFF. An identifier must contain a character outside that set; valid Unicode
+and UTF-8 are still required throughout every JSON document.
+
+After editing the contract, run
+`python3 -m scripts.generate_protocol_contract`. CI checks
+`python3 -m scripts.generate_protocol_contract --check` before testing, so
+generated Python/TypeScript copies cannot drift. Static API type annotations
+describe callers' values; they do not replace runtime validation. Conformance
+tests compare the same finite state/field cases in both codecs and check Python
+type declarations and domain status enums against the contract.
 
 ### Observation plane
 
