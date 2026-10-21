@@ -67,8 +67,7 @@ scope.
 ## Reproduction
 
 Python 3.12+ is required. The no-dependency TypeScript client uses Node.js
-22.6+ type stripping; the repository's normal Node checks retain their existing
-Node 18+ requirement.
+22.6+ type stripping, the same minimum as the repository's Node checks.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_transport_spike.py' -v

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from hashlib import sha256
 from typing import Protocol, TypeAlias
 
 from problemforger.core.journal import (
@@ -22,10 +23,16 @@ from problemforger.core.journal import (
     RequestHash,
     RunId,
     VersionConflict,
+    canonical_json_with_safe_integer_normalization,
+    validate_json_safe_integers,
 )
 
 
 AuditRecord: TypeAlias = NonTerminalAuditRecord | MutationDecision | ProposalAbandoned
+
+
+_RUN_METADATA_HASH_PREFIX = "sha256:problemforger-run-metadata-v2:"
+_RUN_METADATA_HASH_DOMAIN = b"problemforger.run-metadata.v2\0"
 
 
 class StoreDurability(str, Enum):
@@ -57,6 +64,7 @@ class RunMetadata:
 
     data: JsonDocument
     metadata_schema_version: int = 1
+    canonical_json: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if (
@@ -67,6 +75,13 @@ class RunMetadata:
             raise ValueError("unsupported run metadata schema version")
         if not isinstance(self.data, JsonDocument) or not isinstance(self.data.value, dict):
             raise TypeError("run metadata must be a JSON object")
+        validate_json_safe_integers(self.data.value)
+        # Cached because store paths compare and size megabyte-scale metadata repeatedly.
+        object.__setattr__(
+            self,
+            "canonical_json",
+            canonical_json_with_safe_integer_normalization(self.to_value()),
+        )
 
     @classmethod
     def from_value(cls, value: object) -> RunMetadata:
@@ -79,17 +94,11 @@ class RunMetadata:
         }
 
     @property
-    def canonical_json(self) -> str:
-        return JsonDocument.from_value(self.to_value()).canonical_json
-
-    @property
     def metadata_hash(self) -> str:
-        from hashlib import sha256
-
         digest = sha256(
-            b"problemforger.run-metadata.v1\0" + self.canonical_json.encode("utf-8")
+            _RUN_METADATA_HASH_DOMAIN + self.canonical_json.encode("utf-8")
         ).hexdigest()
-        return f"sha256:problemforger-run-metadata-v1:{digest}"
+        return f"{_RUN_METADATA_HASH_PREFIX}{digest}"
 
 
 @dataclass(frozen=True, slots=True)

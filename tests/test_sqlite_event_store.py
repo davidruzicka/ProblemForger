@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import gc
+import hashlib
 import json
 import multiprocessing
 import os
@@ -14,13 +15,15 @@ import unittest
 from unittest.mock import patch
 import weakref
 
-from event_store_contract import audit_record, decision, graph_event, metadata, receipt, request
+from event_store_contract import audit_record, decision, graph_event, metadata, near_limit_requests, receipt, request
+from problemforger.application.protocol import MAX_NORMALIZED_REQUEST_BYTES, encode_request
 from problemforger.core.journal import (
     CRunRecoveryContext,
     GovernanceOutcome,
     JournalEntry,
     JsonDocument,
     NonTerminalAuditRecord,
+    NormalizedMutationRequest,
     ProposalAbandoned,
     ProposalReceipt,
     ProposalStatus,
@@ -43,7 +46,10 @@ from problemforger.modules.persistence import (
     StoreInUseError,
     UnsupportedStoreError,
 )
-from problemforger.modules.persistence._base import MAX_JOURNAL_RECORD_BYTES
+from problemforger.modules.persistence._base import (
+    MAX_JOURNAL_RECORD_BYTES,
+    MAX_PROPOSAL_RECEIPT_BYTES,
+)
 from problemforger.ports.event_store import (
     AppendResult,
     CreateRunStatus,
@@ -232,6 +238,40 @@ class SqliteEventStoreTests(unittest.TestCase):
         self.assertEqual(ProposalStatus.PENDING, reopened.get_proposal("run-1", "pending").status)
         pending_position = reopened.get_proposal("run-1", "pending").last_journal_position
         self.assertEqual(len(before), pending_position)
+        reopened.close()
+
+    def test_reopen_recovers_near_limit_proposal_receipt(self):
+        store = self.open_store()
+        self._create_run(store)
+        requests = near_limit_requests()
+        for label, normalized in requests.items():
+            proposal_id = f"near-limit-{label.replace(' ', '-')}"
+            encode_request({
+                "protocol_schema_version": 1,
+                "request_id": "near-limit-request",
+                "operation": "propose_mutation",
+                "params": {"run_id": "run-1", "proposal_id": proposal_id, **normalized.to_value()},
+            })
+            proposal_receipt = ProposalReceipt(
+                metadata(f"{proposal_id}-receipt"), proposal_id, normalized
+            )
+            result = store.record_proposal(
+                "run-1",
+                proposal_id,
+                proposal_request_hash(normalized),
+                normalized,
+                proposal_receipt,
+            )
+            self.assertEqual(RecordProposalStatus.CREATED, result.status, label)
+        for entry in store.read_journal("run-1", limit=10).records:
+            self.assertLessEqual(len(serialize_entry(entry).encode("utf-8")), MAX_PROPOSAL_RECEIPT_BYTES)
+        store.close()
+
+        reopened = self.open_store()
+        for label, normalized in requests.items():
+            recovered = reopened.get_proposal("run-1", f"near-limit-{label.replace(' ', '-')}")
+            self.assertEqual(ProposalStatus.PENDING, recovered.status)
+            self.assertEqual(normalized, recovered.normalized_request)
         reopened.close()
 
     def test_reopen_preserves_independent_nonterminal_audit_records(self):
@@ -1255,10 +1295,14 @@ class SqliteEventStoreTests(unittest.TestCase):
         corruptions = (
             "metadata_shape",
             "metadata_hash",
+            "unsafe_run_metadata",
             "blank_run_id",
             "run_head",
             "unknown_run",
             "oversized_record",
+            "oversized_normalized_request",
+            "unsafe_request_integer",
+            "unsafe_request_float",
             "orphan_scoped_audit",
         )
         for corruption in corruptions:
@@ -1273,14 +1317,84 @@ class SqliteEventStoreTests(unittest.TestCase):
                     connection.execute("UPDATE runs SET metadata_json = '[]' WHERE run_id = 'run-1'")
                 elif corruption == "metadata_hash":
                     connection.execute("UPDATE runs SET metadata_hash = 'sha256:wrong' WHERE run_id = 'run-1'")
+                elif corruption == "unsafe_run_metadata":
+                    unsafe_metadata_json = JsonDocument.from_value(
+                        {"metadata_schema_version": 1, "data": {"nested": [2**53]}}
+                    ).canonical_json
+                    unsafe_metadata_hash = (
+                        "sha256:problemforger-run-metadata-v2:"
+                        + hashlib.sha256(
+                            b"problemforger.run-metadata.v2\0"
+                            + unsafe_metadata_json.encode("utf-8")
+                        ).hexdigest()
+                    )
+                    connection.execute(
+                        "UPDATE runs SET metadata_json = ?, metadata_hash = ? WHERE run_id = 'run-1'",
+                        (unsafe_metadata_json, unsafe_metadata_hash),
+                    )
                 elif corruption == "blank_run_id":
                     connection.execute("UPDATE runs SET run_id = '' WHERE run_id = 'run-1'")
                 elif corruption == "run_head":
                     connection.execute("UPDATE runs SET last_journal_position = 2 WHERE run_id = 'run-1'")
                 elif corruption == "oversized_record":
+                    oversized_record = NonTerminalAuditRecord(
+                        metadata=metadata("oversized-record"),
+                        audit_type="corrupt.oversized",
+                        payload=JsonDocument.from_value(
+                            {"payload": "x" * MAX_JOURNAL_RECORD_BYTES}
+                        ),
+                    )
                     connection.execute(
                         "INSERT INTO journal(run_id, journal_position, record_id, record_json) VALUES (?, ?, ?, ?)",
-                        ("run-1", 1, "oversized-record", " " * (MAX_JOURNAL_RECORD_BYTES + 1)),
+                        (
+                            "run-1",
+                            1,
+                            "oversized-record",
+                            serialize_entry(JournalEntry(1, oversized_record)),
+                        ),
+                    )
+                    connection.execute(
+                        "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"
+                    )
+                elif corruption in {
+                    "oversized_normalized_request", "unsafe_request_integer", "unsafe_request_float"
+                }:
+                    invalid_payload = (
+                        "x" * (MAX_NORMALIZED_REQUEST_BYTES + 128)
+                        if corruption == "oversized_normalized_request"
+                        else 2**53 if corruption == "unsafe_request_integer" else -float(2**53)
+                    )
+                    normalized = NormalizedMutationRequest(
+                        request_schema_version=1,
+                        expected_graph_version=0,
+                        operations=(
+                            JsonDocument.from_value(
+                                {"payload": {"nested": [invalid_payload]}}
+                            ),
+                        ),
+                        evidence=(),
+                    )
+                    oversized_receipt = ProposalReceipt(
+                        metadata("oversized-normalized-request-receipt"),
+                        "oversized-normalized-request",
+                        normalized,
+                    )
+                    serialized_receipt = serialize_entry(
+                        JournalEntry(1, oversized_receipt)
+                    )
+                    self.assertLess(
+                        len(serialized_receipt.encode("utf-8")),
+                        MAX_PROPOSAL_RECEIPT_BYTES,
+                    )
+                    connection.execute(
+                        "INSERT INTO journal(run_id, journal_position, record_id, record_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "run-1",
+                            1,
+                            "oversized-normalized-request-receipt",
+                            serialized_receipt,
+                        ),
                     )
                     connection.execute(
                         "UPDATE runs SET last_journal_position = 1 WHERE run_id = 'run-1'"
@@ -1314,6 +1428,27 @@ class SqliteEventStoreTests(unittest.TestCase):
                 connection.close()
                 with self.assertRaises(ValueError):
                     SqliteEventStore(path)
+
+    def test_v1_metadata_hash_row_fails_closed_on_open(self):
+        store = self.open_store()
+        metadata = RunMetadata.from_value({"integral": 1.0})
+        self.assertEqual(CreateRunStatus.CREATED, store.create_run("run-1", metadata).status)
+        store.close()
+
+        unsupported_json = JsonDocument.from_value(metadata.to_value()).canonical_json
+        digest = hashlib.sha256(
+            b"problemforger.run-metadata.v1\0" + unsupported_json.encode("utf-8")
+        ).hexdigest()
+        connection = sqlite3.connect(self.path)
+        connection.execute(
+            "UPDATE runs SET metadata_json = ?, metadata_hash = ? WHERE run_id = ?",
+            (unsupported_json, f"sha256:problemforger-run-metadata-v1:{digest}", "run-1"),
+        )
+        connection.commit()
+        connection.close()
+
+        with self.assertRaisesRegex(ValueError, "stored metadata hash mismatch"):
+            self.open_store()
 
 
 if __name__ == "__main__":

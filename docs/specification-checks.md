@@ -31,10 +31,11 @@ document is the only normative definition for each requirement.
 
 ## Run checks
 
-From the repository root, use Python 3.12+ in a virtual environment and Node.js 18+. The package, architecture checker, and tests use only the standard library; coverage.py is test-only. No credentials are needed:
+From the repository root, use Python 3.12+ in a virtual environment and Node.js 22.6+ (the TypeScript checks use built-in type stripping). The package, architecture checker, and tests use only the standard library; coverage.py is test-only. No credentials are needed:
 
 ```sh
 python3 -m pip install -e . -r tests/requirements.txt
+python3 -m scripts.generate_protocol_contract --check
 python3 -m scripts.check_architecture
 python3 -m coverage run --branch -m unittest discover -s tests -p 'test_*.py' -v
 python3 -m coverage report --fail-under=90

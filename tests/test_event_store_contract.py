@@ -10,7 +10,7 @@ from problemforger.config.event_store import (
     SqliteEventStoreConfig,
 )
 from problemforger.config.registry import default_registry
-from problemforger.core.journal import JsonDocument
+from problemforger.core.journal import MAX_SAFE_JSON_INTEGER, JsonDocument
 from event_store_contract import EventStoreContractMixin
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
 from problemforger.ports.event_store import CreateRunStatus, RunMetadata, StoreErrorCode
@@ -50,17 +50,57 @@ class EventStoreConfigurationTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             RunMetadata(JsonDocument.from_value([]))
 
-    def test_run_metadata_hash_has_a_stable_canonical_v1_vector(self):
+    def test_run_metadata_rejects_unsafe_integer_values_recursively(self):
+        for unsafe_number in (
+            2**53,
+            -(2**53),
+            float(2**53),
+            -float(2**53),
+        ):
+            with self.subTest(unsafe_number=unsafe_number):
+                with self.assertRaisesRegex(ValueError, "JSON integers must be safe integers"):
+                    RunMetadata.from_value({"nested": [{"value": unsafe_number}]})
+
+        metadata = RunMetadata.from_value(
+            {"nested": [MAX_SAFE_JSON_INTEGER, -MAX_SAFE_JSON_INTEGER]}
+        )
+        self.assertEqual(
+            {"nested": [MAX_SAFE_JSON_INTEGER, -MAX_SAFE_JSON_INTEGER]},
+            metadata.data.value,
+        )
+
+    def test_run_metadata_hash_has_a_stable_canonical_v2_vector(self):
         first = RunMetadata.from_value({"b": 2, "a": {"y": 2, "x": 1}})
         reordered = RunMetadata.from_value({"a": {"x": 1, "y": 2}, "b": 2})
 
         self.assertEqual(first.canonical_json, reordered.canonical_json)
         self.assertEqual(first.metadata_hash, reordered.metadata_hash)
         self.assertEqual(
-            "sha256:problemforger-run-metadata-v1:"
-            "7bdd1901f74e1d4e354190949121b3a73080934c7611bbe26de029cc76bfdb16",
+            "sha256:problemforger-run-metadata-v2:"
+            "af40c8cc6cd16d949f5bd85839cfad7078d9a952fd2f1990135f8279007ae6e2",
             first.metadata_hash,
         )
+
+    def test_run_metadata_hash_normalizes_safe_integral_floats(self):
+        with_float = RunMetadata.from_value(
+            {"first": {"enabled": True}, "second": 2, "integral_float": 1.0}
+        )
+        with_integer = RunMetadata.from_value(
+            {"first": {"enabled": True}, "second": 2, "integral_float": 1}
+        )
+
+        self.assertEqual(with_integer.canonical_json, with_float.canonical_json)
+        self.assertEqual(with_integer.metadata_hash, with_float.metadata_hash)
+        self.assertEqual(
+            "sha256:problemforger-run-metadata-v2:"
+            "99abf52f8ca513df30af599f5c82178bc909c65ef992f27675b5ed1769eed3ec",
+            with_float.metadata_hash,
+        )
+        self.assertEqual(
+            '{"data":{"fractional":1e-05,"integral":1},"metadata_schema_version":1}',
+            RunMetadata.from_value({"fractional": 0.00001, "integral": 1.0}).canonical_json,
+        )
+        self.assertEqual('{"value":1.0}', JsonDocument.from_value({"value": 1.0}).canonical_json)
 
     def test_provider_configurations_reject_invalid_limits_paths_and_timeouts(self):
         for limit in (0, True, 1.5, 101):

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
+import math
 from typing import Any, NewType, TypeAlias
 
 
@@ -27,8 +28,15 @@ CURRENT_RECORD_SCHEMA_VERSION = 1
 CURRENT_PROTOCOL_SCHEMA_VERSION = 1
 CURRENT_REQUEST_SCHEMA_VERSION = 1
 CURRENT_EVENT_SCHEMA_VERSION = 1
+MAX_SAFE_JSON_INTEGER = (1 << 53) - 1
+MAX_IDENTIFIER_UTF8_BYTES = 256
 REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
 _REQUEST_HASH_DOMAIN = b"problemforger.normalized-mutation-request.v1\0"
+
+
+def _has_identifier_content(value: str) -> bool:
+    """Match the protocol's blank set: Python whitespace plus U+FEFF."""
+    return any(not character.isspace() and character != "\ufeff" for character in value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,13 +53,16 @@ class VersionConflict:
             raise ValueError("VersionConflict requires different expected and actual versions")
 
 
-def _require_identifier(value: str, name: str) -> None:
-    if not isinstance(value, str) or not value.strip():
+def require_identifier(value: object, name: str) -> None:
+    """Validate the identifier rule shared by journal, store, and telemetry."""
+    if not isinstance(value, str) or not _has_identifier_content(value):
         raise ValueError(f"{name} must be a non-empty string")
     try:
-        value.encode("utf-8")
+        encoded = value.encode("utf-8")
     except UnicodeEncodeError as error:
         raise ValueError(f"{name} must be valid UTF-8") from error
+    if len(encoded) > MAX_IDENTIFIER_UTF8_BYTES:
+        raise ValueError(f"{name} exceeds {MAX_IDENTIFIER_UTF8_BYTES} UTF-8 bytes")
 
 
 def _require_integer(value: int, name: str, *, minimum: int) -> None:
@@ -94,6 +105,108 @@ def _canonical_json(value: Any) -> str:
     except (TypeError, ValueError, UnicodeEncodeError) as error:
         raise ValueError("value cannot be represented as canonical UTF-8 JSON") from error
     return serialized
+
+
+def validate_json_safe_integers(value: Any) -> None:
+    """Reject integer-valued JSON numbers outside the public safe range."""
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if (
+            type(item) is int
+            or (type(item) is float and item.is_integer())
+        ) and abs(item) > MAX_SAFE_JSON_INTEGER:
+            raise ValueError("JSON integers must be safe integers")
+        if type(item) is list:
+            pending.extend(item)
+        elif type(item) is dict:
+            pending.extend(item.values())
+
+
+def ecmascript_json_number(value: float) -> str:
+    """Return the compact ECMAScript JSON spelling for a finite float."""
+    if not math.isfinite(value):
+        raise ValueError("JSON numbers must be finite")
+    if value == 0:
+        return "0"
+
+    number = repr(abs(value)).lower()
+    if "e" in number:
+        coefficient, exponent_text = number.split("e", 1)
+        exponent = int(exponent_text)
+    else:
+        coefficient = number
+        exponent = 0
+    integer_part, _, fractional_part = coefficient.partition(".")
+    digits = integer_part + fractional_part
+    leading_zeroes = len(digits) - len(digits.lstrip("0"))
+    digits = digits[leading_zeroes:].rstrip("0")
+    decimal_position = len(integer_part) + exponent - leading_zeroes
+
+    if decimal_position > 0 and decimal_position <= 21:
+        if decimal_position >= len(digits):
+            rendered = digits + ("0" * (decimal_position - len(digits)))
+        else:
+            rendered = f"{digits[:decimal_position]}.{digits[decimal_position:]}"
+    elif decimal_position <= 0 and decimal_position > -6:
+        rendered = f"0.{('0' * -decimal_position)}{digits}"
+    else:
+        scientific_exponent = decimal_position - 1
+        mantissa = digits[0] + (f".{digits[1:]}" if len(digits) > 1 else "")
+        exponent_sign = "+" if scientific_exponent >= 0 else ""
+        rendered = f"{mantissa}e{exponent_sign}{scientific_exponent}"
+
+    return f"-{rendered}" if value < 0 else rendered
+
+
+def ecmascript_json_size(value: Any) -> int:
+    """Count compact UTF-8 JSON bytes using ECMAScript number formatting."""
+    if value is None:
+        return 4
+    if type(value) is bool:
+        return 4 if value else 5
+    if isinstance(value, str):
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    if type(value) is int:
+        return len(str(value))
+    if type(value) is float:
+        return len(ecmascript_json_number(value))
+    if type(value) is list:
+        return 2 + max(len(value) - 1, 0) + sum(ecmascript_json_size(item) for item in value)
+    if type(value) is dict:
+        return (
+            2
+            + max(len(value) - 1, 0)
+            + sum(
+                ecmascript_json_size(key) + 1 + ecmascript_json_size(item)
+                for key, item in value.items()
+            )
+        )
+    raise TypeError("value is not JSON serializable")
+
+
+def _normalize_safe_integral_floats(value: Any, maximum: int) -> Any:
+    if type(value) is float:
+        if value.is_integer() and abs(value) <= maximum:
+            return int(value)
+        return value
+    if type(value) is list:
+        return [_normalize_safe_integral_floats(item, maximum) for item in value]
+    if type(value) is dict:
+        return {
+            key: _normalize_safe_integral_floats(item, maximum)
+            for key, item in value.items()
+        }
+    return value
+
+
+def canonical_json_with_safe_integer_normalization(
+    value: Any, *, max_safe_integer: int = MAX_SAFE_JSON_INTEGER
+) -> str:
+    """Serialize JSON after normalizing safe integral floats to integers."""
+    if type(max_safe_integer) is not int or max_safe_integer < 0:
+        raise ValueError("max_safe_integer must be a non-negative integer")
+    return _canonical_json(_normalize_safe_integral_floats(value, max_safe_integer))
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -171,8 +284,8 @@ class RecordMetadata:
     causation_id: CausationId | None = None
 
     def __post_init__(self) -> None:
-        _require_identifier(self.run_id, "run_id")
-        _require_identifier(self.record_id, "record_id")
+        require_identifier(self.run_id, "run_id")
+        require_identifier(self.record_id, "record_id")
         _require_integer(
             self.record_schema_version,
             "record_schema_version",
@@ -197,9 +310,9 @@ class RecordMetadata:
             raise ValueError("recorded_at must include a timezone")
         object.__setattr__(self, "recorded_at", self.recorded_at.astimezone(timezone.utc))
         if self.correlation_id is not None:
-            _require_identifier(self.correlation_id, "correlation_id")
+            require_identifier(self.correlation_id, "correlation_id")
         if self.causation_id is not None:
-            _require_identifier(self.causation_id, "causation_id")
+            require_identifier(self.causation_id, "causation_id")
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +364,7 @@ def proposal_request_hash(request: NormalizedMutationRequest) -> RequestHash:
 
 
 def _validate_request_hash(value: str) -> None:
-    _require_identifier(value, "request_hash")
+    require_identifier(value, "request_hash")
     if not value.startswith(REQUEST_HASH_PREFIX):
         raise ValueError("request_hash must use the supported SHA-256 request-hash version")
     digest = value[len(REQUEST_HASH_PREFIX) :]
@@ -274,7 +387,7 @@ class CRunRecoveryContext:
             "effective_governance_policy_identity",
         ):
             value = getattr(self, name)
-            _require_identifier(value, name)
+            require_identifier(value, name)
             if value.strip().casefold() == "none":
                 raise ValueError(f"{name} must not use the NONE sentinel")
 
@@ -291,7 +404,7 @@ class ProposalReceipt:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.request, NormalizedMutationRequest):
             raise TypeError("request must be NormalizedMutationRequest")
         if self.c_run_recovery_context is not None and not isinstance(
@@ -338,7 +451,7 @@ class MutationDecision:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         _validate_request_hash(self.request_hash)
         _require_integer(self.expected_graph_version, "expected_graph_version", minimum=0)
         _require_integer(self.resulting_graph_version, "resulting_graph_version", minimum=0)
@@ -360,9 +473,9 @@ class MutationDecision:
             if self.resulting_graph_version != self.expected_graph_version:
                 raise ValueError("non-commit, non-conflict outcomes do not advance graph_version")
         if outcome is not GovernanceOutcome.COMMIT:
-            _require_identifier(self.reason_code or "", "reason_code")
+            require_identifier(self.reason_code or "", "reason_code")
         elif self.reason_code is not None:
-            _require_identifier(self.reason_code, "reason_code")
+            require_identifier(self.reason_code, "reason_code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,9 +490,9 @@ class ProposalAbandoned:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         _validate_request_hash(self.request_hash)
-        _require_identifier(self.reason_code, "reason_code")
+        require_identifier(self.reason_code, "reason_code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,9 +507,9 @@ class NonTerminalAuditRecord:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.audit_type, "audit_type")
+        require_identifier(self.audit_type, "audit_type")
         if self.proposal_id is not None:
-            _require_identifier(self.proposal_id, "proposal_id")
+            require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.payload, JsonDocument):
             raise TypeError("payload must be a JsonDocument")
         _require_object(self.payload.value, "audit payload")
@@ -443,9 +556,9 @@ class GraphChangedEvent:
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, RecordMetadata):
             raise TypeError("metadata must be RecordMetadata")
-        _require_identifier(self.proposal_id, "proposal_id")
+        require_identifier(self.proposal_id, "proposal_id")
         _require_integer(self.graph_version, "graph_version", minimum=1)
-        _require_identifier(self.event_type, "event_type")
+        require_identifier(self.event_type, "event_type")
         _require_integer(self.event_schema_version, "event_schema_version", minimum=1)
         if self.event_schema_version != CURRENT_EVENT_SCHEMA_VERSION:
             raise ValueError(
