@@ -137,11 +137,14 @@ source, set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, use a narrow bridge
 environment, and verify credentials are absent from child environments, bridge
 input, logs, and telemetry. Scrubbing is defense in depth; this does not create
 an OS isolation boundary. Hooks provide integration behavior, not
-an independent evidence-trust or durable-store security boundary. Required
-hook absence must be visible; it cannot authorize a graph mutation outside the
-service. Treat an in-session plugin disable/uninstall as pending until Claude
-Code applies it through a successful reload or a later session; verify the
-bridge process has exited before treating its socket access as revoked.
+an independent evidence-trust or durable-store security boundary. A hook only
+gates matched events and tool names; it cannot enforce free-form model output,
+and some unmanaged sessions allow mods to override a hook denial. Required
+hook absence must be visible; claim graph-directed enforcement only for tested
+tool routes and account modes, and keep graph authorization in the service.
+Treat an in-session plugin disable/uninstall as pending until Claude Code
+applies it through a successful reload or a later session; verify the bridge
+process has exited before treating its socket access as revoked.
 
 ## Specification maintenance
 

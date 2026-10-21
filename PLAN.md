@@ -90,8 +90,8 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
   - use the run-creation contract resolved by #37/ADR 0012, show its authoritative `run_id`, and require that explicit ID on every call and resume; never infer it from a Claude session ID;
   - keep authentication in unmodified Claude Code; separately test subscription login, Console OAuth, and API-key environment authentication;
   - set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, allowlist the bridge environment, and verify a credential sentinel is absent from child environments, bridge input, logs, and telemetry;
-  - name each hook and distinguish enforcement from advisory telemetry; the service remains authoritative; any command/HTTP enforcement hook must use `onFailure: "block"` on Claude Code v2.1.295 or later;
-  - test missing, disabled, failed, and timed-out hooks, pending workspace/MCP approval, unavailable service, and socket permission denial; absent account access is an unmet smoke prerequisite, not evidence of support; native status is optional.
+  - use the hook capability map and smoke matrix in [Protocol](docs/protocol.md#claude-code-adapter); test whether existing contracts let a synchronous `PreToolUse` gate bind each work action to a service-authorized eligible graph node; if not, record the control gap and propose a separate spec/issue before adding node-binding semantics;
+  - any command/HTTP `PreToolUse` gate must use `onFailure: "block"` on Claude Code v2.1.295 or later for hook failures; test explicit denial separately, pin the tested account/management mode, and claim enforcement only for tested tool routes; absent account access is an unmet smoke prerequisite, not evidence of support; native status is optional.
 
 P5 completion is not a dependency blocking P6; the initial evaluation uses HarnessX.
 

@@ -587,22 +587,65 @@ restart. A Claude session ID is never a `run_id`. Session hooks may supply only
 an explicitly registered run ID as context; they must not infer or override a
 tool's target run.
 
-Hooks that emit observations are advisory. If a command or HTTP `PreToolUse`
-hook is required to block an action, configure `onFailure: "block"` and pin
-Claude Code v2.1.295 or later; specify and test the supported failure behavior
-for any other hook type. Hooks never replace service authorization, commit
-graph mutations directly, or turn tool success into trusted evidence. Service
-policy and producer validation remain authoritative.
+Hook control is event-specific:
 
-P5 smoke tests demonstrate each claimed capability on the pinned Claude Code
-release under the intended Linux user/group permissions. Test missing,
-disabled, failed, and timed-out hooks; pending workspace/MCP approval; service
-unavailability; denied socket access; and run resume. Any required command or
-HTTP enforcement hook uses `onFailure: "block"` on Claude Code v2.1.295 or
-later. Document unsupported capabilities rather than assuming parity with
-HarnessX. Record
-trajectory-capture limits; optional telemetry is not a complete native
-trajectory archive.
+- `SessionStart` and `UserPromptSubmit` can provide service-derived run and
+  graph context. `UserPromptSubmit` can block that prompt, but injected context
+  is advisory and neither event authorizes a tool action.
+- A synchronous `PreToolUse` hook can gate only the tool names it matches. Its
+  explicit deny prevents that matched call from running. Match the actual
+  work-affecting tool names on the pinned release, including alternate write
+  routes and subagent tools; do not claim coverage for unmatched tools or
+  free-form model output.
+- For command/HTTP `PreToolUse` hooks, `onFailure: "block"` makes hook execution
+  failures fail closed and requires Claude Code v2.1.295 or later. Ordinary
+  explicit denial blocks independently of `onFailure`. Test both behaviors.
+  Some unmanaged sessions allow mods to override hook denials, so record the
+  tested account/management mode and do not claim an unconditional gate there.
+- `Stop` and `SubagentStop` can request continuation with a reason, up to
+  Claude Code's eight-consecutive-continuation limit. They are feedback, not
+  proof of graph compliance or task completion.
+- `PostToolUse` and `PostToolUseFailure` run after the action. Notification and
+  lifecycle hooks provide observations or context, not a universal action
+  gate. Asynchronous hooks cannot block. A `PermissionRequest` hook only
+  covers calls that reach permission handling.
+
+For graph-directed work, P5 tests whether the service can supply current
+eligible-node context and validate a binding between a work action, its
+explicit `run_id`, and an eligible graph node. A `PreToolUse` gate may then
+allow or deny matched work tools from that service result; graph mutation
+validation and expected-version checks remain service-owned. If existing
+contracts cannot provide the binding, record the control gap and propose a
+separate spec/issue before adding node-selection or claim semantics. Do not
+infer a target run or graph node from a Claude session ID or local hook state.
+The P5 smoke matrix must cover:
+
+- a service-authorized eligible-node binding permits only the matched work
+  action; missing, wrong, or stale run/node/version bindings deny it; verify
+  that each denied tool did not execute;
+- actual pinned-release tool names for command, file-write, MCP, and subagent
+  paths; missing, disabled, or unmatched hooks are reported as uncovered, not
+  as enforcement;
+- command/HTTP hook failure (missing executable, crash, timeout, malformed
+  output, or HTTP failure) fails closed with `onFailure: "block"`; test an
+  ordinary explicit deny separately;
+- permission-bypass behavior and whether mods can override denials in the
+  tested account/management mode; and
+- resume/compact refreshes context without substituting a Claude session ID
+  for `run_id`.
+
+Hooks never commit graph mutations directly or turn tool success into trusted
+evidence; service policy and producer validation remain authoritative. P5 also
+tests pending workspace/MCP approval, service unavailability, denied socket
+access, and run resume under intended Linux user/group permissions. Document
+unsupported capabilities and trajectory-capture limits instead of assuming
+parity with HarnessX.
+
+See the [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
+and [hooks guide limitations](https://code.claude.com/docs/en/hooks-guide#limitations-and-troubleshooting)
+for release-specific event and failure behavior.
+
+Optional telemetry is not a complete native trajectory archive.
 
 ## Service boundary
 

@@ -86,8 +86,9 @@ to [Protocol](../protocol.md#claude-code-adapter).
 ## Sources
 
 Authentication and extension documentation checked on 2026-10-12; plugin
-lifecycle guidance rechecked on 2026-10-21. Recheck the terms and capabilities
-against the release selected for P5:
+lifecycle guidance rechecked on 2026-10-21; hook capability and failure
+semantics rechecked on 2026-10-22. Recheck the terms and capabilities against
+the release selected for P5:
 
 - [Claude Code authentication](https://code.claude.com/docs/en/authentication)
 - [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)
@@ -98,3 +99,5 @@ against the release selected for P5:
 - [MCP server lifecycle](https://code.claude.com/docs/en/mcp)
 - [Claude Code environment variables](https://code.claude.com/docs/en/env-vars)
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks)
+- [Claude Code hooks guide and limitations](https://code.claude.com/docs/en/hooks-guide#limitations-and-troubleshooting)
+- [Claude Code changelog: v2.1.295](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21295)
