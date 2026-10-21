@@ -569,18 +569,37 @@ The bridge has worker authority only; it cannot call trusted ingestion/admin
 operations. Uncertain mutation responses follow the existing proposal
 retry/replay contract, rather than bypassing governance.
 
+Claude Code starts the plugin's session-scoped stdio bridge; the ADR 0010
+supervisor owns service lifecycle and journal state. The bridge uses the
+configured worker-socket path and permissions. Disabling or uninstalling the
+plugin closes the bridge without stopping the service or removing its state.
+A missing or unavailable service returns an explicit failure; the bridge
+never falls back to direct store access.
+
 Minimal graph-use instructions explain the tools and governor outcomes.
-Session hooks may supply an explicitly registered run ID as context, but must
-not infer or override a tool's target run. `PreToolUse` may enforce supported
-actions; post-tool and session hooks may emit optional observations. These
-hooks neither commit graph mutations directly nor turn tool success into
-trusted evidence. Service policy and producer validation remain authoritative.
+The first-run flow obtains and displays the authoritative `run_id` through the
+run-creation contract resolved by #37 and ADR 0012. Instructions require that
+explicit ID on every run-scoped call and when resuming after a Claude session
+restart. A Claude session ID is never a `run_id`. Session hooks may supply only
+an explicitly registered run ID as context; they must not infer or override a
+tool's target run.
+
+Hooks that emit observations are advisory. If a command or HTTP `PreToolUse`
+hook is required to block an action, configure `onFailure: "block"` and pin
+Claude Code v2.1.295 or later; specify and test the supported failure behavior
+for any other hook type. Hooks never replace service authorization, commit
+graph mutations directly, or turn tool success into trusted evidence. Service
+policy and producer validation remain authoritative.
 
 P5 smoke tests demonstrate each claimed capability on the pinned Claude Code
-release, including behavior with missing/disabled hooks and an unavailable
-service. Document unsupported capabilities rather than assuming parity with
-HarnessX. Record trajectory-capture limits; optional telemetry is not a complete
-native trajectory archive.
+release under the intended Linux user/group permissions. Test missing,
+disabled, failed, and timed-out hooks; pending workspace/MCP approval; service
+unavailability; denied socket access; and run resume. Any required command or
+HTTP enforcement hook uses `onFailure: "block"` on Claude Code v2.1.295 or
+later. Document unsupported capabilities rather than assuming parity with
+HarnessX. Record
+trajectory-capture limits; optional telemetry is not a complete native
+trajectory archive.
 
 ## Service boundary
 

@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-12
 - Partially supersedes: the Pi target in ADR 0001 and ADR 0009
+- Decision effect: this records the selected harness; the Pi-target supersession takes effect when this ADR is merged.
 
 ## Context
 
@@ -35,6 +36,19 @@ adapter, not a replacement service transport. Reuse existing client code;
 the bridge language is an implementation choice, not a core requirement.
 Every run-scoped tool retains an explicit `run_id`.
 
+Claude Code starts the session-scoped stdio bridge for an enabled plugin. The
+ADR 0010 supervisor owns service startup and shutdown, the worker socket, and
+the durable journal. Disabling or uninstalling the plugin closes the bridge;
+it does not stop the service or remove service-owned state.
+
+The bridge and hooks receive a narrow subprocess environment with
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` and must not read, retain, or forward
+Claude credentials. P5 verifies that credential sentinels are absent from
+child environments, bridge input, logs, and telemetry. Scrubbing is defense in
+depth, not complete isolation. A plugin still runs with the invoking user's OS
+privileges outside Claude Code's sandbox; the plugin is not an OS isolation
+boundary.
+
 Hooks translate observations and supported governor actions. Graph authority,
 trusted evidence ingestion, and durable-store protection remain owned by the
 service and the local isolation boundary. A hook or successful tool invocation
@@ -43,8 +57,17 @@ to [Protocol](../protocol.md#claude-code-adapter).
 
 ## Consequences
 
-- P5 requires bounded smoke checks on a pinned Claude Code release, including
-  subscription and API authentication modes without retaining secrets.
+- P5 requires bounded Linux CLI smoke checks on a pinned Claude Code release
+  and plugin source revision, loaded from a local directory. Test subscription
+  login, Console OAuth, and API-key environment authentication separately
+  without retaining secrets.
+- P5 verifies the explicit run-creation/resume flow, worker-socket permissions,
+  bridge/service lifecycle separation, credential scrubbing, and the declared
+  hook failure behavior, including missing, disabled, failed, and timed-out
+  cases and pending workspace/MCP approval.
+- Any command or HTTP hook used to block an action must use
+  `onFailure: "block"` on Claude Code v2.1.295 or later; other hook types must
+  have their supported failure behavior specified and tested.
 - Capabilities are demonstrated individually; model replacement, pause/resume,
   native status UI, and complete trajectory capture are not assumed.
 - P6 remains the HarnessX A/C pilot. Claude Code portability uses a separately
@@ -65,4 +88,7 @@ terms and capabilities against the release selected for P5:
 - [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)
 - [Agent SDK authentication restriction](https://code.claude.com/docs/en/agent-sdk/overview)
 - [Claude Code plugins](https://code.claude.com/docs/en/plugins)
+- [Plugin security and trust](https://code.claude.com/docs/en/plugins/security)
+- [MCP server lifecycle](https://code.claude.com/docs/en/mcp)
+- [Claude Code environment variables](https://code.claude.com/docs/en/env-vars)
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks)

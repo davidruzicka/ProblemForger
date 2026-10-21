@@ -82,10 +82,16 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
 
 - [ ] **P5 — Claude Code plugin preparation**
   - adapter preparation and protocol smoke checks only; portability validation belongs to P11;
+  - begin P5 execution only after the P1 service (#21), P2 graph (#3), and P3 governance (#4) prerequisites; resolve Problem/run identity through #37 and ADR 0012 before the P2 schema freeze;
   - same ProblemForger service/protocol;
-  - thin MCP bridge, graph-use instructions, and required hooks under [ADR 0011](docs/adr/0011-claude-code-plugin-harness.md);
-  - user authentication stays in unmodified Claude Code; support subscription and API accounts;
-  - verify declared capabilities on a pinned release; native status is optional.
+  - pin the Linux CLI release and plugin source commit/digest; load from a local plugin directory for the smoke test;
+  - Claude Code starts a per-session stdio MCP bridge; the ADR 0010 supervisor owns service startup/shutdown, the worker socket, and the durable journal;
+  - document configured socket discovery, worker-group permissions, bridge shutdown, plugin disable/uninstall behavior, and explicit unavailable-service behavior with no direct-store fallback;
+  - use the run-creation contract resolved by #37/ADR 0012, show its authoritative `run_id`, and require that explicit ID on every call and resume; never infer it from a Claude session ID;
+  - keep authentication in unmodified Claude Code; separately test subscription login, Console OAuth, and API-key environment authentication;
+  - set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, allowlist the bridge environment, and verify a credential sentinel is absent from child environments, bridge input, logs, and telemetry;
+  - name each hook and distinguish enforcement from advisory telemetry; the service remains authoritative; any command/HTTP enforcement hook must use `onFailure: "block"` on Claude Code v2.1.295 or later;
+  - test missing, disabled, failed, and timed-out hooks, pending workspace/MCP approval, unavailable service, and socket permission denial; absent account access is an unmet smoke prerequisite, not evidence of support; native status is optional.
 
 P5 completion is not a dependency blocking P6; the initial evaluation uses HarnessX.
 
@@ -121,6 +127,8 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
 
 - [ ] **P11 — Full ablation and portability study**
   - independently validate portability through the Claude Code plugin prepared in P5;
+  - freeze the exact CLI release, plugin source identity, effective plugin/MCP/hook state, subprocess credential-scrub setting, authentication route, and model settings in the P11 manifest;
+  - compare baseline and treatment within each authentication route and keep distinct routes in separate manifests/strata;
   - baseline;
   - + problem graph;
   - + deterministic governance;

@@ -131,9 +131,15 @@ trajectory access can change integration behavior or invalidate comparisons.
 
 Mitigation: verify capabilities on a pinned release during P5, keep auth and
 credentials in unmodified Claude Code, and freeze/report the observable limits
-in the separate P11 experiment. Hooks provide integration behavior, not an
-independent evidence-trust or durable-store security boundary. Required hook
-absence must be visible; it cannot authorize a graph mutation outside the service.
+in the separate P11 experiment. Plugin hooks and MCP processes run with the
+user's privileges outside Claude Code's sandbox. Pin and inspect the plugin
+source, set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, use a narrow bridge
+environment, and verify credentials are absent from child environments, bridge
+input, logs, and telemetry. Scrubbing is defense in depth; this does not create
+an OS isolation boundary. Hooks provide integration behavior, not
+an independent evidence-trust or durable-store security boundary. Required
+hook absence must be visible; it cannot authorize a graph mutation outside the
+service.
 
 ## Specification maintenance
 

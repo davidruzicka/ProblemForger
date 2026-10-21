@@ -9,10 +9,14 @@ and the spike evidence below remain in force.
 
 ## Context
 
-ADR 0009 requires HarnessX and Pi to use the same local Python service boundary,
-but leaves the transport open. Issue #19 calls for a bounded comparison of
-Python and TypeScript clients, bounded versioned messages, observation streaming,
-failure behavior, local overhead, and the local evidence-trust boundary.
+ADR 0009 originally specified HarnessX and Pi using the same local Python
+service boundary, but left the transport open. ADR 0011 replaces Pi with
+Claude Code; the service-boundary rationale remains. The Python/TypeScript
+client comparison in issue #19 was part of the original Pi transport spike;
+its results remain transport evidence, not a requirement for a TypeScript
+harness. The spike also evaluates bounded versioned messages, observation
+streaming, failure behavior, local overhead, and the local evidence-trust
+boundary.
 
 The spike compares HTTP/1.1 with JSON and Server-Sent Events on loopback against
 JSON Lines over a Unix-domain stream socket. Both implement the same versioned

@@ -38,8 +38,9 @@ count can exceed twelve and must be reported separately from the planned slot
 count. These counts describe an operational pilot, not statistical precision.
 
 Out of scope for P6: holdout/calibration data, fallback-model chains,
-population-level uncertainty, automatic routing, cross-harness portability, and a full
-A/B/C ablation. Those require their own measured question and manifest.
+population-level uncertainty, automatic routing, cross-harness portability,
+and a full A/B/C ablation. Those require their own measured question and
+manifest.
 
 <a id="spec-evaluation-model"></a>
 <!-- spec-id: EVALUATION.MODEL -->
@@ -979,16 +980,26 @@ not be pooled with P6-AC. This keeps the pilot useful for engineering while
 leaving stronger causal and external-validity questions for later work.
 
 For the later Claude Code portability experiment selected by
-[ADR 0011](adr/0011-claude-code-plugin-harness.md), freeze the Claude Code
-release/runtime, plugin and MCP bridge identities, effective hook/permission
-configuration, graph-use instructions, authentication mode (subscription or
-API), account-plan limits when observable, and requested/observed model
-metadata and generation settings. Retain no credentials or session tokens.
+[ADR 0011](adr/0011-claude-code-plugin-harness.md), freeze the exact Claude
+Code release/runtime, plugin source commit or digest, MCP bridge identity,
+effective plugin/MCP enabled state, hook/permission configuration, whether
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` was active, graph-use instructions,
+authentication route, and requested/observed model metadata and generation
+settings. Distinguish
+subscription login, Console OAuth (with or without an API key), API-key
+environment authentication, and cloud-provider authentication. Record only the
+effective route and observable key-presence state, never credential values or
+session tokens. Since `ANTHROPIC_API_KEY` can override a subscription login,
+record the effective route rather than relying on the declared account label.
+Record account-plan limits when observable. If multiple authentication routes
+are tested, freeze separate manifests and report them separately.
 Use `UNKNOWN` for unavailable settings, provider metadata, usage limits, or
 attributable inference cost; subscription usage is not zero-cost API usage.
 Report rate-limit interruptions and capability/trajectory gaps. Matched
 comparisons use the same auth mode and observable settings within each
-harness's baseline/treatment pair. The Claude Code baseline disables the
+harness's baseline/treatment pair. Each Claude Code baseline/treatment pair
+uses the same effective authentication route, account, and observable model
+settings. The Claude Code baseline disables the
 ProblemForger plugin and does not start its service; treatment enables the
 frozen plugin/service for the selected configuration. A cross-harness
 difference is not attributed solely to ProblemForger. Trusted experiment

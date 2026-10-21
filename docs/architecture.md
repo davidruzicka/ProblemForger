@@ -171,7 +171,9 @@ ProblemForger handles neither Claude credentials nor session tokens.
 
 - ProblemForger core/service: Python 3.12+.
 - HarnessX adapter: Python client/processor.
-- Claude Code adapter: plugin with a thin MCP bridge and required hooks; reuse existing Python/TypeScript clients as appropriate.
+- Claude Code adapter: plugin with a thin MCP bridge and capability-specific
+  hooks; reuse existing Python/TypeScript clients as appropriate. Hooks do not
+  replace service authorization or durable governance.
 
 For the initial Linux service, [ADR 0010](adr/0010-local-service-transport.md)
 selects JSON Lines over a Unix-domain socket. Changing transport must not
