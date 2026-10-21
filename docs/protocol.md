@@ -572,9 +572,12 @@ retry/replay contract, rather than bypassing governance.
 Claude Code starts the plugin's session-scoped stdio bridge; the ADR 0010
 supervisor owns service lifecycle and journal state. The bridge uses the
 configured worker-socket path and permissions. Disabling or uninstalling the
-plugin closes the bridge without stopping the service or removing its state.
-A missing or unavailable service returns an explicit failure; the bridge
-never falls back to direct store access.
+plugin in an active session may remain pending until Claude Code applies the
+change through `/reload-plugins` or a later session; the existing bridge may
+retain socket access until then. P5 verifies bridge-process termination after
+a successful reload or session exit. Disabling or uninstalling does not stop
+the service or remove its state. A missing or unavailable service returns an
+explicit failure; the bridge never falls back to direct store access.
 
 Minimal graph-use instructions explain the tools and governor outcomes.
 The first-run flow obtains and displays the authoritative `run_id` through the

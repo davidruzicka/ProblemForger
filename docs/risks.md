@@ -139,7 +139,9 @@ input, logs, and telemetry. Scrubbing is defense in depth; this does not create
 an OS isolation boundary. Hooks provide integration behavior, not
 an independent evidence-trust or durable-store security boundary. Required
 hook absence must be visible; it cannot authorize a graph mutation outside the
-service.
+service. Treat an in-session plugin disable/uninstall as pending until Claude
+Code applies it through a successful reload or a later session; verify the
+bridge process has exited before treating its socket access as revoked.
 
 ## Specification maintenance
 

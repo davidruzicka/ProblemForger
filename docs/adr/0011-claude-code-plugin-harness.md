@@ -38,8 +38,12 @@ Every run-scoped tool retains an explicit `run_id`.
 
 Claude Code starts the session-scoped stdio bridge for an enabled plugin. The
 ADR 0010 supervisor owns service startup and shutdown, the worker socket, and
-the durable journal. Disabling or uninstalling the plugin closes the bridge;
-it does not stop the service or remove service-owned state.
+the durable journal. Disabling or uninstalling a plugin during a session may
+remain pending until Claude Code applies the change through `/reload-plugins`
+or a later session. Until then, the existing bridge may retain worker-socket
+access; do not treat the setting change as immediate revocation. P5 verifies
+that the bridge process terminates after a successful reload or session exit.
+Neither action stops the service or removes service-owned state.
 
 The bridge and hooks receive a narrow subprocess environment with
 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` and must not read, retain, or forward
@@ -81,13 +85,15 @@ to [Protocol](../protocol.md#claude-code-adapter).
 
 ## Sources
 
-Authentication and extension documentation checked on 2026-10-12. Recheck the
-terms and capabilities against the release selected for P5:
+Authentication and extension documentation checked on 2026-10-12; plugin
+lifecycle guidance rechecked on 2026-10-21. Recheck the terms and capabilities
+against the release selected for P5:
 
 - [Claude Code authentication](https://code.claude.com/docs/en/authentication)
 - [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)
 - [Agent SDK authentication restriction](https://code.claude.com/docs/en/agent-sdk/overview)
 - [Claude Code plugins](https://code.claude.com/docs/en/plugins)
+- [Install and manage plugins](https://code.claude.com/docs/en/plugins/install)
 - [Plugin security and trust](https://code.claude.com/docs/en/plugins/security)
 - [MCP server lifecycle](https://code.claude.com/docs/en/mcp)
 - [Claude Code environment variables](https://code.claude.com/docs/en/env-vars)

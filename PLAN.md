@@ -86,7 +86,7 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
   - same ProblemForger service/protocol;
   - pin the Linux CLI release and plugin source commit/digest; load from a local plugin directory for the smoke test;
   - Claude Code starts a per-session stdio MCP bridge; the ADR 0010 supervisor owns service startup/shutdown, the worker socket, and the durable journal;
-  - document configured socket discovery, worker-group permissions, bridge shutdown, plugin disable/uninstall behavior, and explicit unavailable-service behavior with no direct-store fallback;
+  - document configured socket discovery, worker-group permissions, bridge shutdown, and explicit unavailable-service behavior with no direct-store fallback; do not assume in-session plugin disable/uninstall immediately terminates the bridge, and verify termination after a successful plugin reload or a later session;
   - use the run-creation contract resolved by #37/ADR 0012, show its authoritative `run_id`, and require that explicit ID on every call and resume; never infer it from a Claude session ID;
   - keep authentication in unmodified Claude Code; separately test subscription login, Console OAuth, and API-key environment authentication;
   - set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, allowlist the bridge environment, and verify a credential sentinel is absent from child environments, bridge input, logs, and telemetry;
@@ -127,8 +127,8 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
 
 - [ ] **P11 — Full ablation and portability study**
   - independently validate portability through the Claude Code plugin prepared in P5;
-  - freeze the exact CLI release, plugin source identity, effective plugin/MCP/hook state, subprocess credential-scrub setting, authentication route, and model settings in the P11 manifest;
-  - compare baseline and treatment within each authentication route and keep distinct routes in separate manifests/strata;
+  - freeze the exact CLI release, plugin source identity, effective plugin/MCP/hook state, subprocess credential-scrub setting, effective bridge/MCP environment allowlist (variable names and non-secret configuration only), authentication route, and model settings in each P11 manifest; never record secret values;
+  - use one manifest per authentication route and report each separately; compare baseline and treatment within each route, treating each manifest as its own analysis stratum if useful;
   - baseline;
   - + problem graph;
   - + deterministic governance;

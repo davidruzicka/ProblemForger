@@ -984,6 +984,8 @@ For the later Claude Code portability experiment selected by
 Code release/runtime, plugin source commit or digest, MCP bridge identity,
 effective plugin/MCP enabled state, hook/permission configuration, whether
 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` was active, graph-use instructions,
+the effective bridge/MCP subprocess environment allowlist (allowed variable
+names and non-secret configuration only; never record secret values),
 authentication route, and requested/observed model metadata and generation
 settings. Distinguish
 subscription login, Console OAuth (with or without an API key), API-key
@@ -992,7 +994,7 @@ effective route and observable key-presence state, never credential values or
 session tokens. Since `ANTHROPIC_API_KEY` can override a subscription login,
 record the effective route rather than relying on the declared account label.
 Record account-plan limits when observable. If multiple authentication routes
-are tested, freeze separate manifests and report them separately.
+are tested, use one manifest per route and report each separately.
 Use `UNKNOWN` for unavailable settings, provider metadata, usage limits, or
 attributable inference cost; subscription usage is not zero-cost API usage.
 Report rate-limit interruptions and capability/trajectory gaps. Matched
