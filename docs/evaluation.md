@@ -982,18 +982,28 @@ leaving stronger causal and external-validity questions for later work.
 For the later Claude Code portability experiment selected by
 [ADR 0011](adr/0011-claude-code-plugin-harness.md), freeze the exact Claude
 Code release/runtime, plugin source commit or digest, MCP bridge identity,
-effective plugin/MCP enabled state, hook/permission configuration, whether
-`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` was active, graph-use instructions,
-the effective bridge/MCP subprocess environment allowlist (allowed variable
-names and non-secret configuration only; never record secret values),
-authentication route, and requested/observed model metadata and generation
-settings. Distinguish Claude.ai subscription login, keyless Claude Console
+effective plugin/MCP enabled state, hook/permission configuration, effective
+Claude Code management mode, and the complete active mod set. For each
+externally installed mod, record its source and immutable content identity
+(commit or digest). For built-in mods, record the mod identity and effective
+enabled/configuration state; the pinned CLI release identifies its shipped
+content. Record whether `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` was active,
+graph-use instructions, and the effective bridge/MCP subprocess environment
+allowlist (allowed variable names and non-secret configuration only; never
+record secret values), authentication route, and requested/observed model
+metadata and generation settings. Distinguish Claude.ai subscription login, keyless Claude Console
 sign-in that stores an OAuth profile, legacy Console sign-in that creates and
 stores an API key, `ANTHROPIC_API_KEY` environment authentication, and
 cloud-provider authentication. Record only the effective route and observable
 key-presence state, never credential values or session tokens. Since
 `ANTHROPIC_API_KEY` can override a subscription login,
 record the effective route rather than relying on the declared account label.
+Anthropic documents that, in unmanaged sessions, an active mod can approve a
+call blocked by a `PreToolUse` hook ([mod security](https://code.claude.com/docs/en/plugins/mods/overview#what-a-mod-can-reach)).
+Record mod identities and state without secrets. Use `UNKNOWN` when management
+mode or relevant mod identity/state cannot be observed; exclude such runs from
+matched P11 comparisons. Do not claim hook-denial enforcement unless the
+effective managed mode is verified to prevent mod overrides.
 Record account-plan limits when observable. If multiple authentication routes
 are tested, use one manifest per route and report each separately.
 Use `UNKNOWN` for unavailable settings, provider metadata, usage limits, or
@@ -1001,8 +1011,11 @@ attributable inference cost; subscription usage is not zero-cost API usage.
 Report rate-limit interruptions and capability/trajectory gaps. Matched
 comparisons use the same auth mode and observable settings within each
 harness's baseline/treatment pair. Each Claude Code baseline/treatment pair
-uses the same effective authentication route, account, and observable model
-settings. The Claude Code baseline disables the
+uses the same effective authentication route, account, management mode,
+active mod identities/configuration other than the ProblemForger plugin state
+under test, and observable model settings. If other active mods differ, report
+separate configurations and do not attribute hook-enforcement differences to
+ProblemForger. The Claude Code baseline disables the
 ProblemForger plugin and does not start its service; treatment enables the
 frozen plugin/service for the selected configuration. A cross-harness
 difference is not attributed solely to ProblemForger. Trusted experiment

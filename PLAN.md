@@ -130,7 +130,7 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
 
 - [ ] **P11 — Full ablation and portability study**
   - independently validate portability through the Claude Code plugin prepared in P5;
-  - freeze the exact CLI release, plugin source identity, effective plugin/MCP/hook state, subprocess credential-scrub setting, effective bridge/MCP environment allowlist (variable names and non-secret configuration only), authentication route, and model settings in each P11 manifest; never record secret values;
+  - freeze the exact CLI release, plugin source identity, effective plugin/MCP/hook state, management mode, active mod set and content identities (including relevant built-in mod state), subprocess credential-scrub setting, effective bridge/MCP environment allowlist (variable names and non-secret configuration only), authentication route, and model settings in each P11 manifest; never record secret values;
   - use one manifest per authentication route and report each separately; compare baseline and treatment within each route, treating each manifest as its own analysis stratum if useful;
   - baseline;
   - + problem graph;
