@@ -21,6 +21,12 @@ It represents the evolving problem state: goals, requirements, tasks, artifacts,
 
 Different model runs may take different trajectories. They need not produce identical reasoning. The system instead asks whether the resulting graph mutations are justified and whether global anchors remain satisfied.
 
+## Conditional product direction
+
+If examination confirms ProblemForger's reliability/governance premise, a possible later direction is a problem-oriented researcher, decomposer, planner, and orchestrator. Its primary user-facing state would be the semantic Problem and its intended outcomes, potentially spanning several projects/resources. Agents, sessions, and harnesses would remain replaceable execution mechanisms; users would follow analysis, decomposition, evidence, blockers, and progress rather than individual sessions.
+
+This is conditional direction, not a current capability or approved product pivot. The current PoC remains focused on evaluating the harness-neutral reliability layer; P6 alone does not validate cross-project orchestration. See the [conditional plan](../PLAN.md#conditional-problem-oriented-direction).
+
 ## Initial research questions
 
 1. Does explicit problem-state representation reduce undetected error propagation?
