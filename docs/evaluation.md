@@ -987,11 +987,12 @@ effective plugin/MCP enabled state, hook/permission configuration, whether
 the effective bridge/MCP subprocess environment allowlist (allowed variable
 names and non-secret configuration only; never record secret values),
 authentication route, and requested/observed model metadata and generation
-settings. Distinguish
-subscription login, Console OAuth (with or without an API key), API-key
-environment authentication, and cloud-provider authentication. Record only the
-effective route and observable key-presence state, never credential values or
-session tokens. Since `ANTHROPIC_API_KEY` can override a subscription login,
+settings. Distinguish Claude.ai subscription login, keyless Claude Console
+sign-in that stores an OAuth profile, legacy Console sign-in that creates and
+stores an API key, `ANTHROPIC_API_KEY` environment authentication, and
+cloud-provider authentication. Record only the effective route and observable
+key-presence state, never credential values or session tokens. Since
+`ANTHROPIC_API_KEY` can override a subscription login,
 record the effective route rather than relying on the declared account label.
 Record account-plan limits when observable. If multiple authentication routes
 are tested, use one manifest per route and report each separately.

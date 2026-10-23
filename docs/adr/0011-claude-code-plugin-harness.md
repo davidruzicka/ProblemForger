@@ -62,9 +62,11 @@ to [Protocol](../protocol.md#claude-code-adapter).
 ## Consequences
 
 - P5 requires bounded Linux CLI smoke checks on a pinned Claude Code release
-  and plugin source revision, loaded from a local directory. Test subscription
-  login, Console OAuth, and API-key environment authentication separately
-  without retaining secrets.
+  and plugin source revision, loaded from a local directory. Test Claude.ai
+  subscription login, keyless Console sign-in with an OAuth profile, legacy
+  Console sign-in that creates and stores an API key, and
+  `ANTHROPIC_API_KEY` environment authentication separately without retaining
+  secrets.
 - P5 verifies the explicit run-creation/resume flow, worker-socket permissions,
   bridge/service lifecycle separation, credential scrubbing, and the declared
   hook failure behavior, including missing, disabled, failed, and timed-out
