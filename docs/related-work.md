@@ -15,14 +15,9 @@ ProblemForger intends to use HarnessX as an execution substrate. Its graph is pr
 
 ### Pi
 
-Pi is a terminal coding agent with a TypeScript extension API. Current documentation exposes lifecycle events, tool interception/blocking, custom tools, context modification, state persistence, custom TUI components, and headless/JSON/RPC modes.
+Pi is a possible future harness candidate; its TypeScript extension API could support a later portability study.
 
 - Extensions: https://pi.dev/docs/latest/extensions
-- Providers/models: https://pi.dev/docs/latest/providers
-- Custom models: https://pi.dev/docs/latest/models
-
-Pi was the original portability target and remains relevant related work.
-[ADR 0011](adr/0011-claude-code-plugin-harness.md) selects Claude Code for P5/P11 instead.
 
 ### Claude Code
 

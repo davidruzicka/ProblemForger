@@ -2,8 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-10-12
-- Partially supersedes: the Pi target in ADR 0001 and ADR 0009
-- Decision effect: this records the selected harness; the Pi-target supersession takes effect when this ADR is merged.
 
 ## Context
 
@@ -12,10 +10,6 @@ accounts as well as API accounts. An application that embeds the Claude Agent
 SDK cannot offer claude.ai login without Anthropic's prior approval. Users can
 instead authenticate through Anthropic's own flow in unmodified Claude Code
 and install extensions providing MCP tools and hooks.
-
-Pi was the original independent portability target. Replacing that target
-does not change the harness-neutral core, separate service boundary, or the
-HarnessX A/C pilot selected by ADR 0005.
 
 ## Decision
 
@@ -81,8 +75,6 @@ to [Protocol](../protocol.md#claude-code-adapter).
 - Initial support targets Claude Code CLI on Linux. Local Code sessions in
   Claude Desktop are a later compatibility check; Desktop chat is a separate
   optional MCP client, not evidence of equivalent hook capabilities.
-- Pi remains related work rather than a required PoC adapter. The P0 audit and
-  earlier ADR context retain their historical Pi references.
 - No Claude-specific authentication or inference dependency enters the core.
 
 ## Sources
