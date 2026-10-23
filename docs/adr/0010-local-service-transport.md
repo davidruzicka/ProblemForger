@@ -5,10 +5,11 @@
 
 ## Context
 
-ADR 0009 requires HarnessX and Pi to use the same local Python service boundary,
-but leaves the transport open. Issue #19 calls for a bounded comparison of
-Python and TypeScript clients, bounded versioned messages, observation streaming,
-failure behavior, local overhead, and the local evidence-trust boundary.
+ADR 0009 requires harness clients to use the same local Python service
+boundary, but leaves the transport open. Issue #19 calls for a bounded
+comparison of Python and TypeScript clients, bounded versioned messages,
+observation streaming, failure behavior, local overhead, and the local
+evidence-trust boundary.
 
 The spike compares HTTP/1.1 with JSON and Server-Sent Events on loopback against
 JSON Lines over a Unix-domain stream socket. Both implement the same versioned

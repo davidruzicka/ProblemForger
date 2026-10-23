@@ -2,7 +2,7 @@
 
 ## Purpose
 
-HarnessX and Pi must use the same ProblemForger core/service. Their adapters translate native lifecycle events and agent tool calls into a stable, versioned protocol.
+HarnessX and Claude Code must use the same ProblemForger core/service. Their adapters translate native lifecycle events and agent tool calls into a stable, versioned protocol. [ADR 0011](adr/0011-claude-code-plugin-harness.md) selects the Claude Code plugin integration.
 
 The protocol is independent from provider implementations and from the transport used to carry it.
 
@@ -559,13 +559,101 @@ Configuration C uses the same tool/API/prompt surface but additionally applies d
 
 This design minimizes B→C confounding.
 
+## Claude Code adapter
+
+The plugin exposes the public command/query operations as MCP tools. A thin
+local MCP bridge translates them into the existing application messages over
+the worker Unix socket. Tools retain explicit `run_id`, proposal identity,
+expected graph version, bounded queries, and public response projections.
+The bridge has worker authority only; it cannot call trusted ingestion/admin
+operations. Uncertain mutation responses follow the existing proposal
+retry/replay contract, rather than bypassing governance.
+
+Claude Code starts the plugin's session-scoped stdio bridge; the ADR 0010
+supervisor owns service lifecycle and journal state. The bridge uses the
+configured worker-socket path and permissions. Disabling or uninstalling the
+plugin in an active session may remain pending until Claude Code applies the
+change through `/reload-plugins` or a later session; the existing bridge may
+retain socket access until then. P5 verifies bridge-process termination after
+a successful reload or session exit. Disabling or uninstalling does not stop
+the service or remove its state. A missing or unavailable service returns an
+explicit failure; the bridge never falls back to direct store access.
+
+Minimal graph-use instructions explain the tools and governor outcomes.
+The first-run flow obtains and displays the authoritative `run_id` through the
+run-creation contract resolved by #37 and ADR 0012. Instructions require that
+explicit ID on every run-scoped call and when resuming after a Claude session
+restart. A Claude session ID is never a `run_id`. Session hooks may supply only
+an explicitly registered run ID as context; they must not infer or override a
+tool's target run.
+
+Hook control is event-specific:
+
+- `SessionStart` and `UserPromptSubmit` can provide service-derived run and
+  graph context. `UserPromptSubmit` can block that prompt, but injected context
+  is advisory and neither event authorizes a tool action.
+- A synchronous `PreToolUse` hook can gate only the tool names it matches. Its
+  explicit deny prevents that matched call from running. Match the actual
+  work-affecting tool names on the pinned release, including alternate write
+  routes and subagent tools; do not claim coverage for unmatched tools or
+  free-form model output.
+- For command/HTTP `PreToolUse` hooks, `onFailure: "block"` makes hook execution
+  failures fail closed and requires Claude Code v2.1.295 or later. Ordinary
+  explicit denial blocks independently of `onFailure`. Test both behaviors.
+  Some unmanaged sessions allow mods to override hook denials, so record the
+  tested account/management mode and do not claim an unconditional gate there.
+- `Stop` and `SubagentStop` can request continuation with a reason, up to
+  Claude Code's eight-consecutive-continuation limit. They are feedback, not
+  proof of graph compliance or task completion.
+- `PostToolUse` and `PostToolUseFailure` run after the action. Notification and
+  lifecycle hooks provide observations or context, not a universal action
+  gate. Asynchronous hooks cannot block. A `PermissionRequest` hook only
+  covers calls that reach permission handling.
+
+For graph-directed work, P5 tests whether the service can supply current
+eligible-node context and validate a binding between a work action, its
+explicit `run_id`, and an eligible graph node. A `PreToolUse` gate may then
+allow or deny matched work tools from that service result; graph mutation
+validation and expected-version checks remain service-owned. If existing
+contracts cannot provide the binding, record the control gap and propose a
+separate spec/issue before adding node-selection or claim semantics. Do not
+infer a target run or graph node from a Claude session ID or local hook state.
+The P5 smoke matrix must cover:
+
+- a service-authorized eligible-node binding permits only the matched work
+  action; missing, wrong, or stale run/node/version bindings deny it; verify
+  that each denied tool did not execute;
+- actual pinned-release tool names for command, file-write, MCP, and subagent
+  paths; missing, disabled, or unmatched hooks are reported as uncovered, not
+  as enforcement;
+- command/HTTP hook failure (missing executable, crash, timeout, malformed
+  output, or HTTP failure) fails closed with `onFailure: "block"`; test an
+  ordinary explicit deny separately;
+- permission-bypass behavior and whether mods can override denials in the
+  tested account/management mode; and
+- resume/compact refreshes context without substituting a Claude session ID
+  for `run_id`.
+
+Hooks never commit graph mutations directly or turn tool success into trusted
+evidence; service policy and producer validation remain authoritative. P5 also
+tests pending workspace/MCP approval, service unavailability, denied socket
+access, and run resume under intended Linux user/group permissions. Document
+unsupported capabilities and trajectory-capture limits instead of assuming
+parity with HarnessX.
+
+See the [Claude Code hooks reference](https://code.claude.com/docs/en/hooks)
+and [hooks guide limitations](https://code.claude.com/docs/en/hooks-guide#limitations-and-troubleshooting)
+for release-specific event and failure behavior.
+
+Optional telemetry is not a complete native trajectory archive.
+
 ## Service boundary
 
 ProblemForger runs as a separate local process/service during the PoC.
 
 Reasons:
 
-- Pi is TypeScript while the core is Python;
+- clients and bridges can use different languages without importing the Python core;
 - HarnessX is Python, but using the same process boundary keeps the two integrations structurally comparable;
 - the core can evolve independently from harness runtime dependencies;
 - observer/UI clients can later consume the same public boundary.

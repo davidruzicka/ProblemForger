@@ -80,11 +80,21 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
   - observation telemetry;
   - no ProblemForger domain logic in the adapter.
 
-- [ ] **P5 — Pi adapter preparation**
+- [ ] **P5 — Claude Code plugin preparation**
   - adapter preparation and protocol smoke checks only; portability validation belongs to P11;
+  - begin P5 execution only after the P1 service (#21), P2 graph (#3), and P3 governance (#4) prerequisites; resolve Problem/run identity through #37 and ADR 0012 before the P2 schema freeze;
   - same ProblemForger service/protocol;
-  - thin TypeScript extension/client;
-  - minimal native TUI status only.
+  - pin the Linux CLI release and plugin source commit/digest; load from a local plugin directory for the smoke test;
+  - Claude Code starts a per-session stdio MCP bridge; the ADR 0010 supervisor owns service startup/shutdown, the worker socket, and the durable journal;
+  - document configured socket discovery, worker-group permissions, bridge shutdown, and explicit unavailable-service behavior with no direct-store fallback; do not assume in-session plugin disable/uninstall immediately terminates the bridge, and verify termination after a successful plugin reload or a later session;
+  - use the run-creation contract resolved by #37/ADR 0012, show its authoritative `run_id`, and require that explicit ID on every call and resume; never infer it from a Claude session ID;
+  - keep authentication in unmodified Claude Code; separately test Claude.ai
+    subscription login, keyless Console sign-in with an OAuth profile, legacy
+    Console sign-in that creates/stores an API key, and
+    `ANTHROPIC_API_KEY` environment authentication;
+  - set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, allowlist the bridge environment, and verify a credential sentinel is absent from child environments, bridge input, logs, and telemetry;
+  - use the hook capability map and smoke matrix in [Protocol](docs/protocol.md#claude-code-adapter); test whether existing contracts let a synchronous `PreToolUse` gate bind each work action to a service-authorized eligible graph node; if not, record the control gap and propose a separate spec/issue before adding node-binding semantics;
+  - any command/HTTP `PreToolUse` gate must use `onFailure: "block"` on Claude Code v2.1.295 or later for hook failures; test explicit denial separately, pin the tested account/management mode, and claim enforcement only for tested tool routes; absent account access is an unmet smoke prerequisite, not evidence of support; native status is optional.
 
 P5 completion is not a dependency blocking P6; the initial evaluation uses HarnessX.
 
@@ -119,7 +129,9 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
   - graph visualization remains secondary to causal/provenance inspection.
 
 - [ ] **P11 — Full ablation and portability study**
-  - independently validate portability through the Pi adapter prepared in P5;
+  - independently validate portability through the Claude Code plugin prepared in P5;
+  - freeze the exact CLI release, plugin source identity, effective plugin/MCP/hook state, management mode, active mod set and content identities (including relevant built-in mod state), subprocess credential-scrub setting, effective bridge/MCP environment allowlist (variable names and non-secret configuration only), authentication route, and model settings in each P11 manifest; never record secret values;
+  - use one manifest per authentication route and report each separately; compare baseline and treatment within each route, treating each manifest as its own analysis stratum if useful;
   - baseline;
   - + problem graph;
   - + deterministic governance;
@@ -127,14 +139,14 @@ P5 completion is not a dependency blocking P6; the initial evaluation uses Harne
   - + calibration/abstention;
   - + routing;
   - run the separate frozen harness-comparison experiment in `docs/evaluation.md` and never pool it with P6;
-  - repeat across HarnessX and Pi where technically comparable;
+  - repeat across HarnessX and Claude Code where technically comparable;
   - re-audit and freeze an independent external-validity benchmark.
 
 ## Definition of done for the PoC
 
 The PoC is complete when:
 
-- the same core/service runs through at least HarnessX and Pi adapters;
+- the same core/service runs through at least HarnessX and Claude Code adapters;
 - authoritative graph state is replayable from graph-changing durable journal records;
 - every governance proposal/outcome needed for audit/evaluation survives restart;
 - harness telemetry is not required for graph replay or governance audit;

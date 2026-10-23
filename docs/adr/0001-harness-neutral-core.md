@@ -5,7 +5,7 @@
 
 ## Context
 
-The PoC should run first with HarnessX and independently with Pi. Coupling domain logic to either harness would make portability claims weak and duplicate implementation.
+The PoC should run with HarnessX and independently with another harness. Coupling domain logic to either harness would make portability claims weak and duplicate implementation.
 
 ## Decision
 
@@ -16,6 +16,6 @@ Adapters may translate lifecycle/events and enforce harness-specific actions, bu
 ## Consequences
 
 - The core can be tested without a harness.
-- Pi and HarnessX integrations can be compared using the same implementation.
+- Harness integrations can be compared using the same implementation.
 - Some harness capabilities will differ; a capability model is required.
 - A small protocol boundary adds implementation overhead.

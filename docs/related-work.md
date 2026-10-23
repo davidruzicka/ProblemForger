@@ -15,13 +15,27 @@ ProblemForger intends to use HarnessX as an execution substrate. Its graph is pr
 
 ### Pi
 
-Pi is a terminal coding agent with a TypeScript extension API. Current documentation exposes lifecycle events, tool interception/blocking, custom tools, context modification, state persistence, custom TUI components, and headless/JSON/RPC modes.
+Pi is a possible future harness candidate; its TypeScript extension API could support a later portability study.
 
 - Extensions: https://pi.dev/docs/latest/extensions
-- Providers/models: https://pi.dev/docs/latest/providers
-- Custom models: https://pi.dev/docs/latest/models
 
-ProblemForger uses Pi as an independent portability target because the integration mechanism and implementation language differ from HarnessX.
+### Claude Code
+
+Claude Code supports plugins packaging MCP servers, instructions/skills, and
+lifecycle hooks. ProblemForger plans a thin plugin whose MCP bridge calls the
+same local service used by HarnessX. Users authenticate in unmodified Claude
+Code with their own subscription or API account; the plugin implements no
+Claude login or credential handling. P5 must verify capabilities against a
+pinned release rather than assume complete event or trajectory access.
+
+- Plugins: https://code.claude.com/docs/en/plugins
+- Hooks: https://code.claude.com/docs/en/hooks
+- Authentication: https://code.claude.com/docs/en/authentication
+- Terms and credential boundary: https://code.claude.com/docs/en/legal-and-compliance
+
+The Claude Agent SDK is a different embedding path. It is not the selected
+subscription-account integration; offering claude.ai login through an SDK
+product requires Anthropic's prior approval.
 
 ## Graph-centric agent systems
 

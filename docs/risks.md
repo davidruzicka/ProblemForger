@@ -120,9 +120,31 @@ Use an explicit typed provider registry/factory first.
 
 ### Service-boundary overhead
 
-A separate process keeps Pi/HarnessX integration symmetric but introduces serialization, process lifecycle, and failure handling.
+A separate process keeps Claude Code/HarnessX integration symmetric but introduces serialization, process lifecycle, and failure handling.
 
 Mitigation: benchmark the local boundary, keep protocol payloads bounded, and choose the transport through a focused P1 spike.
+
+### Claude Code integration limits
+
+Claude Code updates, disabled hooks, subscription rate limits, and incomplete
+trajectory access can change integration behavior or invalidate comparisons.
+
+Mitigation: verify capabilities on a pinned release during P5, keep auth and
+credentials in unmodified Claude Code, and freeze/report the observable limits
+in the separate P11 experiment. Plugin hooks and MCP processes run with the
+user's privileges outside Claude Code's sandbox. Pin and inspect the plugin
+source, set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`, use a narrow bridge
+environment, and verify credentials are absent from child environments, bridge
+input, logs, and telemetry. Scrubbing is defense in depth; this does not create
+an OS isolation boundary. Hooks provide integration behavior, not
+an independent evidence-trust or durable-store security boundary. A hook only
+gates matched events and tool names; it cannot enforce free-form model output,
+and some unmanaged sessions allow mods to override a hook denial. Required
+hook absence must be visible; claim graph-directed enforcement only for tested
+tool routes and account modes, and keep graph authorization in the service.
+Treat an in-session plugin disable/uninstall as pending until Claude Code
+applies it through a successful reload or a later session; verify the bridge
+process has exited before treating its socket access as revoked.
 
 ## Specification maintenance
 

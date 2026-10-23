@@ -59,13 +59,13 @@ Resolution: A→B is explicitly the graph-interaction package. B and C use the s
 
 ### Core/model ownership was over-generalized
 
-The initial architecture listed a `ModelProvider` core port even though HarnessX/Pi already own inference.
+The initial architecture listed a `ModelProvider` core port even though execution harnesses already own inference.
 
 Resolution: model execution remains in the harness. Routing later asks the harness to select a model; the initial core has no model-provider abstraction.
 
-### Pi and HarnessX would otherwise use asymmetric integration boundaries
+### Harness adapters would otherwise use asymmetric integration boundaries
 
-Direct Python imports for HarnessX but RPC for Pi would make portability comparisons structurally different.
+Using direct Python imports for one harness but RPC for another would make portability comparisons structurally different.
 
 Resolution: both adapters use the same separate local ProblemForger process/service.
 
@@ -89,7 +89,7 @@ population/holdout claims.
 - ADR 0006 — durable run journal for governance audit + graph events, separate from optional telemetry; optimistic graph-version writes.
 - ADR 0007 — separate mutation outcome, entity lifecycle, verification, and evidence dimensions.
 - ADR 0008 — explicit agent-facing graph API for the initial PoC.
-- ADR 0009 — same separate local service boundary for HarnessX and Pi.
+- ADR 0009 — same separate local service boundary for harness integrations.
 
 Existing ADRs 0001–0005 remain consistent with these decisions.
 
@@ -97,7 +97,7 @@ Existing ADRs 0001–0005 remain consistent with these decisions.
 
 The audit confirmed that individual ingredients are well represented in existing work:
 
-- HarnessX/Pi provide extensible execution substrates;
+- Harness frameworks provide extensible execution substrates;
 - graph engineering and dynamic graph transformation already cover dynamic graph-based agent organization;
 - GALAX/CaSKG provide close precedents for graph-process scoring or calibrated edge confidence;
 - CodePRM, SWE-PRM, and AgentPro cover process supervision/verification;

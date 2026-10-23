@@ -1035,6 +1035,26 @@ class SpecificationChecks(unittest.TestCase):
             plan,
         )
 
+    def test_p11_manifest_freezes_mod_override_state(self):
+        evaluation = " ".join(read("docs/evaluation.md").split())
+        for phrase in (
+            "effective Claude Code management mode, and the complete active mod set",
+            "For each externally installed mod, record its source and immutable content identity",
+            "For built-in mods, record the mod identity and effective enabled/configuration state",
+            "exclude such runs from matched P11 comparisons",
+            "Do not claim hook-denial enforcement unless the effective managed mode is verified to prevent mod overrides",
+            "active mod identities/configuration other than the ProblemForger plugin state under test",
+            "If other active mods differ, report separate configurations",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, evaluation)
+
+        plan = " ".join(read("PLAN.md").split())
+        self.assertIn(
+            "management mode, active mod set and content identities (including relevant built-in mod state)",
+            plan,
+        )
+
     def test_methodology_is_discoverable_and_not_a_second_algorithm(self):
         methodology = " ".join(read("docs/methodology.md").split())
         self.assertIn("not a publication-grade uncertainty model", methodology)

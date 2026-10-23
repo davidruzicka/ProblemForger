@@ -46,7 +46,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 "from problemforger.modules import *\n"
                 "import sqlite3\n"
                 "import harnessx.agent\n"
-                "import pi\n",
+                "import another_harness.agent\n",
                 encoding="utf-8",
             )
 
@@ -61,7 +61,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(any("sqlite3" in item for item in violations))
         self.assertTrue(any("harnessx.agent" in item for item in violations))
-        self.assertTrue(any("pi" in item for item in violations))
+        self.assertTrue(any("another_harness.agent" in item for item in violations))
         self.assertTrue(any("problemforger.modules'" in item for item in violations))
 
     def test_rejects_unapproved_providers_and_upper_layers(self):
