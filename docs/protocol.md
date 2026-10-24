@@ -581,11 +581,12 @@ explicit failure; the bridge never falls back to direct store access.
 
 Minimal graph-use instructions explain the tools and governor outcomes.
 The first-run flow obtains and displays the authoritative `run_id` through the
-run-creation contract resolved by #37 and ADR 0012. Instructions require that
-explicit ID on every run-scoped call and when resuming after a Claude session
-restart. A Claude session ID is never a `run_id`. Session hooks may supply only
-an explicitly registered run ID as context; they must not infer or override a
-tool's target run.
+run-creation contract. Instructions require that explicit ID on every
+run-scoped call and when resuming after a Claude session restart. A Claude
+session ID is never a `run_id`. Session hooks may supply only an explicitly
+registered run ID as context; they must not infer or override a tool's target
+run. Accepted [ADR 0012](adr/0012-problem-identity-and-run-ownership.md) permits
+a Problem to link multiple runs but does not change this run boundary.
 
 Hook control is event-specific:
 
