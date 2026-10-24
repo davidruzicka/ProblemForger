@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "modules": {
+    "event_store": {
+      "provider": "sqlite",
+      "config": {
+        "path": "./.local/events.sqlite3",
+        "max_journal_page_size": 100,
+        "timeout_seconds": 5.0
+      }
+    },
+    "telemetry": {
+      "provider": "null",
+      "config": {}
+    }
+  }
+}
