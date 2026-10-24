@@ -99,7 +99,8 @@ metadata. The `get_graph` limit applies to the combined number of nodes and
 edges; the `get_audit_timeline` limit applies to returned records. Neither
 response may exceed its originating request's limit, and both remain capped
 at 100 records. `selection` is a JSON object whose meaning is defined by the
-graph schema; this P1 contract does not finalize the P2 node/edge ontology.
+graph query contract. The [graph-v1 domain contract](problem-graph.md#concrete-graph-v1-contract)
+defines P2 payload shapes separately; the P1 wire codec keeps those objects opaque.
 Integer-valued numbers inside JSON objects are also restricted to the safe
 integer range so JavaScript cannot round them during parsing. Every JSON string
 and object key must contain valid Unicode scalar values encodable as UTF-8;

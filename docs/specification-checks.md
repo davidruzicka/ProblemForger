@@ -72,6 +72,13 @@ The Node suite extracts and executes the actual inline script in the review-requ
 
 The package, architecture, and specification-check workflow runs these checks with read-only repository permission and no repository secrets. The separate review-request workflow uses write permissions to post its review request. Its trusted `pull_request_target` context must never check out or execute PR-head code.
 
+Graph-contract fixtures reuse the existing finite-schema interpreter to check
+`contracts/graph-v1.json` shapes and valid/invalid vectors, operation/event
+mapping, identifier parity, and the lifecycle table. They do not implement
+stateful graph validation, replay, authorization, or evidence trust; those
+require P2/P3 runtime tests. The graph contract is not embedded into runtime
+clients by this schema-only change.
+
 ## Regression evidence and implementation fixtures
 
 Document checks protect contract wording. Historical audit context belongs in the

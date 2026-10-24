@@ -1,0 +1,617 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://problemforger.dev/contracts/graph-v1.json",
+  "x-graph-schema-version": 1,
+  "x-operations": {
+    "create_node": {
+      "operation": "CreateNode",
+      "event_type": "node_created",
+      "event": "CreateNodeEvent"
+    },
+    "create_edge": {
+      "operation": "CreateEdge",
+      "event_type": "edge_created",
+      "event": "CreateEdgeEvent"
+    },
+    "attach_evidence": {
+      "operation": "AttachEvidence",
+      "event_type": "evidence_attached",
+      "event": "AttachEvidenceEvent"
+    },
+    "change_lifecycle": {
+      "operation": "ChangeLifecycle",
+      "event_type": "lifecycle_changed",
+      "event": "ChangeLifecycleEvent"
+    }
+  },
+  "x-lifecycle-transitions": {
+    "active": [
+      "superseded",
+      "invalidated"
+    ],
+    "superseded": [],
+    "invalidated": []
+  },
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]",
+      "x-max-utf8-bytes": 256
+    },
+    "SafeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "PositiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "Label": {
+      "type": "string",
+      "pattern": "[^\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]",
+      "x-max-utf8-bytes": 4096
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "x-max-utf8-bytes": 71
+    },
+    "NodeKind": {
+      "type": "string",
+      "enum": [
+        "RootGoal",
+        "Requirement",
+        "Task",
+        "Artifact",
+        "Evidence"
+      ]
+    },
+    "EdgeKind": {
+      "type": "string",
+      "enum": [
+        "derived_from",
+        "depends_on",
+        "implements",
+        "produces",
+        "supported_by",
+        "conflicts_with",
+        "invalidates",
+        "supersedes"
+      ]
+    },
+    "EntityKind": {
+      "type": "string",
+      "enum": [
+        "node",
+        "edge"
+      ]
+    },
+    "Lifecycle": {
+      "type": "string",
+      "enum": [
+        "active",
+        "superseded",
+        "invalidated"
+      ]
+    },
+    "TerminalLifecycle": {
+      "type": "string",
+      "enum": [
+        "superseded",
+        "invalidated"
+      ]
+    },
+    "EvidenceReference": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "content_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "content_digest"
+      ],
+      "additionalProperties": false
+    },
+    "NodeInput": {
+      "type": "object",
+      "properties": {
+        "node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "label": {
+          "$ref": "#/$defs/Label"
+        },
+        "protected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_id",
+        "kind",
+        "label",
+        "protected"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "RootGoal"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "protected": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "Task",
+                  "Artifact",
+                  "Evidence"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "protected": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "EdgeInput": {
+      "type": "object",
+      "properties": {
+        "edge_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/EdgeKind"
+        },
+        "source_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "target_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "edge_id",
+        "kind",
+        "source_id",
+        "target_id"
+      ],
+      "additionalProperties": false
+    },
+    "Provenance": {
+      "type": "object",
+      "properties": {
+        "proposal_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "record_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "journal_position": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "graph_version": {
+          "$ref": "#/$defs/PositiveInteger"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "record_id",
+        "journal_position",
+        "graph_version"
+      ],
+      "additionalProperties": false
+    },
+    "CreateNode": {
+      "type": "object",
+      "properties": {
+        "graph_schema_version": {
+          "const": 1
+        },
+        "op": {
+          "const": "create_node"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeInput"
+        }
+      },
+      "required": [
+        "graph_schema_version",
+        "op",
+        "node"
+      ],
+      "additionalProperties": false
+    },
+    "CreateNodeEvent": {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "node_created"
+        },
+        "event_schema_version": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/NodeInput"
+            }
+          },
+          "required": [
+            "node"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "event_type",
+        "event_schema_version",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "CreateEdge": {
+      "type": "object",
+      "properties": {
+        "graph_schema_version": {
+          "const": 1
+        },
+        "op": {
+          "const": "create_edge"
+        },
+        "edge": {
+          "$ref": "#/$defs/EdgeInput"
+        }
+      },
+      "required": [
+        "graph_schema_version",
+        "op",
+        "edge"
+      ],
+      "additionalProperties": false
+    },
+    "CreateEdgeEvent": {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "edge_created"
+        },
+        "event_schema_version": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "edge": {
+              "$ref": "#/$defs/EdgeInput"
+            }
+          },
+          "required": [
+            "edge"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "event_type",
+        "event_schema_version",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "AttachEvidence": {
+      "type": "object",
+      "properties": {
+        "graph_schema_version": {
+          "const": 1
+        },
+        "op": {
+          "const": "attach_evidence"
+        },
+        "entity_kind": {
+          "$ref": "#/$defs/EntityKind"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceReference"
+        }
+      },
+      "required": [
+        "graph_schema_version",
+        "op",
+        "entity_kind",
+        "entity_id",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "AttachEvidenceEvent": {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "evidence_attached"
+        },
+        "event_schema_version": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "entity_kind": {
+              "$ref": "#/$defs/EntityKind"
+            },
+            "entity_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "evidence": {
+              "$ref": "#/$defs/EvidenceReference"
+            }
+          },
+          "required": [
+            "entity_kind",
+            "entity_id",
+            "evidence"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "event_type",
+        "event_schema_version",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "ChangeLifecycle": {
+      "type": "object",
+      "properties": {
+        "graph_schema_version": {
+          "const": 1
+        },
+        "op": {
+          "const": "change_lifecycle"
+        },
+        "entity_kind": {
+          "$ref": "#/$defs/EntityKind"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/TerminalLifecycle"
+        },
+        "reason": {
+          "$ref": "#/$defs/Label"
+        }
+      },
+      "required": [
+        "graph_schema_version",
+        "op",
+        "entity_kind",
+        "entity_id",
+        "lifecycle",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "ChangeLifecycleEvent": {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "lifecycle_changed"
+        },
+        "event_schema_version": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "entity_kind": {
+              "$ref": "#/$defs/EntityKind"
+            },
+            "entity_id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "lifecycle": {
+              "$ref": "#/$defs/TerminalLifecycle"
+            },
+            "reason": {
+              "$ref": "#/$defs/Label"
+            }
+          },
+          "required": [
+            "entity_kind",
+            "entity_id",
+            "lifecycle",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "event_type",
+        "event_schema_version",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "Operation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CreateNode"
+        },
+        {
+          "$ref": "#/$defs/CreateEdge"
+        },
+        {
+          "$ref": "#/$defs/AttachEvidence"
+        },
+        {
+          "$ref": "#/$defs/ChangeLifecycle"
+        }
+      ]
+    },
+    "Event": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CreateNodeEvent"
+        },
+        {
+          "$ref": "#/$defs/CreateEdgeEvent"
+        },
+        {
+          "$ref": "#/$defs/AttachEvidenceEvent"
+        },
+        {
+          "$ref": "#/$defs/ChangeLifecycleEvent"
+        }
+      ]
+    },
+    "Node": {
+      "type": "object",
+      "properties": {
+        "node_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "label": {
+          "$ref": "#/$defs/Label"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          }
+        },
+        "created_by": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "protected": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_id",
+        "kind",
+        "label",
+        "lifecycle",
+        "evidence_refs",
+        "created_by",
+        "protected"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "RootGoal"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "protected": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "Task",
+                  "Artifact",
+                  "Evidence"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "protected": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Edge": {
+      "type": "object",
+      "properties": {
+        "edge_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "kind": {
+          "$ref": "#/$defs/EdgeKind"
+        },
+        "source_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "target_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          }
+        },
+        "created_by": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "edge_id",
+        "kind",
+        "source_id",
+        "target_id",
+        "lifecycle",
+        "evidence_refs",
+        "created_by"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

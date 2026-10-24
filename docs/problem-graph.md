@@ -12,7 +12,7 @@ The graph exists to make goals, requirements, work units, artifacts, evidence, d
 
 Keep the initial ontology small:
 
-- **RootGoal** — the user-level objective or protected anchor;
+- **RootGoal** — the run-scoped objective or protected anchor;
 - **Requirement** — a constraint or condition that must remain satisfied;
 - **Task** — a bounded unit of work;
 - **Artifact** — code, patch, file, test result, or other produced object;
@@ -22,7 +22,7 @@ Additional node types require demonstrated need.
 
 ## Edges
 
-Edges are typed and carry provenance. Candidate examples include:
+Edges are typed and carry provenance. The initial kinds are:
 
 - `derived_from`;
 - `depends_on`;
@@ -33,7 +33,9 @@ Edges are typed and carry provenance. Candidate examples include:
 - `invalidates`;
 - `supersedes`.
 
-The exact initial edge set is finalized during P1/P2 planning.
+The graph-v1 edge set is exactly the eight names above. Edges describe relationships;
+creating an `invalidates` or `supersedes` edge does not itself change lifecycle.
+Lifecycle changes are explicit operations below.
 
 ## Agent interaction
 
@@ -178,3 +180,144 @@ mutation advances `graph_version` once as a complete batch; stale
 `expected_graph_version` values conflict rather than overwrite; and telemetry
 remains outside authoritative graph state. The graph projection must therefore
 never expose a prefix of an atomic mutation batch.
+
+## Concrete graph-v1 contract
+
+[contracts/graph-v1.json](../contracts/graph-v1.json) owns the closed field
+shapes, node/edge kinds, operation-to-event mapping, and lifecycle transition
+table. [Fixtures](../tests/fixtures/graph-v1.json) contain valid/invalid shapes
+and every lifecycle state pair. These are domain payloads inside the existing
+v1 protocol, not a replacement transport or journal format. The contract has
+no runtime effect until the P2 replay and service implementations land.
+
+The graph belongs to one explicit `run_id`. Node IDs and edge IDs have separate
+run-local namespaces; an edge endpoint always identifies a node in that run.
+IDs use the protocol's existing identifier rules. They cannot be reused after
+invalidation or supersession. No `problem_id` is introduced. Accepted
+[ADR 0012](adr/0012-problem-identity-and-run-ownership.md) owns the future
+Problem/run relationship. A Problem's intended outcomes are not stored or
+made authoritative by this run graph.
+
+### Entities and provenance
+
+A node input contains `node_id`, `kind`, `label`, and `protected`. An edge input
+contains `edge_id`, `kind`, `source_id`, and `target_id`. Their meanings and
+endpoints are immutable. Labels are nonblank UTF-8 text, bounded at 4096 bytes.
+There is no arbitrary attributes bag in graph-v1. Artifact bytes and raw
+checker outputs remain outside graph entities; an Artifact label alone does
+not identify checked bytes or satisfy an evidence requirement.
+
+A committed entity starts with `lifecycle=active` and an empty `evidence_refs`
+list. Its public projection adds `created_by`: `proposal_id`, `record_id`,
+`journal_position`, and `graph_version` copied from its creating journal event.
+The enclosing graph response supplies `run_id`. These fields are service-derived;
+workers cannot supply them. Later attachment/lifecycle provenance remains in
+the corresponding durable events; creation provenance is never overwritten.
+The projection retains inactive entities and their incident edges. Invalidation
+does not recursively mutate dependencies or imply that an incident edge still
+provides valid support. P3 owns admissibility and downstream policy.
+
+RootGoal nodes must be protected. A Requirement may also be a protected anchor;
+other node kinds must have `protected=false`. Protected creation and changes
+require an explicitly authorized service/operator path. P2's worker path must
+reject creating a RootGoal or any protected node, changing its lifecycle, or
+attaching evidence to it until P3 defines the authorized meta-operation.
+A worker cannot remove protection through a new node with a reused ID. This
+contract does not add an operator transport or choose a bootstrap mechanism;
+service integration must define how trusted initial anchors are registered
+without widening worker authority.
+
+A fresh graph has version zero and empty node/edge collections; no RootGoal
+is invented from a harness session. Nonempty committed graph state must contain
+exactly one RootGoal. Every other node must have a directed `derived_from` path
+to that RootGoal when the complete batch is considered. This structural path
+retains provenance; it is not proof of semantic relevance. Retained inactive
+nodes/edges may establish historical provenance. No additional acyclicity or
+semantic edge-kind restrictions are imposed in P2.
+
+### Operations and graph events
+
+Each operation carries `graph_schema_version=1` and its `op` discriminator.
+Its other fields are defined by the JSON contract:
+
+| Operation | Fields beyond version/op | Graph event type |
+| --- | --- | --- |
+| `create_node` | `node` | `node_created` |
+| `create_edge` | `edge` | `edge_created` |
+| `attach_evidence` | `entity_kind`, `entity_id`, `evidence` | `evidence_attached` |
+| `change_lifecycle` | `entity_kind`, `entity_id`, `lifecycle`, `reason` | `lifecycle_changed` |
+
+`entity_kind` is `node` or `edge`. Creating a node/edge with an existing ID is
+invalid even when its content is identical. To revise meaning, create a new
+entity and explicitly supersede the old one. A newly created edge requires
+both endpoints to exist and be active at that point in operation order.
+Self-edges are allowed; semantic usefulness is a governance concern.
+Attachments and lifecycle changes require an existing active target. Evidence
+references contain immutable `evidence_id` and `content_digest` (a `sha256:`
+prefix and 64 lowercase hexadecimal digits). A duplicate evidence ID on the
+same target is invalid, including one supplied with a different digest.
+A digest is not a trust attestation. Registration, producer identity,
+subject binding, and admissibility are owned by
+[EVIDENCE-TRUST through EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-trust).
+P2 may retain asserted references; it cannot label them trusted.
+
+The lifecycle table permits only `active → superseded` and
+`active → invalidated`, with a nonblank bounded `reason`. Inactive states are
+terminal; repeating a transition, reactivation, and destructive deletion are
+invalid. A protocol retry replays the original proposal outcome instead of
+applying its operations twice. Evidence-derived verification is separate
+from lifecycle; attaching evidence never changes lifecycle automatically.
+
+A successful operation emits exactly one corresponding graph event, in input
+order. Its `event_schema_version` is 1; its payload is the operation's fields
+with `op` and `graph_schema_version` removed. The Event definition describes
+only this nested event triplet; journal envelope/proposal/version fields remain
+owned by [MODULES.EVENTSTORE-PORT](modules.md#spec-modules-eventstore-port).
+`created_by` is derived from that envelope, not duplicated in the payload.
+All events share the single resulting graph version of the committed batch.
+
+### Batch validation and replay
+
+Prepare a private candidate state from the caller's expected committed version.
+Validate operation shapes, then apply them sequentially to that candidate.
+Later operations may reference entities created earlier in the same batch;
+forward references are invalid. Final RootGoal/provenance checks inspect the
+complete candidate, so a node and its `derived_from` edge may be created in
+one batch. A batch must contain at least one operation. Any invalid operation
+or final graph invariant discards the entire candidate and emits no graph
+events. The application still retains the receipt and final outcome under
+[PROPOSAL-RECOVERY](protocol.md#spec-protocol-proposal-recovery).
+P3 owns outcome/reason mapping; this schema does not mint governance outcomes
+or override stale-version/recovery precedence.
+
+Replay consumes only complete committed batches in journal order, applying
+the same structural rules without re-running evidence producers or governor
+policy. Audit-only records cannot affect the projection. Neither a failed
+candidate nor a partial event prefix becomes a queryable graph version.
+The [EventStore contract](modules.md#spec-modules-eventstore-port) owns atomic
+append, version assignment, optimistic conflict detection, and durability.
+
+Unknown operation/kind/field/version is invalid input. Replay of an unsupported
+event type/version or structurally invalid committed batch fails explicitly;
+it must never skip that event and return a plausible partial graph. P1's opaque
+test payloads are not graph-v1 histories. There is no silent conversion of
+legacy/unknown payloads. Introducing another graph payload meaning requires
+an explicit version/reader decision under the EventStore schema rules.
+
+### Protocol compatibility and verification boundary
+
+The protocol envelope remains v1. Its `operations` and graph-result entity
+objects are currently opaque JSON; the new domain shapes fit those existing
+slots. The wire codec remains structural and must not import graph policy.
+Concrete graph queries/selection/pagination and domain error integration belong
+to service issue #43; deterministic state validation/replay belongs to #42.
+No client or service behavior changes in the schema-only issue #41.
+
+The shape tests reuse the existing finite-schema interpreter. Lifecycle vectors
+check the finite table; they do not prove runtime transition enforcement.
+Replay tests must cover duplicate IDs, missing/inactive targets, same-batch
+references, whole-batch rollback, provenance paths, protected worker operations,
+unsupported event histories, and provider/restart equivalence. Service tests
+must prove authorization, redaction, bounds, and durable outcomes. None of
+these shape fixtures replaces the P3 evidence/governance tests or freezes
+`graph-intervention-v1`.

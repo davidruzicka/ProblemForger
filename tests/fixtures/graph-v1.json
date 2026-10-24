@@ -1,0 +1,293 @@
+{
+  "shapes": [
+    {
+      "name": "create_node",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "create_node",
+        "node": {
+          "node_id": "task-1",
+          "kind": "Task",
+          "label": "Implement a bounded change",
+          "protected": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "create_edge",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "create_edge",
+        "edge": {
+          "edge_id": "edge-1",
+          "kind": "derived_from",
+          "source_id": "task-1",
+          "target_id": "goal-1"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "attach_evidence",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "attach_evidence",
+        "entity_kind": "node",
+        "entity_id": "task-1",
+        "evidence": {
+          "evidence_id": "check-1",
+          "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "change_lifecycle",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "change_lifecycle",
+        "entity_kind": "node",
+        "entity_id": "task-1",
+        "lifecycle": "invalidated",
+        "reason": "A later check contradicts this task"
+      },
+      "valid": true
+    },
+    {
+      "name": "empty label",
+      "definition": "NodeInput",
+      "value": {
+        "node_id": "task-1",
+        "kind": "Task",
+        "label": "  ",
+        "protected": false
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown node kind",
+      "definition": "NodeInput",
+      "value": {
+        "node_id": "task-1",
+        "kind": "Agent",
+        "label": "Implement a bounded change",
+        "protected": false
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown edge kind",
+      "definition": "EdgeInput",
+      "value": {
+        "edge_id": "edge-1",
+        "kind": "random",
+        "source_id": "task-1",
+        "target_id": "goal-1"
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown entity kind",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "attach_evidence",
+        "entity_kind": "run",
+        "entity_id": "task-1",
+        "evidence": {
+          "evidence_id": "check-1",
+          "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "unbound evidence",
+      "definition": "EvidenceReference",
+      "value": {
+        "evidence_id": "check-1"
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid digest",
+      "definition": "EvidenceReference",
+      "value": {
+        "evidence_id": "check-1",
+        "content_digest": "https://mutable.example/check"
+      },
+      "valid": false
+    },
+    {
+      "name": "reactivation is not an operation",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "change_lifecycle",
+        "entity_kind": "node",
+        "entity_id": "task-1",
+        "lifecycle": "active",
+        "reason": "undo"
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown operation",
+      "definition": "Operation",
+      "value": {
+        "graph_schema_version": 1,
+        "op": "delete_node",
+        "node_id": "task-1"
+      },
+      "valid": false
+    },
+    {
+      "name": "projection node",
+      "definition": "Node",
+      "value": {
+        "node_id": "task-1",
+        "kind": "Task",
+        "label": "Implement a bounded change",
+        "lifecycle": "active",
+        "evidence_refs": [
+          {
+            "evidence_id": "check-1",
+            "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "created_by": {
+          "proposal_id": "p1",
+          "record_id": "r1",
+          "journal_position": 3,
+          "graph_version": 1
+        },
+        "protected": false
+      },
+      "valid": true
+    },
+    {
+      "name": "projection edge",
+      "definition": "Edge",
+      "value": {
+        "edge_id": "edge-1",
+        "kind": "derived_from",
+        "source_id": "task-1",
+        "target_id": "goal-1",
+        "lifecycle": "active",
+        "evidence_refs": [],
+        "created_by": {
+          "proposal_id": "p1",
+          "record_id": "r2",
+          "journal_position": 4,
+          "graph_version": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "unprotected root",
+      "definition": "NodeInput",
+      "value": {
+        "node_id": "goal-1",
+        "kind": "RootGoal",
+        "label": "Preserve intent",
+        "protected": false
+      },
+      "valid": false
+    },
+    {
+      "name": "digest trailing newline",
+      "definition": "EvidenceReference",
+      "value": {
+        "evidence_id": "check-1",
+        "content_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+      },
+      "valid": false
+    },
+    {
+      "name": "protected Task",
+      "definition": "NodeInput",
+      "value": {
+        "node_id": "task-1",
+        "kind": "Task",
+        "label": "Task",
+        "protected": true
+      },
+      "valid": false
+    },
+    {
+      "name": "protected root",
+      "definition": "NodeInput",
+      "value": {
+        "node_id": "goal-1",
+        "kind": "RootGoal",
+        "label": "Goal",
+        "protected": true
+      },
+      "valid": true
+    },
+    {
+      "name": "protected requirement",
+      "definition": "NodeInput",
+      "value": {
+        "node_id": "req-1",
+        "kind": "Requirement",
+        "label": "Constraint",
+        "protected": true
+      },
+      "valid": true
+    }
+  ],
+  "transitions": [
+    {
+      "from": "active",
+      "to": "active",
+      "valid": false
+    },
+    {
+      "from": "active",
+      "to": "superseded",
+      "valid": true
+    },
+    {
+      "from": "active",
+      "to": "invalidated",
+      "valid": true
+    },
+    {
+      "from": "superseded",
+      "to": "active",
+      "valid": false
+    },
+    {
+      "from": "superseded",
+      "to": "superseded",
+      "valid": false
+    },
+    {
+      "from": "superseded",
+      "to": "invalidated",
+      "valid": false
+    },
+    {
+      "from": "invalidated",
+      "to": "active",
+      "valid": false
+    },
+    {
+      "from": "invalidated",
+      "to": "superseded",
+      "valid": false
+    },
+    {
+      "from": "invalidated",
+      "to": "invalidated",
+      "valid": false
+    }
+  ]
+}
