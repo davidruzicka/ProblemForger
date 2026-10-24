@@ -292,4 +292,3 @@ os._exit(23)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("durable EventStore", result.stderr)
         self.assertFalse(self.socket_path.exists())
-
