@@ -82,12 +82,12 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
 
 - [ ] **P5 — Claude Code plugin preparation**
   - adapter preparation and protocol smoke checks only; portability validation belongs to P11;
-  - begin P5 execution only after the P1 service (#21), P2 graph (#3), and P3 governance (#4) prerequisites; resolve Problem/run identity through #37 and ADR 0012 before the P2 schema freeze;
+  - begin P5 execution only after the P1 service (#21), P2 graph (#3), and P3 governance (#4) prerequisites; follow accepted ADR 0012's Problem/run ownership boundary;
   - same ProblemForger service/protocol;
   - pin the Linux CLI release and plugin source commit/digest; load from a local plugin directory for the smoke test;
   - Claude Code starts a per-session stdio MCP bridge; the ADR 0010 supervisor owns service startup/shutdown, the worker socket, and the durable journal;
   - document configured socket discovery, worker-group permissions, bridge shutdown, and explicit unavailable-service behavior with no direct-store fallback; do not assume in-session plugin disable/uninstall immediately terminates the bridge, and verify termination after a successful plugin reload or a later session;
-  - use the run-creation contract resolved by #37/ADR 0012, show its authoritative `run_id`, and require that explicit ID on every call and resume; never infer it from a Claude session ID;
+  - show the authoritative `run_id` from the run-creation contract, require that explicit ID on every call and resume, and never infer it from a Claude session ID; Problem-level associations remain outside this adapter scope;
   - keep authentication in unmodified Claude Code; separately test Claude.ai
     subscription login, keyless Console sign-in with an OAuth profile, legacy
     Console sign-in that creates/stores an API key, and
@@ -149,7 +149,8 @@ This is a candidate follow-up only if examination supports the direction; it doe
 - Validate a Problem-centered workflow in which ProblemForger researches, decomposes, plans, and coordinates outcomes that may span multiple projects/resources.
 - Treat semantic outcomes and resource/project relationships as the candidate primary model; repositories are resources, not necessarily Problem boundaries. Avoid assuming a universal ontology.
 - Keep agent runs and harness sessions replaceable execution mechanisms, not product-level Problem identity.
-- Before P2 freezes its graph schema, resolve Problem/run/graph/resource ownership through [issue #37](https://github.com/davidruzicka/ProblemForger/issues/37) and proposed [ADR 0012](docs/adr/0012-problem-identity-and-run-ownership.md). Until then, v1 remains run-scoped as specified in [the protocol](docs/protocol.md); add no `problem_id`, cross-run operations, or multi-project persistence.
+- The design gate in [issue #37](https://github.com/davidruzicka/ProblemForger/issues/37) is resolved GO by [ADR 0012](docs/adr/0012-problem-identity-and-run-ownership.md): a thin Problem identity may link resource scopes and phase-labelled runs, while each graph and journal remains run-scoped. This accepts the identity/ownership direction only; it does not approve a product pivot.
+- P2 remains a run-scoped graph and journal implementation. It does not implement the Problem registry/API, cross-run operations, or multi-project persistence. Keep v1 unchanged; any Problem persistence or cross-run read model requires a separately scoped design.
 - After P6, if the direction remains justified, run a separately frozen evaluation spanning at least two repositories/resources, research plus implementation, and a replaced harness session. Keep it separate from P6; P6 does not validate this direction.
 - Keep P10 as the observer/debug UI. A Problem-first, goal-oriented interface is a later decision tracked in issue #12, not a change to P10's current scope.
 
