@@ -173,7 +173,7 @@ class ServiceProcessTests(unittest.TestCase):
 
         self.start_service()
         replay = self.client().call(mutation)
-        self.assertEqual(replay, expected)
+        self.assertEqual(replay["result"], expected["result"])
         timeline = self.client().call(
             request(
                 "get_audit_timeline",

@@ -200,6 +200,28 @@ class ApplicationServiceTests(unittest.TestCase):
         self.assertNotIn("operations", status["result"])
         self.assertNotIn("evidence", status["result"])
 
+    def test_proposal_poll_and_replay_match_result_across_distinct_envelopes(self) -> None:
+        self.create_run()
+        mutation = proposal()
+        mutation["request_id"] = "propose-request"
+        self.application.handle(mutation)
+
+        expected = self.application.handle(
+            message(
+                "get_proposal",
+                {"run_id": "run-1", "proposal_id": "proposal-1"},
+                request_id="poll-proposal",
+            )
+        )
+        replay = self.application.handle(mutation)
+
+        self.assertEqual("get_proposal", expected["operation"])
+        self.assertEqual("poll-proposal", expected["request_id"])
+        self.assertEqual("propose_mutation", replay["operation"])
+        self.assertEqual("propose-request", replay["request_id"])
+        self.assertNotEqual(replay, expected)
+        self.assertEqual(replay["result"], expected["result"])
+
     def test_pending_receipt_resumes_to_one_durable_outcome(self) -> None:
         self.create_run()
         request = proposal()
