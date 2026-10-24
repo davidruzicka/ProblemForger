@@ -28,7 +28,7 @@ The MCP bridge uses the same versioned application protocol and Linux
 JSONL-over-Unix-socket worker boundary selected by ADR 0010. MCP is an outer
 adapter, not a replacement service transport. Reuse existing client code;
 the bridge language is an implementation choice, not a core requirement.
-Every run-scoped tool retains an explicit `run_id`. Problem-level identity, aggregation across runs, and cross-run operations are outside this adapter decision; their relationship to v1 is deferred to proposed [ADR 0012](0012-problem-identity-and-run-ownership.md) and [issue #37](https://github.com/davidruzicka/ProblemForger/issues/37). This does not change the protocol's current run boundary.
+Every run-scoped tool retains an explicit `run_id`. Problem-level identity and aggregation across runs are defined by accepted [ADR 0012](0012-problem-identity-and-run-ownership.md); cross-run operations remain outside this adapter decision. This does not change the protocol's current run boundary.
 
 Claude Code starts the session-scoped stdio bridge for an enabled plugin. The
 ADR 0010 supervisor owns service startup and shutdown, the worker socket, and
