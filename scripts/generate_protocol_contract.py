@@ -92,6 +92,13 @@ def generate(root: Path = ROOT, *, check: bool = False) -> None:
             + " as const;\n"
         ),
     }
+    graph = json.loads((root / "contracts/graph-v1.json").read_text(encoding="utf-8"))
+    for definition in graph["$defs"].values():
+        check_schema(definition, graph["$defs"])
+    outputs["src/problemforger/application/_graph_contract.py"] = (
+        '"""Generated from contracts/graph-v1.json; run python3 -m scripts.generate_protocol_contract."""\n\n'
+        f'CONTRACT = {pformat(graph, width=100, sort_dicts=False)}\n'
+    )
     for relative, content in outputs.items():
         path = root / relative
         if check:

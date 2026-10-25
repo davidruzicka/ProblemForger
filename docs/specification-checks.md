@@ -76,8 +76,11 @@ Graph-contract fixtures reuse the existing finite-schema interpreter to check
 `contracts/graph-v1.json` shapes and valid/invalid vectors, operation/event
 mapping, identifier parity, and the lifecycle table. They do not implement
 stateful graph validation, replay, authorization, or evidence trust; those
-require P2/P3 runtime tests. The graph contract is not embedded into runtime
-clients by this schema-only change.
+require P2/P3 runtime tests. The generator embeds the graph contract for provider-neutral application
+replay without runtime file I/O. The wire clients keep their existing opaque
+graph payload envelope. Replay tests exercise both providers, SQLite reopen,
+batch-splitting pages, immutable projections, audit-only outcomes, run isolation,
+concurrent append boundaries, and explicit failure for invalid histories.
 
 ## Regression evidence and implementation fixtures
 

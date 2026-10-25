@@ -278,12 +278,17 @@ def _integer(
         )
 
 
-def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None:
+def _validate_shape(
+    value: Any, schema: str | dict[str, Any], name: str,
+    contract: dict[str, Any] | None = None,
+) -> None:
     """Evaluate only the schema keywords used by the embedded v1 contract."""
+    if contract is None:
+        contract = CONTRACT
     if isinstance(schema, str):
-        schema = CONTRACT["$defs"][schema]
+        schema = contract["$defs"][schema]
     if "$ref" in schema:
-        target = CONTRACT["$defs"][schema["$ref"].removeprefix("#/$defs/")]
+        target = contract["$defs"][schema["$ref"].removeprefix("#/$defs/")]
         schema = {**target, **{key: item for key, item in schema.items() if key != "$ref"}}
     code = schema.get("x-error-code", "PROTOCOL_ERROR")
     kind = schema.get("type")
@@ -327,20 +332,20 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
             raise ProtocolValidationError(f"{name} contains unknown fields", code=code)
         for field, rule in properties.items():
             if field in value:
-                _validate_shape(value[field], rule, f"{name}.{field}")
+                _validate_shape(value[field], rule, f"{name}.{field}", contract)
     if type(value) is list:
         if "maxItems" in schema and len(value) > schema["maxItems"]:
             raise ProtocolValidationError(f"{name} exceeds its record limit", code=code)
         if "items" in schema:
             for item in value:
-                _validate_shape(item, schema["items"], f"{name} item")
+                _validate_shape(item, schema["items"], f"{name} item", contract)
     for rule in schema.get("allOf", []):
-        _validate_shape(value, rule, name)
+        _validate_shape(value, rule, name, contract)
     if "oneOf" in schema:
         matches = 0
         for rule in schema["oneOf"]:
             try:
-                _validate_shape(value, rule, name)
+                _validate_shape(value, rule, name, contract)
             except ProtocolValidationError:
                 continue
             matches += 1
@@ -348,11 +353,11 @@ def _validate_shape(value: Any, schema: str | dict[str, Any], name: str) -> None
             raise ProtocolValidationError(f"{name} does not match exactly one allowed shape", code=code)
     if "if" in schema:
         try:
-            _validate_shape(value, schema["if"], name)
+            _validate_shape(value, schema["if"], name, contract)
         except ProtocolValidationError:
             pass
         else:
-            _validate_shape(value, schema["then"], name)
+            _validate_shape(value, schema["then"], name, contract)
     if "x-max-canonical-bytes" in schema:
         sized = (
             {field: value[field] for field in schema["x-size-fields"]}
