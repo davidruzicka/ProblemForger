@@ -80,7 +80,9 @@ nullable proposal scope; it is neither terminal nor graph-changing),
 graph versions), `proposal_abandoned` (terminal operational recovery status,
 not a governance outcome), and `graph_changed` (proposal identity, graph
 version, event type/schema version, and opaque JSON payload). Concrete graph
-node/edge payload schemas belong to P2.
+node/edge payload schemas belong to P2 and are defined by the
+[graph-v1 contract](problem-graph.md#concrete-graph-v1-contract), separately
+from this envelope.
 
 The C-run recovery context contains the manifest hash and effective
 graph-intervention and governance-policy identities copied from run metadata.

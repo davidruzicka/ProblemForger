@@ -59,6 +59,7 @@ This repository is in early P1 implementation. It has a Python 3.12+ package wit
 
 - [Risks](docs/risks.md)
 - [Related work](docs/related-work.md)
+- [Future exploration candidates](docs/future.md)
 - [P0 specification audit](docs/p0-audit.md)
 - [Methodology audit and decision register](docs/methodology.md)
 

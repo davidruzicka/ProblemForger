@@ -60,6 +60,7 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
   - graph command/query contract needed by later adapters.
 
 - [ ] **P2 — Event-sourced ProblemGraph**
+  - implementation sequence: [schema #41](https://github.com/davidruzicka/ProblemForger/issues/41), [replay #42](https://github.com/davidruzicka/ProblemForger/issues/42), [service integration #43](https://github.com/davidruzicka/ProblemForger/issues/43);
   - minimal node/edge schema;
   - deterministic replay/projection;
   - graph versions and provenance;
