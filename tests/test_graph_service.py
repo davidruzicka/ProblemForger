@@ -197,4 +197,3 @@ class GraphServiceTests(unittest.TestCase):
             self.assertEqual(response['reason_code'], 'P1_GOVERNANCE_NOT_IMPLEMENTED')
             with self.assertRaises(ValueError):
                 app.bootstrap_root('c-run', 'root', 'Goal')
-
