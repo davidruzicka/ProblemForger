@@ -4,7 +4,7 @@
 
 HarnessX and Claude Code must use the same ProblemForger core/service. Their adapters translate native lifecycle events and agent tool calls into a stable, versioned protocol. [ADR 0011](adr/0011-claude-code-plugin-harness.md) selects the Claude Code plugin integration.
 
-The protocol is independent from provider implementations and from the transport used to carry it.
+The protocol is independent of provider implementations and of the transport used to carry it.
 
 ## Protocol planes
 
@@ -33,8 +33,8 @@ Run creation is durable and idempotent: `create_run(run_id, run_metadata)`
 registers an empty version-zero run before any proposal is accepted. A repeat
 create returns the existing registration only when the supplied metadata has the
 same v2 canonical serialization; otherwise it returns an explicit
-`RUN_METADATA_CONFLICT` without changing the journal. Reopen/restart preserves the registration, journal, and current
-graph version; reopening preserves the persisted journal and current graph
+`RUN_METADATA_CONFLICT` without changing the journal. Reopen/restart preserves the registration;
+reopening preserves the persisted journal and current graph
 version. Version zero and an empty journal apply only to a newly created run;
 reopening never resets a non-empty journal or graph version. No operation
 implicitly creates a run from an arbitrary ID; unknown runs return `NOT_FOUND`.
@@ -552,7 +552,7 @@ get_audit_timeline(run_id, limit, after_journal_position?)
 propose_mutation(run_id, proposal_id, expected_graph_version, operations, evidence_refs)
 ```
 
-The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are not: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller. The harness/worker command plane authorizes run creation before registering a supplied run ID and performs caller-to-run authorization for the explicit `run_id` before any other run-scoped command or query reads or mutates that run; it exposes filtered public projections. Proposal-status and audit responses return only `journal_position`, run/proposal identifiers, record kind, lifecycle state, governance outcome/reason, graph version, and other explicitly public metadata; they do not return normalized mutation operations, evidence content, raw outputs, credentials, or internal recovery inputs. Graph-state projections may include immutable evidence references as graph metadata required by the explicit graph API, but never expose evidence content, raw outputs, credentials, or internal recovery inputs; raw `read_journal` records remain internal to the owning service and authorized operator/recovery surfaces. The public audit query requires a `limit`. That limit is an integer, required, positive, finite, and no greater than the service's finite configured maximum; missing or invalid values return `INVALID_LIMIT`. Results are ordered by ascending `journal_position` after the exclusive cursor and return `next_after_journal_position` plus `has_more` for continuation. An omitted cursor starts at the beginning (position 0); `next_after_journal_position` is the last returned position, or the supplied cursor for an empty page. `has_more` indicates whether additional visible records existed after that cursor when the query was read. Later appends may be retrieved by polling the returned cursor. There is no unbounded journal response.
+The exact tool names are harness-specific and are not part of the domain protocol. Their run-scoped semantics are fixed: every graph/proposal operation resolves against the explicit `run_id` supplied by the caller. The harness/worker command plane authorizes run creation before registering a supplied run ID and performs caller-to-run authorization for the explicit `run_id` before any other run-scoped command or query reads or mutates that run; it exposes filtered public projections. Proposal-status and audit responses return only `journal_position`, run/proposal identifiers, record kind, lifecycle state, governance outcome/reason, graph version, and other explicitly public metadata; they do not return normalized mutation operations, evidence content, raw outputs, credentials, or internal recovery inputs. Graph-state projections may include immutable evidence references as graph metadata required by the explicit graph API, but never expose evidence content, raw outputs, credentials, or internal recovery inputs; raw `read_journal` records remain internal to the owning service and authorized operator/recovery surfaces. The public audit query requires a `limit`. That limit is an integer, required, positive, finite, and no greater than the service's finite configured maximum; missing or invalid values return `INVALID_LIMIT`. Results are ordered by ascending `journal_position` after the exclusive cursor and return `next_after_journal_position` plus `has_more` for continuation. An omitted cursor starts at the beginning (position 0); `next_after_journal_position` is the last returned position, or the supplied cursor for an empty page. `has_more` indicates whether additional visible records existed after that cursor when the query was read. Later appends may be retrieved by polling the returned cursor. There is no unbounded journal response.
 
 Configuration B commits proposals after schema/version/core-invariant checks only.
 
@@ -688,4 +688,4 @@ At minimum distinguish:
 - domain event schema version;
 - module configuration schema version.
 
-Backward-compatibility policy is intentionally narrow during early PoC development: migrations may be breaking before the first public release, but stored event streams used for experiments must remain replayable by the code/version that produced them and carry enough version metadata to identify that code path.
+Backward-compatibility policy is narrow during early PoC development: migrations may be breaking before the first public release, but stored event streams used for experiments must remain replayable by the code/version that produced them and carry enough version metadata to identify that code path.

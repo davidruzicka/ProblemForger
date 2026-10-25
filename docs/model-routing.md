@@ -34,7 +34,7 @@ Feature utility must be measured rather than assumed.
 
 ## Local and fine-tuned models
 
-A local or fine-tuned checkpoint is simply another candidate model. Its profile should be learned from measured outcomes for the exact checkpoint, not inherited unquestioningly from its base model.
+A local or fine-tuned checkpoint is another candidate model. Its profile should be learned from measured outcomes for the exact checkpoint, not inherited unquestioningly from its base model.
 
 Cold start may use:
 

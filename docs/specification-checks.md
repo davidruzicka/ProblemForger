@@ -15,18 +15,18 @@ document is the only normative definition for each requirement.
 | Requirement ID | Contract | Normative owner |
 | --- | --- | --- |
 | `GRAPH.MODEL` | Problem-graph vocabulary and lifecycle | [Problem graph](problem-graph.md#spec-graph-model) |
-| `MODULES.EVENTSTORE-PORT` | EventStore port and provider contract | [Modules — EventStore](modules.md#spec-modules-eventstore-port) |
-| `MODULES.TELEMETRY-PORT` | Observation envelope and telemetry sink contract | [Modules — TelemetrySink](modules.md#spec-modules-telemetry-port) |
-| `PROTOCOL.PROPOSAL-RECOVERY` | Proposal identity, recovery, and terminal binding | [Protocol — proposal recovery](protocol.md#spec-protocol-proposal-recovery) |
-| `PROTOCOL.STORE-OWNER` | Exclusive durable-store ownership | [Protocol — STORE-OWNER](protocol.md#spec-protocol-store-owner) |
-| `PROTOCOL.PARALLEL-CLAIMS` | Deferred multi-worker claims | [Protocol — deferred parallel claims](protocol.md#spec-protocol-parallel-claims) |
-| `VERIFICATION.EVIDENCE-TRUST` | Trusted evidence producers and local isolation | [Verification — EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust) |
-| `VERIFICATION.EVIDENCE-BINDING` | Immutable evidence/subject binding | [Verification — EVIDENCE-BINDING](verification.md#spec-verification-evidence-binding) |
-| `VERIFICATION.EVIDENCE-RECOVERY` | Evidence retention and restart behavior | [Verification — EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery) |
-| `EVALUATION.MODEL` | P6 model and runtime selection | [Evaluation — Model](evaluation.md#spec-evaluation-model) |
-| `EVALUATION.PRE-P6` | Pre-P6 frozen artifacts | [Evaluation — frozen artifacts](evaluation.md#spec-evaluation-pre-p6) |
-| `EVALUATION.PREFLIGHT` | Task/evaluator preflight | [Evaluation — preflight](evaluation.md#spec-evaluation-preflight) |
-| `EVALUATION.MEASURED-EVALUATION` | Measured candidate patches | [Evaluation — measured runs](evaluation.md#spec-evaluation-measured-evaluation) |
+| `MODULES.EVENTSTORE-PORT` | EventStore port and provider contract | [Modules: EventStore](modules.md#spec-modules-eventstore-port) |
+| `MODULES.TELEMETRY-PORT` | Observation envelope and telemetry sink contract | [Modules: TelemetrySink](modules.md#spec-modules-telemetry-port) |
+| `PROTOCOL.PROPOSAL-RECOVERY` | Proposal identity, recovery, and terminal binding | [Protocol: proposal recovery](protocol.md#spec-protocol-proposal-recovery) |
+| `PROTOCOL.STORE-OWNER` | Exclusive durable-store ownership | [Protocol: STORE-OWNER](protocol.md#spec-protocol-store-owner) |
+| `PROTOCOL.PARALLEL-CLAIMS` | Deferred multi-worker claims | [Protocol: deferred parallel claims](protocol.md#spec-protocol-parallel-claims) |
+| `VERIFICATION.EVIDENCE-TRUST` | Trusted evidence producers and local isolation | [Verification: EVIDENCE-TRUST](verification.md#spec-verification-evidence-trust) |
+| `VERIFICATION.EVIDENCE-BINDING` | Immutable evidence/subject binding | [Verification: EVIDENCE-BINDING](verification.md#spec-verification-evidence-binding) |
+| `VERIFICATION.EVIDENCE-RECOVERY` | Evidence retention and restart behavior | [Verification: EVIDENCE-RECOVERY](verification.md#spec-verification-evidence-recovery) |
+| `EVALUATION.MODEL` | P6 model and runtime selection | [Evaluation: Model](evaluation.md#spec-evaluation-model) |
+| `EVALUATION.PRE-P6` | Pre-P6 frozen artifacts | [Evaluation: frozen artifacts](evaluation.md#spec-evaluation-pre-p6) |
+| `EVALUATION.PREFLIGHT` | Task/evaluator preflight | [Evaluation: preflight](evaluation.md#spec-evaluation-preflight) |
+| `EVALUATION.MEASURED-EVALUATION` | Measured candidate patches | [Evaluation: measured runs](evaluation.md#spec-evaluation-measured-evaluation) |
 | `REVIEW.LOOP` | Review automation and human checkpoints | [Review loop](review-loop.md#spec-review-loop) |
 
 ## Run checks

@@ -1,9 +1,8 @@
 #!/bin/bash
 # Pre-commit review of the change against the target branch.
 #
-# Catches a class of defects that tests miss because the logic is not wrong; an unsupported
-# assumption about how the code is wired is: dropped merged work of others, an orphaned
-# reference to a removed method, a conflict marker, a false claim in AGENTS.md.
+# Checks for integration defects tests may miss: dropped merged work from other authors,
+# references to removed methods, conflict markers, and false claims in AGENTS.md.
 
 # `git grep` pathspecs and relative paths are cwd-relative, so a run from a subdirectory
 # would check only part of the tree and look identical to a clean run.
@@ -216,7 +215,7 @@ check_conflict_markers() {
 }
 
 # Locally, a missing checker or no AGENTS.md is skipped silently: the branch may predate them.
-# In CI a silent skip is the worst outcome (a green job that checked nothing), so --check fails.
+# In CI, --check fails on a missing checker or AGENTS.md so a skipped check cannot pass.
 check_agents_claims() {
     local strict="$1"
     local checker='scripts/check_agents_claims.py'

@@ -1,6 +1,6 @@
 # Related work
 
-This file maps adjacent work and closest conceptual precedents. It is **not** a novelty claim.
+The systems below are adjacent work and conceptual precedents. Their comparison does not establish novelty.
 
 ## Agent harnesses
 
@@ -160,7 +160,7 @@ Pro Verified is currently a candidate for later external-validity testing, not a
 
 ## Working differentiation hypothesis
 
-The closest defensible description of the intended ProblemForger contribution is the **combination**, not any single component:
+ProblemForger's intended contribution combines these components; no single component defines it:
 
 ```text
 externally authoritative dynamic problem graph

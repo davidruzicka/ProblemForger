@@ -92,7 +92,7 @@ schema/policy/runtime is unavailable or invalid, the service records
 `ABANDONED` with an explicit reason. `ABANDONED` is operational status, not a
 governance outcome, and never changes graph state.
 
-The initial P1 contract deliberately has no `claim_ttl`, `owner_id`,
+The initial P1 contract has no `claim_ttl`, `owner_id`,
 `claim_epoch`, lease renewal, or persisted lease clock. Parallel processing
 claims may be introduced later only with measured justification and an
 amended protocol/ADR. This avoids building a distributed recovery mechanism

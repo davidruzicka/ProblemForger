@@ -175,9 +175,8 @@ if hasattr(os, "register_at_fork"):
 class SqliteEventStore(EventStoreState):
     """SQLite-backed journal on explicitly verified Linux local filesystems."""
 
-    # Keep this explicit rather than maintaining a denylist.  A denylist would
-    # silently accept a newly encountered network, FUSE, or otherwise unknown
-    # filesystem whose flock/durability semantics have not been verified.
+    # An explicit allowlist rejects newly encountered network, FUSE, or other
+    # unknown filesystems whose flock/durability semantics have not been verified.
     _SUPPORTED_FILESYSTEMS = frozenset(
         {
             "btrfs",

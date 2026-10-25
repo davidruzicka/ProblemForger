@@ -32,8 +32,8 @@ Every run has one append-only journal persisted through `EventStore`.
 
 The journal contains two classes of durable records:
 
-- **governance audit records** — proposal receipts, non-terminal audit observations, and final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
-- **graph-changing domain events** — committed node/edge/evidence/lifecycle changes that reconstruct the ProblemGraph.
+- **governance audit records**: proposal receipts, non-terminal audit observations, and final governance outcomes such as `COMMIT`, `REJECT`, `RETRY`, `ESCALATE`, or `CONFLICT`; these are required for auditability and evaluation but do not change graph state;
+- **graph-changing domain events**: committed node/edge/evidence/lifecycle changes that reconstruct the ProblemGraph.
 
 Every journal record has a monotonic `journal_position`. Each successfully committed graph mutation batch advances `graph_version` exactly once; all graph-changing events in that batch carry the same resulting graph version.
 
@@ -67,7 +67,7 @@ It must not depend on persistence providers (including SQLite, PostgreSQL,
 `socketserver`, or `wsgiref`), a specific model API, HarnessX, Claude Code, UI frameworks
 (including `tkinter` or `curses`), or provider-specific settings.
 
-The core also does **not** own model inference in the initial PoC. Model execution remains a harness responsibility. Later routing asks the harness to select a model; it does not move inference into the core.
+Model inference remains a harness responsibility in the initial PoC. Later routing asks the harness to select a model; it does not move inference into the core.
 
 ### Application API
 
@@ -77,7 +77,7 @@ commands and bounded graph/audit queries. Operations carry an explicit
 ordering and recovery semantics are defined by the [protocol
 contract](protocol.md#spec-protocol-proposal-recovery).
 
-The initial agent interaction uses this explicit API/tool surface rather than automatic full-graph prompt injection. This avoids introducing a context-selection subsystem before the graph/governance hypotheses have been tested.
+The initial worker interaction uses this explicit API/tool surface without automatic full-graph prompt injection. This avoids introducing a context-selection subsystem before the graph/governance hypotheses have been tested.
 
 See [ADR 0008](adr/0008-explicit-agent-graph-api-for-initial-poc.md).
 
@@ -96,7 +96,7 @@ Concrete providers and their configuration are specified in [Modules](modules.md
 Harness integrations are adapters to the service protocol, not provider modules
 inside the core.
 
-Harness-specific **raw trajectory archives** used for experiment reproducibility are also adapter/evaluation concerns, not core concerns. HarnessX and Claude Code may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
+Harness-specific raw trajectory archives used for experiment reproducibility belong to adapters and evaluation, outside the core. HarnessX and Claude Code may have different native trajectory schemas. Those raw artifacts remain external/content-addressed and are never written into the authoritative ProblemForger journal. Core domain types, `EventStore`, and graph replay must not depend on harness-native trajectory formats. Adapters may separately emit harness-neutral normalized observations through `TelemetrySink`.
 
 Provider-specific configuration belongs to the provider module.
 

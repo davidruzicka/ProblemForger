@@ -4,9 +4,9 @@
 
 ProblemForger is a practical feasibility prototype for making long-running AI-agent work more explicit, observable, and locally verifiable.
 
-The core idea is to keep an **externally governed, versioned problem graph** outside the worker model. The model may propose graph mutations, produce artifacts, and suggest progress, but it does not own authoritative state. A governor combines explicit evidence and policy before changes are committed; learned verification and calibrated routing are later experimental layers.
+ProblemForger keeps an externally governed, versioned problem graph outside the worker model. The model may propose graph mutations, produce artifacts, and suggest progress, but it does not own authoritative state. A governor combines explicit evidence and policy before changes are committed; learned verification and calibrated routing are later experimental layers.
 
-ProblemForger is intended to be a **harness-neutral reliability layer**, not another agent framework.
+ProblemForger is intended to be a harness-neutral reliability layer. It does not aim to build another agent framework.
 
 ## Initial scope
 
@@ -34,13 +34,14 @@ This repository is in early P1 implementation. It has a Python 3.12+ package wit
 
 ### Start here
 
+- [Glossary](docs/glossary.md)
 - [Vision](docs/vision.md)
 - [Architecture](docs/architecture.md)
-- [PLAN.md](PLAN.md) — phases and exit criteria.
+- [PLAN.md](PLAN.md): phases and exit criteria.
 
 ### Contributor workflow
 
-- [AGENTS.md](AGENTS.md) — contributor and agent instructions.
+- [AGENTS.md](AGENTS.md): contributor and agent instructions.
 - [Pull-request review loop](docs/review-loop.md)
 - [Specification ownership and checks](docs/specification-checks.md)
 

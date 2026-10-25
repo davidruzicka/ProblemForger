@@ -2,7 +2,7 @@
 
 ## Decision
 
-Replaceable infrastructure and policies are modules behind stable APIs/ports. Concrete implementations are selected by typed configuration and assembled at one composition root.
+Replaceable infrastructure and policies have stable ports. Concrete providers are modules selected by typed configuration and assembled at one composition root.
 
 SQLite and in-memory persistence are the initial `EventStore` providers behind the same port, but they have different durability capabilities. `MemoryEventStore` is explicitly ephemeral/test-only; SQLite is the first durable service provider. Future PostgreSQL or remote implementations must not require graph-domain changes.
 
@@ -259,11 +259,11 @@ Do not introduce a general service-locator abstraction.
 
 Introduce these only in the phase that requires them:
 
-- `Verifier` — P7;
-- `Calibrator` — P8;
-- `ModelSuitabilityEstimator` — P9;
-- `SnapshotStore` — only if replay cost demonstrates need;
-- `ArtifactStore` — only if artifacts cannot remain stable external references.
+- `Verifier`: P7;
+- `Calibrator`: P8;
+- `ModelSuitabilityEstimator`: P9;
+- `SnapshotStore`: only if replay cost demonstrates need;
+- `ArtifactStore`: only if artifacts cannot remain stable external references.
 
 Do not introduce `ModelProvider` in the initial core: model inference belongs to the harness. Do not introduce `ContextSelector` in P1: the first PoC uses explicit graph queries.
 
@@ -295,7 +295,7 @@ src/problemforger/
     ...
 ```
 
-Harness clients/adapters may live in this repository or separate packages, but they consume the public service protocol rather than importing provider modules.
+Harness clients/adapters may live in this repository or separate packages. They consume the public service protocol and do not import provider modules.
 
 The final package layout may differ. Dependency direction must remain equivalent.
 

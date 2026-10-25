@@ -15,7 +15,7 @@ Core code must not import, instantiate, or branch on concrete provider types.
 
 Provider-specific configuration is validated and consumed inside the provider module.
 
-The initial module mechanism is intentionally small; no generic plugin ecosystem is built without demonstrated need.
+The initial module mechanism is small; no generic plugin ecosystem is built without demonstrated need.
 
 ## Consequences
 

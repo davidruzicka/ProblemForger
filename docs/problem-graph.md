@@ -4,7 +4,7 @@
 
 ## Purpose
 
-The ProblemGraph is an explicit representation of evolving problem state. It is not the harness execution graph and it is not a dump of model chain-of-thought.
+The problem graph explicitly represents evolving problem state. It is neither the harness execution graph nor a dump of model chain-of-thought.
 
 The graph exists to make goals, requirements, work units, artifacts, evidence, dependencies, and provenance explicit enough to govern and inspect.
 
@@ -12,11 +12,11 @@ The graph exists to make goals, requirements, work units, artifacts, evidence, d
 
 Keep the initial ontology small:
 
-- **RootGoal** — the run-scoped objective or protected anchor;
-- **Requirement** — a constraint or condition that must remain satisfied;
-- **Task** — a bounded unit of work;
-- **Artifact** — code, patch, file, test result, or other produced object;
-- **Evidence** — evidence relevant to a claim, entity, or proposed mutation.
+- **RootGoal**: the run-scoped objective or protected anchor;
+- **Requirement**: a constraint or condition that must remain satisfied;
+- **Task**: a bounded unit of work;
+- **Artifact**: code, patch, file, test result, or other produced object;
+- **Evidence**: evidence relevant to a claim, entity, or proposed mutation.
 
 Additional node types require demonstrated need.
 
@@ -50,7 +50,7 @@ The worker receives a small ProblemForger tool/API surface that can:
 
 The worker proposes semantic changes; it never writes authoritative graph state directly.
 
-This is intentionally simpler than introducing a separate context selector/planner subsystem before the core graph hypothesis has been measured.
+A separate context selector or planner subsystem is deferred until the core graph hypothesis has been measured.
 
 See ADR 0008.
 
@@ -123,7 +123,7 @@ See ADR 0007.
 
 ## Evidence model
 
-Evidence source and verification method are orthogonal and must not be compressed into a single "strength" enum.
+Evidence origin and verification method are orthogonal and must not be compressed into a single "strength" enum.
 
 At minimum an evidence record should be able to represent:
 
