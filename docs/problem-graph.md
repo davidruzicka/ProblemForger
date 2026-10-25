@@ -188,8 +188,8 @@ shapes, node/edge kinds, operation-to-event mapping, and lifecycle transition
 table. [Fixtures](../tests/fixtures/graph-v1.json) contain valid/invalid shapes
 and every lifecycle state pair. These are domain payloads inside the existing
 v1 protocol, not a replacement transport or journal format. The replay
-implementation validates committed events against this contract;
-worker-facing queries and mutations remain a separate service-integration step.
+implementation validates committed events and candidate mutations against this
+contract; worker queries expose bounded public projections.
 
 The graph belongs to one explicit `run_id`. Node IDs and edge IDs have separate
 run-local namespaces; an edge endpoint always identifies a node in that run.
@@ -310,9 +310,10 @@ an explicit version/reader decision under the EventStore schema rules.
 The protocol envelope remains v1. Its `operations` and graph-result entity
 objects are currently opaque JSON; the new domain shapes fit those existing
 slots. The wire codec remains structural and must not import graph policy.
-Concrete graph queries/selection/pagination and domain error integration belong
-to service issue #43; deterministic state validation/replay belongs to #42.
-No client or service behavior changes in the schema-only issue #41.
+The service integration in issue #43 supplies graph queries, selection,
+pagination, and domain error handling over replay from #42. Wire clients
+continue to carry opaque graph payloads; schema-only issue #41 changed no
+client or service behavior.
 
 The shape tests reuse the existing finite-schema interpreter. Lifecycle vectors
 check the finite table; they do not prove runtime transition enforcement.
@@ -344,6 +345,48 @@ no partial state. The EventStore provider must commit atomically and report
 committed run boundaries accurately.
 
 The existing `python3 -m scripts.generate_protocol_contract` command embeds
-the graph contract, so replay needs no contract file I/O at runtime. Issue #43
-covers service query pagination, mutations, and worker/anchor authorization.
+the graph contract, so replay needs no contract file I/O at runtime. The
+service uses this projection for queries and private mutation candidates.
 Observers continue to use the service API.
+
+## Service integration
+
+`get_graph` accepts an omitted or empty `selection` for the whole graph, or
+`{"node_id": "..."}` for that node, its incident edges, and their endpoints.
+Historical inactive entities remain visible. Unknown selection fields, malformed
+IDs, and malformed cursors return `PROTOCOL_ERROR`; an absent selected node
+returns `NOT_FOUND`. The wire codecs keep selection opaque.
+
+Pages order all nodes by ID, then all edges by ID, using Unicode code-point
+order. `limit` bounds their combined count under the existing 1–100 contract.
+Continuation cursors bind run ID, canonical selection, and graph version; they
+are not authorization capabilities. A graph change invalidates continuation,
+so callers restart without a cursor. Audit-only appends preserve continuation.
+An invalid or mismatched cursor fails explicitly instead of mixing versions.
+A completed page returns `next_cursor=null` and `has_more=false`.
+
+For non-C runs, structurally valid proposals commit through `append_graph`.
+Invalid shapes, operation order, protection, or complete graph invariants
+produce durable `REJECT` with `invalid_graph_mutation`. Stale versions produce
+durable `CONFLICT` before structural evaluation. These are P2 structural
+outcomes, not P3 evidence-policy judgments. Configuration C retains
+`P1_GOVERNANCE_NOT_IMPLEMENTED` rejection until P3 supplies its policy.
+Evidence references remain assertions and do not establish trusted provenance.
+
+Trusted service-owner setup calls
+`ProtocolApplication.bootstrap_root(run_id, proposal_id, label)` for a registered
+version-zero non-C run. It commits one protected `RootGoal` with ID `root` via
+the same durable receipt/atomic commit path. Reusing its proposal ID and label
+replays the result; changed content conflicts. It adds no worker operation,
+transport, or worker-controlled metadata switch. The operator runs setup in
+the exclusive store-owner process before serving workers, or with the service
+stopped, and retains the proposal ID for recovery. Workers cannot bootstrap
+an empty graph; attempts to create or modify anchors are rejected.
+
+The initial Unix socket is one OS-authorized worker capability for all runs
+in that service instance. Separate trust domains use separate service/store/
+socket instances. Embedders can supply an `authorize_run(operation, run_id)`
+callback; the application checks it before any store access, including existing
+run-registration retries and metadata comparisons. This callback does not add
+a worker token or a new transport. Administrative bootstrap remains outside
+the worker capability.

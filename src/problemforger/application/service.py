@@ -1,10 +1,13 @@
-"""Provider-neutral P1 command/query handling over the public protocol."""
+"""Provider-neutral run graph commands and bounded public queries."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import uuid4
-from typing import Any, NoReturn
+from typing import Any, Callable, NoReturn
+
+from problemforger.application._graph_contract import CONTRACT as GRAPH_CONTRACT
+from problemforger.application.graph import GraphReplayError, query_graph, replay_graph, validate_candidate
 
 from problemforger.application._protocol_contract import ErrorCode
 from problemforger.application.protocol import (
@@ -13,6 +16,7 @@ from problemforger.application.protocol import (
     ProtocolValidationError,
     validate_request,
     validate_response,
+    _validate_shape,
 )
 from problemforger.core.journal import (
     CRunRecoveryContext,
@@ -27,6 +31,7 @@ from problemforger.core.journal import (
     ProposalStatus,
     RecordMetadata,
     proposal_request_hash,
+    VersionConflict,
 )
 from problemforger.ports.event_store import (
     CreateRunStatus,
@@ -41,26 +46,35 @@ from problemforger.ports.telemetry import TelemetryObservation, TelemetrySink
 
 
 _PLACEHOLDER_REJECTION = "P1_GOVERNANCE_NOT_IMPLEMENTED"
-_GRAPH_SCHEMA_VERSION = 1
 
 
 class ProtocolApplication:
-    """Implement protocol wiring while leaving graph semantics to P2/P3."""
+    """Apply structural graph invariants; C evidence policy remains P3 work."""
 
-    def __init__(self, event_store: EventStore, telemetry: TelemetrySink) -> None:
+    def __init__(self, event_store: EventStore, telemetry: TelemetrySink, *,
+                 authorize_run: Callable[[str, str], bool] | None = None) -> None:
         self._event_store = event_store
         self._telemetry = telemetry
+        self._authorize_run = authorize_run if authorize_run is not None else lambda operation, run_id: True
 
     def handle(self, value: object) -> ProtocolResponse:
         """Validate, handle, and validate one request/response pair."""
         request = validate_request(value)
         try:
+            if not self._authorize_run(request['operation'], request['params']['run_id']):
+                raise ProtocolValidationError('run access denied', code='UNAUTHORIZED')
             result = self._dispatch(request)
             response: ProtocolResponse = {
                 "protocol_schema_version": 1,
                 "request_id": request["request_id"],
                 "operation": request["operation"],
                 "result": result,
+            }
+            validate_response(response, request)
+        except GraphReplayError:
+            response = {
+                'protocol_schema_version': 1, 'request_id': request['request_id'],
+                'error': {'code': 'PROTOCOL_ERROR', 'message': 'committed graph cannot be reconstructed'},
             }
         except ProtocolValidationError as error:
             response = {
@@ -80,16 +94,8 @@ class ProtocolApplication:
         if operation == "get_run":
             return self._run_result(self._require_run(params["run_id"]), created=False)
         if operation == "get_graph":
-            run = self._require_run(params["run_id"])
-            return {
-                "run_id": params["run_id"],
-                "graph_schema_version": _GRAPH_SCHEMA_VERSION,
-                "graph_version": run.graph_version,
-                "nodes": [],
-                "edges": [],
-                "next_cursor": None,
-                "has_more": False,
-            }
+            self._require_run(params['run_id'])
+            return query_graph(replay_graph(self._event_store, params['run_id']), params)
         if operation == "propose_mutation":
             return self._propose_mutation(request)
         if operation == "get_proposal":
@@ -175,7 +181,7 @@ class ProtocolApplication:
 
         if snapshot.status is not ProposalStatus.PENDING:
             return self._proposal_result(snapshot)
-        return self._finalize_placeholder(request["request_id"], snapshot)
+        return self._finalize_mutation(request["request_id"], snapshot)
 
     def _record_receipt(
         self,
@@ -206,34 +212,54 @@ class ProtocolApplication:
             raise ProtocolValidationError("EventStore rejected proposal receipt")
         return recorded.proposal
 
-    def _finalize_placeholder(
-        self, request_id: str, snapshot: ProposalSnapshot
+    def _finalize_mutation(
+        self, request_id: str, snapshot: ProposalSnapshot, *, bootstrap: bool = False
     ) -> dict[str, Any]:
         expected = snapshot.normalized_request.expected_graph_version
         current = self._event_store.current_graph_version(snapshot.run_id)
         if isinstance(current, StoreError):
             self._raise_store_error(current)
-        outcome = (
-            GovernanceOutcome.CONFLICT
-            if current != expected
-            else GovernanceOutcome.REJECT
-        )
+        outcome = GovernanceOutcome.REJECT
+        reason = _PLACEHOLDER_REJECTION
+        events = ()
+        if current != expected:
+            outcome, reason = GovernanceOutcome.CONFLICT, 'stale_graph_version'
+        elif snapshot.c_run_recovery_context is None:
+            projection = replay_graph(self._event_store, str(snapshot.run_id))
+            try:
+                prepared = []
+                for operation in snapshot.normalized_request.operations:
+                    value = operation.value
+                    _validate_shape(value, 'Operation', 'graph operation', GRAPH_CONTRACT)
+                    prepared.append(GraphChangedEvent(
+                        self._metadata(str(snapshot.run_id), request_id, 'event'),
+                        str(snapshot.proposal_id), current + 1,
+                        GRAPH_CONTRACT['x-operations'][value['op']]['event_type'], 1,
+                        JsonDocument.from_value({k: v for k, v in value.items() if k not in ('op', 'graph_schema_version')}),
+                    ))
+                events = tuple(prepared)
+                validate_candidate(projection, events, worker=not bootstrap)
+            except (ProtocolValidationError, GraphReplayError):
+                reason = 'invalid_graph_mutation'
+            else:
+                outcome, reason = GovernanceOutcome.COMMIT, None
         decision = MutationDecision(
             metadata=self._metadata(str(snapshot.run_id), request_id, "decision"),
             proposal_id=str(snapshot.proposal_id),
             request_hash=snapshot.request_hash,
             expected_graph_version=expected,
-            resulting_graph_version=current,
+            resulting_graph_version=current + 1 if outcome is GovernanceOutcome.COMMIT else current,
             outcome=outcome,
-            reason_code=(
-                "stale_graph_version"
-                if outcome is GovernanceOutcome.CONFLICT
-                else _PLACEHOLDER_REJECTION
-            ),
+            reason_code=reason,
         )
-        appended = self._event_store.append_audit(
-            str(snapshot.run_id), (decision,), str(snapshot.proposal_id)
-        )
+        if outcome is GovernanceOutcome.COMMIT:
+            appended = self._event_store.append_graph(str(snapshot.run_id), str(snapshot.proposal_id), expected, (decision,), events)
+            if isinstance(appended, VersionConflict):
+                return self._finalize_mutation(request_id, snapshot, bootstrap=bootstrap)
+        else:
+            appended = self._event_store.append_audit(
+                str(snapshot.run_id), (decision,), str(snapshot.proposal_id)
+            )
         if isinstance(appended, StoreError):
             self._raise_store_error(appended)
         finalized = self._event_store.get_proposal(
@@ -242,6 +268,31 @@ class ProtocolApplication:
         if isinstance(finalized, StoreError):
             self._raise_store_error(finalized)
         return self._proposal_result(finalized)
+
+    def bootstrap_root(self, run_id: str, proposal_id: str, label: str) -> dict[str, Any]:
+        """Trusted service-owner setup, never dispatched on the worker socket."""
+        run = self._require_run(run_id)
+        if self._c_run_context(run.run_metadata) is not None:
+            raise ValueError('C bootstrap requires the P3 policy')
+        normalized = NormalizedMutationRequest(1, 0, (JsonDocument.from_value({
+            'graph_schema_version': 1, 'op': 'create_node',
+            'node': {'node_id': 'root', 'kind': 'RootGoal', 'label': label, 'protected': True},
+        }),), ())
+        _validate_shape(normalized.operations[0].value, 'Operation', 'root', GRAPH_CONTRACT)
+        existing = self._event_store.get_proposal(run_id, proposal_id)
+        if not isinstance(existing, StoreError):
+            if existing.request_hash != proposal_request_hash(normalized):
+                raise ProtocolValidationError('bootstrap proposal content differs', code='IDEMPOTENCY_CONFLICT')
+            if existing.status is not ProposalStatus.PENDING:
+                return self._proposal_result(existing)
+        elif existing.code is not StoreErrorCode.NOT_FOUND:
+            self._raise_store_error(existing)
+        if run.graph_version != 0:
+            raise ValueError('bootstrap requires an empty graph')
+        snapshot = self._record_receipt('bootstrap', run_id, proposal_id, normalized, proposal_request_hash(normalized), None)
+        if snapshot.status is not ProposalStatus.PENDING:
+            return self._proposal_result(snapshot)
+        return self._finalize_mutation('bootstrap', snapshot, bootstrap=True)
 
     def _abandon_pending(
         self, request_id: str, snapshot: ProposalSnapshot, reason_code: str
@@ -321,7 +372,7 @@ class ProtocolApplication:
             "status": snapshot.status.value,
             "request_hash": str(snapshot.request_hash),
             "reason_code": reason_code,
-            "resulting_graph_version": snapshot.resulting_graph_version,
+            "resulting_graph_version": snapshot.resulting_graph_version if isinstance(terminal, MutationDecision) else None,
             "journal_position": snapshot.last_journal_position,
         }
 

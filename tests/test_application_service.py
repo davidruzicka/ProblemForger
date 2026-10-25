@@ -164,7 +164,7 @@ class ApplicationServiceTests(unittest.TestCase):
         request = proposal(evidence=evidence)
         result = self.application.handle(request)
         self.assertEqual("REJECT", result["result"]["status"])
-        self.assertEqual("P1_GOVERNANCE_NOT_IMPLEMENTED", result["result"]["reason_code"])
+        self.assertEqual("invalid_graph_mutation", result["result"]["reason_code"])
         self.assertEqual(0, result["result"]["resulting_graph_version"])
 
         stored = self.store.get_proposal("run-1", "proposal-1")

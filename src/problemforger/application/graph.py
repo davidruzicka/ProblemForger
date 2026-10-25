@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any
 
 from problemforger.application._graph_contract import CONTRACT
@@ -96,6 +97,64 @@ def _validate_complete_graph(nodes: dict, edges: dict) -> None:
             pending.extend(children.get(identifier, ()))
     if reached != nodes.keys():
         raise GraphReplayError('every node must have provenance to RootGoal')
+
+
+def validate_candidate(projection: GraphProjection, events: tuple[GraphChangedEvent, ...], *, worker: bool = True) -> None:
+    """Validate a private batch with the same structural rules as replay."""
+    value = projection.to_value()
+    nodes = {node['node_id']: node for node in value['nodes']}
+    edges = {edge['edge_id']: edge for edge in value['edges']}
+    if not events:
+        raise GraphReplayError('a mutation requires at least one operation')
+    for position, event in enumerate(events, 1):
+        payload = event.payload.value
+        if worker:
+            if event.event_type == 'node_created' and payload['node']['protected']:
+                raise GraphReplayError('worker cannot create protected anchors')
+            if event.event_type in ('evidence_attached', 'lifecycle_changed') and payload['entity_kind'] == 'node':
+                target = nodes.get(payload['entity_id'])
+                if target is not None and target['protected']:
+                    raise GraphReplayError('worker cannot change protected anchors')
+        _apply_event(nodes, edges, JournalEntry(position, event))
+    _validate_complete_graph(nodes, edges)
+
+
+def query_graph(projection: GraphProjection, params: dict) -> dict:
+    """Page a version-bound view: nodes first, then edges, each sorted by ID."""
+    value = projection.to_value()
+    selection = params.get('selection', {})
+    if selection and (set(selection) != {'node_id'} or not isinstance(selection['node_id'], str)):
+        raise ProtocolValidationError('selection must be empty or contain only node_id')
+    if selection:
+        identifier = selection['node_id']
+        _validate_shape(identifier, 'Identifier', 'selection.node_id', CONTRACT)
+        if not any(node['node_id'] == identifier for node in value['nodes']):
+            raise ProtocolValidationError('selected node does not exist', code='NOT_FOUND')
+        value['edges'] = [edge for edge in value['edges'] if identifier in (edge['source_id'], edge['target_id'])]
+        identifiers = {identifier}
+        for edge in value['edges']:
+            identifiers.update((edge['source_id'], edge['target_id']))
+        value['nodes'] = [node for node in value['nodes'] if node['node_id'] in identifiers]
+    binding = sha256(JsonDocument.from_value({
+        'run_id': projection.run_id, 'selection': selection,
+    }).canonical_json.encode('utf-8')).hexdigest()
+    prefix = f'g1:{projection.graph_version}:{binding}:'
+    entities = [('nodes', node) for node in value['nodes']] + [('edges', edge) for edge in value['edges']]
+    offset = 0
+    cursor = params.get('after_cursor')
+    if cursor is not None:
+        suffix = cursor[len(prefix):] if cursor.startswith(prefix) else ''
+        if not suffix.isascii() or not suffix.isdecimal() or len(suffix) > 16:
+            raise ProtocolValidationError('cursor does not match this run, selection, or graph version')
+        offset = int(suffix)
+        if str(offset) != suffix or not 0 < offset < len(entities):
+            raise ProtocolValidationError('cursor offset is invalid')
+    page = entities[offset:offset + params['limit']]
+    end = offset + len(page)
+    more = end < len(entities)
+    return {**value, 'nodes': [entity for kind, entity in page if kind == 'nodes'],
+            'edges': [entity for kind, entity in page if kind == 'edges'],
+            'next_cursor': prefix + str(end) if more else None, 'has_more': more}
 
 
 def replay_graph(store: EventStore, run_id: str, *, page_size: int = 100) -> GraphProjection:

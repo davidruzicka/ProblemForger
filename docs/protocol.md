@@ -471,12 +471,17 @@ that effective record to the owning service. This prevents a policy result
 prepared against an obsolete graph from becoming final.
 
 The serialized owning service rechecks this version precondition before any
-terminal append under the same finalization operation. A mismatch
+terminal append of a governance outcome under the same finalization operation. A mismatch
 supersedes a candidate policy outcome and must durably append the one terminal
 `CONFLICT` for that receipt; it must never finalize `REJECT`, `RETRY`, or
 `ESCALATE` for a stale receipt. This closes the gap between the pre-policy
 check and terminal `append_audit` and keeps stale proposals from receiving a
 policy outcome.
+
+Operational `ABANDONED` is outside that policy-outcome override. If required
+recovery schema/policy/runtime identity or input is unavailable, record
+`ABANDONED` even when the receipt is stale; no governance evaluation occurs.
+Only safely resumable receipts reach the version check and policy path.
 
 `VersionConflict` does not complete the proposal by itself. The serialized
 service must durably append the corresponding `CONFLICT` record before returning

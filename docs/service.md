@@ -1,17 +1,18 @@
 # Local service smoke test
 
-The P1 service is a separate Python process with one SQLite EventStore owner.
+The local service is a separate Python process with one SQLite EventStore owner.
 Workers use the closed v1 protocol over JSON Lines on a Unix-domain stream
 socket. The worker API contains only run registration, graph/proposal queries,
 mutation proposals, proposal status, and public audit timeline reads. There is
 no worker-facing administration or trusted evidence-ingestion operation.
 
-P1 does not implement a graph governor. The service returns a durable `REJECT`
-for each otherwise valid proposal with reason code
-`P1_GOVERNANCE_NOT_IMPLEMENTED`; stale expected graph versions are durably
-recorded as `CONFLICT`. Neither outcome changes the graph version. Receipts
-retain the submitted normalized operations and evidence. Public proposal and
-audit responses expose status and record metadata, not that private content.
+Non-C runs use structural graph validation with durable commits, rejections,
+and stale-version conflicts. Configuration C retains
+`P1_GOVERNANCE_NOT_IMPLEMENTED` until P3 supplies its evidence/governor policy.
+Receipts retain submitted normalized operations and evidence. Public proposal
+and audit responses expose status and record metadata, not private content.
+See [service graph semantics](problem-graph.md#service-integration) for selection,
+version-bound pagination, authorization, and trusted root initialization.
 
 ## Start locally
 

@@ -185,7 +185,7 @@ class ServiceProcessTests(unittest.TestCase):
             [record["record_type"] for record in timeline["result"]["records"]],
             ["proposal_receipt", "mutation_decision"],
         )
-        self.assertEqual(replay["result"]["reason_code"], "P1_GOVERNANCE_NOT_IMPLEMENTED")
+        self.assertEqual(replay["result"]["reason_code"], "invalid_graph_mutation")
 
     def test_crash_after_receipt_recovers_from_sqlite_without_duplicate_receipt(self) -> None:
         seed = r'''import os, sys
@@ -244,6 +244,47 @@ os._exit(23)
         response = json.loads(result.stdout)
         self.assertEqual(response["request_id"], "create-run-request")
         self.assertEqual(response["result"]["run_id"], "typescript-run")
+
+    def test_graph_commits_queries_and_restart_agree_between_clients(self) -> None:
+        seed = r'''import sys
+from problemforger.application.service import ProtocolApplication
+from problemforger.modules.persistence import SqliteEventStore
+from problemforger.modules.telemetry import NullTelemetrySink
+from problemforger.ports.event_store import RunMetadata
+with SqliteEventStore(sys.argv[1]) as store:
+    store.create_run('smoke-run', RunMetadata.from_value({}))
+    ProtocolApplication(store, NullTelemetrySink()).bootstrap_root('smoke-run', 'setup-root', 'Goal')
+'''
+        subprocess.run([sys.executable, '-c', seed, str(self.database)], cwd=ROOT, env=self.environment, check=True)
+        self.start_service()
+        operations = [
+            {'graph_schema_version': 1, 'op': 'create_node', 'node': {'node_id': 'task', 'kind': 'Task', 'label': 'Work', 'protected': False}},
+            {'graph_schema_version': 1, 'op': 'create_edge', 'edge': {'edge_id': 'origin', 'kind': 'derived_from', 'source_id': 'task', 'target_id': 'root'}},
+        ]
+        mutation = request('propose_mutation', {'run_id': 'smoke-run', 'proposal_id': 'graph-change',
+            'request_schema_version': 1, 'expected_graph_version': 1, 'operations': operations, 'evidence': []}, 'graph-write')
+        committed = self.client().call(mutation)['result']
+        self.assertEqual(committed['status'], 'COMMIT')
+        source = (
+            "import { callService } from './clients/typescript/service_client.ts';"
+            "const requests = JSON.parse(process.argv[1]); const results = [];"
+            "for (const request of requests) results.push(await callService(process.argv[2], request));"
+            "process.stdout.write(JSON.stringify(results));"
+        )
+        query = request('get_graph', {'run_id': 'smoke-run', 'limit': 1}, 'page-one')
+        first = self.client().call(query)['result']
+        continued = request('get_graph', {'run_id': 'smoke-run', 'limit': 100, 'after_cursor': first['next_cursor']}, 'page-two')
+        responses = subprocess.run(['node', '--input-type=module', '-e', source,
+            json.dumps([mutation, continued]), str(self.socket_path)], cwd=ROOT, env=self.environment,
+            check=True, capture_output=True, text=True, timeout=10)
+        replay, page = json.loads(responses.stdout)
+        self.assertEqual(replay['result'], committed)
+        self.assertEqual([node['node_id'] for node in page['result']['nodes']], ['task'])
+        self.assertEqual([edge['edge_id'] for edge in page['result']['edges']], ['origin'])
+        self.stop_service()
+        self.start_service()
+        self.assertEqual(self.client().call(mutation)['result'], committed)
+        self.assertEqual(self.client().call(continued)['result'], page['result'])
 
     def test_malformed_frame_is_distinguished_and_does_not_stop_service(self) -> None:
         self.start_service()
