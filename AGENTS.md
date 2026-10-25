@@ -8,6 +8,8 @@ This repository is a practical feasibility prototype. Prefer the smallest useful
 
 All code, comments, documentation, issue content, pull-request content, commit messages, and repository communication must be in English.
 
+Use the [humanizer skill](.github/skills/humanizer/SKILL.md) when writing or reviewing repository prose, including documentation, issue and PR text, and comments. Preserve technical requirements, evidence, code, commands, and link targets.
+
 ## Authority order
 
 When sources conflict, use this order:
