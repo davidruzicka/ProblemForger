@@ -187,8 +187,9 @@ never expose a prefix of an atomic mutation batch.
 shapes, node/edge kinds, operation-to-event mapping, and lifecycle transition
 table. [Fixtures](../tests/fixtures/graph-v1.json) contain valid/invalid shapes
 and every lifecycle state pair. These are domain payloads inside the existing
-v1 protocol, not a replacement transport or journal format. The contract has
-no runtime effect until the P2 replay and service implementations land.
+v1 protocol, not a replacement transport or journal format. The replay
+implementation validates committed events against this contract;
+worker-facing queries and mutations remain a separate service-integration step.
 
 The graph belongs to one explicit `run_id`. Node IDs and edge IDs have separate
 run-local namespaces; an edge endpoint always identifies a node in that run.
@@ -321,3 +322,28 @@ unsupported event histories, and provider/restart equivalence. Service tests
 must prove authorization, redaction, bounds, and durable outcomes. None of
 these shape fixtures replaces the P3 evidence/governance tests or freezes
 `graph-intervention-v1`.
+
+
+## Replay implementation
+
+`problemforger.application.graph.replay_graph(store, run_id, page_size=100)`
+uses only the EventStore port. It captures the run's committed graph version
+and last journal position, then reads that prefix in bounded pages. It groups
+contiguous graph events into batches by version and proposal. Pages may split
+a mutation. Replay returns an immutable `GraphProjection` after validating the
+complete captured prefix and excludes appends after that boundary. It sorts
+nodes and edges by their run-local IDs; `to_value()` returns detached JSON data.
+
+After each batch, replay checks the graph-v1 structure and final provenance.
+It preserves historical entities, evidence references, and creation provenance.
+Authorization, evidence producers, and governor policy are not re-run.
+Unknown or malformed events, truncated or gapped journals, records from another
+run, and unsupported batch versions raise `GraphReplayError`. Missing or
+unreadable runs and journal pages also fail explicitly. These failures return
+no partial state. The EventStore provider must commit atomically and report
+committed run boundaries accurately.
+
+The existing `python3 -m scripts.generate_protocol_contract` command embeds
+the graph contract, so replay needs no contract file I/O at runtime. Issue #43
+covers service query pagination, mutations, and worker/anchor authorization.
+Observers continue to use the service API.

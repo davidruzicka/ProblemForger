@@ -4,7 +4,6 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 
 from problemforger.application import protocol
 from scripts.generate_protocol_contract import check_schema
@@ -21,9 +20,8 @@ class GraphContractTests(unittest.TestCase):
 
     def validate(self, value, definition):
         # Reuse the protocol schema subset; do not introduce another validator.
-        with patch.object(protocol, 'CONTRACT', self.contract):
-            protocol._json_tree(value, definition)
-            protocol._validate_shape(value, definition, definition)
+        protocol._json_tree(value, definition)
+        protocol._validate_shape(value, definition, definition, self.contract)
 
     def test_shapes_and_negative_vectors(self):
         for case in self.fixtures['shapes']:

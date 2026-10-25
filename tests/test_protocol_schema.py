@@ -306,10 +306,16 @@ class ProtocolSchemaTests(unittest.TestCase):
             root = Path(temporary)
             (root / "contracts").mkdir()
             shutil.copyfile(ROOT / "contracts/protocol-v1.json", root / "contracts/protocol-v1.json")
+            shutil.copyfile(ROOT / "contracts/graph-v1.json", root / "contracts/graph-v1.json")
             with self.assertRaisesRegex(ValueError, "stale"):
                 generator.generate(root, check=True)
             generator.generate(root)
             generator.generate(root, check=True)
+            graph_target = root / "src/problemforger/application/_graph_contract.py"
+            graph_target.write_text("stale")
+            with self.assertRaisesRegex(ValueError, "stale"):
+                generator.generate(root, check=True)
+            generator.generate(root)
             target = root / "clients/typescript/protocol_contract.ts"
             target.write_text("stale")
             with self.assertRaisesRegex(ValueError, "stale"):
