@@ -1,9 +1,7 @@
 # P6 methodology decision note
 
-This note explains the practical choices behind the normative
-[P6-AC pilot](evaluation.md#p6-practical-pilot). It is intentionally short:
-the project needs an executable engineering answer, not a publication-grade
-uncertainty model.
+The normative [P6-AC pilot](evaluation.md#p6-practical-pilot) seeks an
+executable engineering answer, not a publication-grade uncertainty model.
 
 ## Methodological position
 
@@ -40,9 +38,8 @@ academic precision.
 | Analysis | Per-task delta, mean delta, cost/latency, missingness | Bootstrap, p-values, confidence intervals |
 | Decision | Human `CONTINUE`/`ADAPT`/`STOP` checkpoint | Automatic progression gate |
 
-This is a conscious complexity budget. Removing academic analysis does not
-remove practical controls: a malformed patch remains a malformed patch, an
-incomplete journal remains a recovery defect, and an isolated runtime failure
+The pilot omits academic analysis while retaining practical controls: a malformed
+patch remains a malformed patch, an incomplete journal remains a recovery defect, and an isolated runtime failure
 remains visible as missing evidence.
 
 ## Measurement
@@ -82,8 +79,7 @@ helps detect setup drift and reproduce the software environment. It is not a
 model identity token for hosted inference. For a local model, the weights,
 configuration, and inference runtime can be added to the content identity.
 
-This distinction is an honest practical limitation, not a reason to block the
-pilot.
+This limitation does not block the pilot.
 
 ## Missingness and operational failures
 

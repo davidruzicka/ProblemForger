@@ -4,7 +4,7 @@
 
 Long-running AI-agent execution is variable and difficult to audit. Intent, assumptions, intermediate conclusions, dependencies, and verification can remain implicit inside model context. A plausible-looking trajectory may therefore drift while still appearing coherent.
 
-ProblemForger explores a different control boundary:
+ProblemForger explores an external control boundary:
 
 - the agent proposes work and graph mutations;
 - an external system owns authoritative problem state;
@@ -15,9 +15,7 @@ ProblemForger explores a different control boundary:
 
 ## Core idea
 
-The problem graph is not the harness control-flow graph.
-
-It represents the evolving problem state: goals, requirements, tasks, artifacts, evidence, dependencies, provenance, and verification state.
+The problem graph represents evolving problem state, including goals, requirements, tasks, artifacts, evidence, dependencies, provenance, and verification state. It is separate from the harness control-flow graph.
 
 Different model runs may take different trajectories. They need not produce identical reasoning. The system instead asks whether the resulting graph mutations are justified and whether global anchors remain satisfied.
 

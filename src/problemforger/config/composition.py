@@ -14,7 +14,7 @@ from .registry import ProviderRegistry, default_registry
 
 @dataclass(slots=True)
 class ComposedModules:
-    """The one provider instance set shared by the service/application."""
+    """The single set of provider instances shared by the service and application."""
 
     event_store: EventStore
     telemetry: TelemetrySink

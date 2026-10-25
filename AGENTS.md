@@ -10,6 +10,8 @@ All code, comments, documentation, issue content, pull-request content, commit m
 
 Use the [humanizer skill](.github/skills/humanizer/SKILL.md) when writing or reviewing repository prose, including documentation, issue and PR text, and comments. Preserve technical requirements, evidence, code, commands, and link targets.
 
+Future prose edits must follow the [glossary](docs/glossary.md). Its definitions follow the authority order below; it does not override ADRs or specifications. Leave unresolved technical ambiguities unchanged and report them for review.
+
 ## Authority order
 
 When sources conflict, use this order:
@@ -89,7 +91,7 @@ For research-facing changes:
 - follow [STORE-OWNER](docs/protocol.md#spec-protocol-store-owner) and [PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery) for persistence/recovery, and [EVIDENCE-TRUST](docs/verification.md#spec-verification-evidence-trust), [EVIDENCE-BINDING](docs/verification.md#spec-verification-evidence-binding), and [EVIDENCE-RECOVERY](docs/verification.md#spec-verification-evidence-recovery) for evidence;
 - all run-scoped protocol/tool operations carry explicit `run_id`; no ambient/session-selected run context.
 
-Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements rather than restating policy.
+Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements without restating policy.
 
 ## Before you commit
 

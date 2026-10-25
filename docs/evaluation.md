@@ -6,7 +6,7 @@ P6 is a practical feasibility pilot. It asks whether the complete
 ProblemForger package is useful on a small, real workflow. It is not an
 academic population study, a calibration study, or a claim of exact hosted
 model replay. Academic uncertainty is acceptable; correctness, isolation,
-durable-audit, and honest reporting are not optional.
+durable audit, and honest reporting are required.
 
 This document is the pre-measurement P6-AC-v1 contract. It replaces the earlier
 unmeasured multi-stage draft. Changes after the first measured slot require a
@@ -16,8 +16,8 @@ new manifest/version and must not be silently pooled with the old one.
 
 P6 compares two complete configurations on the same HarnessX workflow:
 
-- **A — baseline:** the existing HarnessX workflow and benchmark adapter;
-- **C — complete package:** the same workflow plus the ProblemForger service,
+- A (baseline): the existing HarnessX workflow and benchmark adapter;
+- C (complete package): the same workflow plus the ProblemForger service,
   explicit graph interaction, and deterministic governance.
 
 A and C use the same selected model, task order, harness, benchmark adapter,
@@ -116,8 +116,8 @@ It is `evaluator_verification_profile` and contains
 `verifier_command_identity`, and
 `effective_verifier_configuration`. `verifier_command_identity` binds the complete verifier execution identity:
 retained checker executable/script bytes, its interpreter/runtime, and all
-transitive checker/helper dependency bytes—or a pinned image/archive containing
-them—each by immutable reference and SHA-256 digest, plus its entry point. `effective_verifier_configuration` records
+transitive checker/helper dependency bytes (or a pinned image/archive containing
+them), each by immutable reference and SHA-256 digest, plus its entry point. `effective_verifier_configuration` records
 behavior-affecting arguments, environment, resolved defaults, dependency roots
 relative to pinned artifacts, symlink handling, and transitive-content
 traversal rules, including immutable identities of referenced configuration
@@ -204,7 +204,7 @@ recovery and must not be repaired by relabeling existing evidence.
 
 An execution image is an implementation artifact, not a scientific identity
 claim. It is useful for pinning the harness, benchmark tooling, interpreter,
-dependencies, and—when packaged there—the local ProblemForger service. The
+dependencies, and the local ProblemForger service when packaged there. The
 image digest helps detect environment drift and makes setup repeatable. It does
 not identify a hosted provider's model or later provider-side optimizations.
 
@@ -896,16 +896,15 @@ use the report to fix the setup, but it is a new manifest/version.
 
 Before exposure, the operator records practical tolerances for cost, latency,
 and human intervention, including how each is measured. Human judgment is
-deliberately part of this feasibility decision; no percentage threshold is
-pretended to be universal.
+part of this feasibility decision; no percentage threshold is universal.
 
 For a complete six-pair pilot, use exactly one label:
 
-- **`CONTINUE`** — C shows useful local improvement or reduced failure without
+- **`CONTINUE`**: C shows useful local improvement or reduced failure without
   a critical regression, and its operational overhead is acceptable;
-- **`ADAPT`** — a concrete, plausibly correctable weakness in benefit,
+- **`ADAPT`**: a concrete, plausibly correctable weakness in benefit,
   overhead, or failure pattern warrants a stated change and reassessment;
-- **`STOP`** — a critical correctness, isolation, security, or operational
+- **`STOP`**: a critical correctness, isolation, security, or operational
   regression makes the package unsuitable for the tested workflow, or the
   observed practical value does not justify further work.
 
