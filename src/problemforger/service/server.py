@@ -89,7 +89,11 @@ async def serve(
                         response = _error_response(error)
                     else:
                         response = application.handle(request)
-                        encoded = encode_response(response, request)
+                        try:
+                            encoded = encode_response(response, request)
+                        except ProtocolValidationError as error:
+                            response = {**_error_response(error), 'request_id': request['request_id']}
+                            encoded = encode_response(response, request)
                         writer.write(encoded + b"\n")
                         await writer.drain()
                         return

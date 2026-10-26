@@ -4,14 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+import json
 from typing import Any
 
 from problemforger.application._graph_contract import CONTRACT
-from problemforger.application.protocol import ProtocolValidationError, _validate_shape
+from problemforger.application.protocol import MAX_PROTOCOL_MESSAGE_BYTES, ProtocolValidationError, _validate_shape
 from problemforger.core.journal import (
-    GraphChangedEvent, JournalEntry, JsonDocument, require_identifier,
+    GraphChangedEvent, JournalEntry, JsonDocument, MAX_SAFE_JSON_INTEGER, require_identifier,
 )
 from problemforger.ports.event_store import EventStore, StoreError
+
+
+MAX_GRAPH_ENTITY_BYTES = 1_048_576
+
+
+def _json_size(value: object) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8'))
 
 
 class GraphReplayError(ValueError):
@@ -106,7 +114,7 @@ def validate_candidate(projection: GraphProjection, events: tuple[GraphChangedEv
     edges = {edge['edge_id']: edge for edge in value['edges']}
     if not events:
         raise GraphReplayError('a mutation requires at least one operation')
-    for position, event in enumerate(events, 1):
+    for event in events:
         payload = event.payload.value
         if worker:
             if event.event_type == 'node_created' and payload['node']['protected']:
@@ -115,11 +123,14 @@ def validate_candidate(projection: GraphProjection, events: tuple[GraphChangedEv
                 target = nodes.get(payload['entity_id'])
                 if target is not None and target['protected']:
                     raise GraphReplayError('worker cannot change protected anchors')
-        _apply_event(nodes, edges, JournalEntry(position, event))
+        # Reserve the largest wire-safe position for provider-assigned provenance.
+        _apply_event(nodes, edges, JournalEntry(MAX_SAFE_JSON_INTEGER, event))
     _validate_complete_graph(nodes, edges)
+    if any(_json_size(entity) > MAX_GRAPH_ENTITY_BYTES for entity in (*nodes.values(), *edges.values())):
+        raise GraphReplayError('graph entity exceeds its serialized size limit')
 
 
-def query_graph(projection: GraphProjection, params: dict) -> dict:
+def query_graph(projection: GraphProjection, params: dict, *, request_id: str) -> dict:
     """Page a version-bound view: nodes first, then edges, each sorted by ID."""
     value = projection.to_value()
     selection = params.get('selection', {})
@@ -149,12 +160,25 @@ def query_graph(projection: GraphProjection, params: dict) -> dict:
         offset = int(suffix)
         if str(offset) != suffix or not 0 < offset < len(entities):
             raise ProtocolValidationError('cursor offset is invalid')
-    page = entities[offset:offset + params['limit']]
-    end = offset + len(page)
-    more = end < len(entities)
-    return {**value, 'nodes': [entity for kind, entity in page if kind == 'nodes'],
-            'edges': [entity for kind, entity in page if kind == 'edges'],
-            'next_cursor': prefix + str(end) if more else None, 'has_more': more}
+    result = {**value, 'nodes': [], 'edges': [], 'next_cursor': None, 'has_more': False}
+    entity_bytes = 0
+    for kind, entity in entities[offset:offset + params['limit']]:
+        added_bytes = _json_size(entity) + bool(result[kind])
+        end = offset + len(result['nodes']) + len(result['edges']) + 1
+        more = end < len(entities)
+        # Empty arrays account for brackets; entity_bytes includes inner commas.
+        empty = {**result, 'nodes': [], 'edges': [],
+                 'next_cursor': prefix + str(end) if more else None, 'has_more': more}
+        envelope = {'protocol_schema_version': 1, 'request_id': request_id,
+                    'operation': 'get_graph', 'result': empty}
+        if _json_size(envelope) + entity_bytes + added_bytes > MAX_PROTOCOL_MESSAGE_BYTES:
+            if not result['nodes'] and not result['edges']:
+                raise ProtocolValidationError('graph entity exceeds the response frame limit', code='PAYLOAD_TOO_LARGE')
+            break
+        result[kind].append(entity)
+        entity_bytes += added_bytes
+        result['next_cursor'], result['has_more'] = empty['next_cursor'], more
+    return result
 
 
 def replay_graph(store: EventStore, run_id: str, *, page_size: int = 100) -> GraphProjection:

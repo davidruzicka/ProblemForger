@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 from uuid import uuid4
 from typing import Any, Callable, NoReturn
 
@@ -32,6 +33,7 @@ from problemforger.core.journal import (
     RecordMetadata,
     proposal_request_hash,
     VersionConflict,
+    journal_batch_within_bounds,
 )
 from problemforger.ports.event_store import (
     CreateRunStatus,
@@ -95,7 +97,7 @@ class ProtocolApplication:
             return self._run_result(self._require_run(params["run_id"]), created=False)
         if operation == "get_graph":
             self._require_run(params['run_id'])
-            return query_graph(replay_graph(self._event_store, params['run_id']), params)
+            return query_graph(replay_graph(self._event_store, params['run_id']), params, request_id=request['request_id'])
         if operation == "propose_mutation":
             return self._propose_mutation(request)
         if operation == "get_proposal":
@@ -252,6 +254,12 @@ class ProtocolApplication:
             outcome=outcome,
             reason_code=reason,
         )
+        if outcome is GovernanceOutcome.COMMIT:
+            run = self._require_run(str(snapshot.run_id))
+            if not journal_batch_within_bounds((decision, *events), first_position=run.last_journal_position + 1):
+                outcome = GovernanceOutcome.REJECT
+                decision = replace(decision, outcome=outcome, resulting_graph_version=current,
+                                   reason_code='graph_batch_too_large')
         if outcome is GovernanceOutcome.COMMIT:
             appended = self._event_store.append_graph(str(snapshot.run_id), str(snapshot.proposal_id), expected, (decision,), events)
             if isinstance(appended, VersionConflict):

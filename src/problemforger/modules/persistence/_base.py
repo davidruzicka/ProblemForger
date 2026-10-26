@@ -27,6 +27,14 @@ from problemforger.core.journal import (
     proposal_status,
     require_identifier,
     serialize_entry,
+    journal_batch_within_bounds,
+    max_serialized_record_bytes as _max_serialized_record_bytes,
+    MAX_JOURNAL_RECORD_BYTES,
+    MAX_NORMALIZED_REQUEST_BYTES,
+    MAX_DURABLE_NORMALIZED_REQUEST_BYTES,
+    MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES,
+    MAX_PROPOSAL_RECEIPT_BYTES,
+    MAX_APPEND_BATCH_BYTES,
     validate_json_safe_integers,
 )
 from problemforger.ports.event_store import (
@@ -47,16 +55,6 @@ from problemforger.ports.event_store import (
 
 DEFAULT_MAX_JOURNAL_PAGE_SIZE = 100
 MAX_RUN_METADATA_BYTES = 1_048_576
-MAX_JOURNAL_RECORD_BYTES = 1_048_576
-MAX_NORMALIZED_REQUEST_BYTES = MAX_JOURNAL_RECORD_BYTES
-# The request limit counts ECMAScript JSON; durable Python JSON spells a number at
-# most 3 bytes longer ("0" -> "-0.0") and each number costs at least 2 counted bytes.
-MAX_DURABLE_NORMALIZED_REQUEST_BYTES = MAX_NORMALIZED_REQUEST_BYTES * 5 // 2 + 2
-MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES = 1_048_576
-MAX_PROPOSAL_RECEIPT_BYTES = (
-    MAX_DURABLE_NORMALIZED_REQUEST_BYTES + MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES
-)
-MAX_APPEND_BATCH_BYTES = 4_194_304
 MAX_JOURNAL_PAGE_BYTES = 4_194_304
 _HASH_PREFIX = "sha256:problemforger-request-v1:"
 
@@ -97,13 +95,6 @@ def _valid_identifier(value: object) -> bool:
     except ValueError:
         return False
     return True
-
-
-def _max_serialized_record_bytes(record: object) -> int:
-    """Return the storage cap for this serialized journal record."""
-    if isinstance(record, ProposalReceipt):
-        return MAX_PROPOSAL_RECEIPT_BYTES
-    return MAX_JOURNAL_RECORD_BYTES
 
 
 def _normalized_request_within_bounds(request: NormalizedMutationRequest) -> bool:
@@ -722,22 +713,7 @@ class EventStoreState:
         run.entries.append(entry)
         return entry
 
-    @staticmethod
-    def _records_within_bounds(records: tuple[object, ...], *, first_position: int) -> bool:
-        total_bytes = 0
-        for offset, record in enumerate(records):
-            try:
-                encoded_size = len(
-                    serialize_entry(JournalEntry(first_position + offset, record)).encode("utf-8")  # type: ignore[arg-type]
-                )
-            except (TypeError, ValueError, UnicodeEncodeError):
-                return False
-            if encoded_size > _max_serialized_record_bytes(record):
-                return False
-            total_bytes += encoded_size
-            if total_bytes > MAX_APPEND_BATCH_BYTES:
-                return False
-        return True
+    _records_within_bounds = staticmethod(journal_batch_within_bounds)
 
     @staticmethod
     def _as_conflict(

@@ -155,6 +155,19 @@ class ServiceServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(response)
         self.assertTrue(closed)
 
+    async def test_oversized_response_returns_protocol_error_instead_of_disconnect(self) -> None:
+        request = {'protocol_schema_version': 1, 'request_id': 'large-query',
+                   'operation': 'get_graph', 'params': {'run_id': 'run', 'limit': 1}}
+        oversized = {'protocol_schema_version': 1, 'request_id': request['request_id'],
+            'operation': 'get_graph', 'result': {'run_id': 'run', 'graph_schema_version': 1,
+                'graph_version': 1, 'nodes': [{'payload': 'x' * server.MAX_PROTOCOL_MESSAGE_BYTES}],
+                'edges': [], 'next_cursor': None, 'has_more': False}}
+        with patch.object(self.application, 'handle', return_value=oversized):
+            response, closed = await self._serve_frame(json.dumps(request).encode('utf-8') + b'\n')
+        self.assertEqual(response['request_id'], request['request_id'])
+        self.assertEqual(response['error']['code'], 'PAYLOAD_TOO_LARGE')
+        self.assertTrue(closed)
+
     async def test_signal_shutdown_and_safe_socket_parent_checks(self) -> None:
         _, closed = await self._serve_frame(b"", use_signals=True)
         self.assertTrue(closed)

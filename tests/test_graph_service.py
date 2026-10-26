@@ -3,11 +3,13 @@
 from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import json
 import unittest
 from unittest.mock import patch
 
 from problemforger.application.service import ProtocolApplication
-from problemforger.application.graph import replay_graph
+from problemforger.application.graph import GraphProjection, replay_graph
+from problemforger.application.protocol import MAX_PROTOCOL_MESSAGE_BYTES, encode_request, encode_response
 from problemforger.core.journal import CRunRecoveryContext, JsonDocument, NormalizedMutationRequest, ProposalReceipt, RecordMetadata
 from problemforger.modules.persistence import MemoryEventStore, SqliteEventStore
 from problemforger.modules.telemetry import NullTelemetrySink
@@ -197,3 +199,97 @@ class GraphServiceTests(unittest.TestCase):
             self.assertEqual(response['reason_code'], 'P1_GOVERNANCE_NOT_IMPLEMENTED')
             with self.assertRaises(ValueError):
                 app.bootstrap_root('c-run', 'root', 'Goal')
+
+    def test_graph_pages_fit_encoded_frame_and_keep_all_entities(self):
+        with closing(MemoryEventStore()) as store:
+            store.create_run('run', RunMetadata.from_value({}))
+            app = ProtocolApplication(store, NullTelemetrySink())
+            refs = [{'evidence_id': str(i) + 'x' * 240, 'content_digest': 'sha256:' + 'a' * 64} for i in range(2200)]
+            nodes = [{'node_id': str(i), 'kind': 'Task', 'label': 'Work', 'protected': False,
+                'lifecycle': 'active', 'evidence_refs': refs, 'created_by': {
+                    'proposal_id': 'seed', 'record_id': str(i), 'journal_position': i + 3, 'graph_version': 1}}
+                for i in range(4)]
+            edges = [{'edge_id': str(i), 'kind': 'depends_on', 'source_id': '0', 'target_id': '1',
+                'lifecycle': 'active', 'evidence_refs': refs, 'created_by': nodes[i]['created_by']}
+                for i in range(3)]
+            projection = GraphProjection('run', 1, JsonDocument.from_value({'nodes': nodes, 'edges': edges}))
+            params = {'run_id': 'run', 'limit': 100}
+            seen = []
+            with patch('problemforger.application.service.replay_graph', return_value=projection):
+                while True:
+                    request = message('get_graph', params, 'é' * 128)
+                    response = app.handle(request)
+                    self.assertLessEqual(len(encode_response(response, request)), MAX_PROTOCOL_MESSAGE_BYTES)
+                    page = response['result']
+                    seen.extend(('node', node['node_id']) for node in page['nodes'])
+                    seen.extend(('edge', edge['edge_id']) for edge in page['edges'])
+                    if not page['has_more']:
+                        break
+                    self.assertTrue(page['nodes'] or page['edges'])
+                    params['after_cursor'] = page['next_cursor']
+            self.assertEqual(seen, [('node', str(i)) for i in range(4)] + [('edge', str(i)) for i in range(3)])
+
+    def test_page_byte_boundary_includes_unicode_envelope_and_cursor(self):
+        for store, app in self.providers():
+            request = message('get_graph', {'run_id': 'run', 'limit': 1}, 'é' * 128)
+            expected = app.handle(request)
+            exact_size = len(encode_response(expected, request))
+            request['params']['limit'] = 100
+            with patch('problemforger.application.graph.MAX_PROTOCOL_MESSAGE_BYTES', exact_size):
+                page = app.handle(request)
+            self.assertEqual(page, expected)
+            self.assertEqual(len(encode_response(page, request)), exact_size)
+            with patch('problemforger.application.graph.MAX_PROTOCOL_MESSAGE_BYTES', exact_size - 1):
+                self.assertEqual(app.handle(request)['error']['code'], 'PAYLOAD_TOO_LARGE')
+
+    def test_legacy_oversized_entity_returns_an_encodable_error(self):
+        with closing(MemoryEventStore()) as store:
+            store.create_run('run', RunMetadata.from_value({}))
+            projection = GraphProjection('run', 1, JsonDocument.from_value({
+                'nodes': [{'node_id': 'legacy', 'evidence_refs': [{'private': 'x' * MAX_PROTOCOL_MESSAGE_BYTES}]}], 'edges': []}))
+            app = ProtocolApplication(store, NullTelemetrySink())
+            request = message('get_graph', {'run_id': 'run', 'limit': 1})
+            with patch('problemforger.application.service.replay_graph', return_value=projection):
+                response = app.handle(request)
+            self.assertEqual(response['error']['code'], 'PAYLOAD_TOO_LARGE')
+            self.assertLess(len(encode_response(response, request)), 1000)
+
+    def test_evidence_growth_is_rejected_before_entity_becomes_unretrievable(self):
+        for store, app in self.providers():
+            before = replay_graph(store, 'run')
+            refs = [operation('attach_evidence', entity_kind='node', entity_id='task',
+                evidence={**EVIDENCE, 'evidence_id': str(i)}) for i in range(10)]
+            candidate = before.to_value()['nodes'][1]
+            candidate['evidence_refs'] = [refs[0]['evidence']]
+            exact_size = len(json.dumps(candidate, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+            with patch('problemforger.application.graph.MAX_GRAPH_ENTITY_BYTES', exact_size):
+                accepted = app.handle(mutation(refs[:1], proposal_id='fits'))['result']
+                self.assertEqual(accepted['status'], 'COMMIT')
+                before = replay_graph(store, 'run')
+                request = mutation(refs[1:], version=2)
+                result = app.handle(request)['result']
+            self.assertEqual(result['status'], 'REJECT')
+            self.assertEqual(replay_graph(store, 'run'), before)
+            self.assertEqual(app.handle(request)['result'], result)
+
+    def test_expanded_batch_is_durably_rejected_and_replayed_after_restart(self):
+        for store, app in self.providers():
+            run_id = 'r' * 256
+            store.create_run(run_id, RunMetadata.from_value({}))
+            app.bootstrap_root(run_id, 'setup', 'Goal')
+            operations = [operation('create_edge', edge={'edge_id': str(i), 'kind': 'depends_on',
+                'source_id': 'root', 'target_id': 'root'}) for i in range(5000)]
+            request = mutation(operations, run_id=run_id, proposal_id='p' * 256)
+            request['request_id'] = 'q' * 256
+            self.assertLess(len(encode_request(request)), 1_048_576)
+            with patch.object(store, 'append_graph', wraps=store.append_graph) as append:
+                result = app.handle(request)['result']
+                self.assertEqual(result['status'], 'REJECT')
+                self.assertEqual(result['reason_code'], 'graph_batch_too_large')
+                append.assert_not_called()
+            self.assertEqual(app.handle(request)['result'], result)
+            self.assertEqual(store.current_graph_version(run_id), 1)
+            if isinstance(store, SqliteEventStore):
+                store.close()
+                with SqliteEventStore(Path(self.temporary.name) / 'graph.db') as reopened:
+                    self.assertEqual(ProtocolApplication(reopened, NullTelemetrySink()).handle(request)['result'], result)

@@ -30,6 +30,14 @@ CURRENT_REQUEST_SCHEMA_VERSION = 1
 CURRENT_EVENT_SCHEMA_VERSION = 1
 MAX_SAFE_JSON_INTEGER = (1 << 53) - 1
 MAX_IDENTIFIER_UTF8_BYTES = 256
+MAX_JOURNAL_RECORD_BYTES = 1_048_576
+MAX_NORMALIZED_REQUEST_BYTES = MAX_JOURNAL_RECORD_BYTES
+# The request limit counts ECMAScript JSON; durable Python JSON spells a number at
+# most 3 bytes longer ("0" -> "-0.0") and each number costs at least 2 counted bytes.
+MAX_DURABLE_NORMALIZED_REQUEST_BYTES = MAX_NORMALIZED_REQUEST_BYTES * 5 // 2 + 2
+MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES = 1_048_576
+MAX_PROPOSAL_RECEIPT_BYTES = MAX_DURABLE_NORMALIZED_REQUEST_BYTES + MAX_PROPOSAL_RECEIPT_ENVELOPE_BYTES
+MAX_APPEND_BATCH_BYTES = 4_194_304
 REQUEST_HASH_PREFIX = "sha256:problemforger-request-v1:"
 _REQUEST_HASH_DOMAIN = b"problemforger.normalized-mutation-request.v1\0"
 
@@ -742,6 +750,27 @@ def serialize_entry(entry: JournalEntry) -> str:
             "record": _record_to_value(entry.record),
         }
     )
+
+
+def max_serialized_record_bytes(record: object) -> int:
+    """Storage cap for one complete serialized journal entry."""
+    return MAX_PROPOSAL_RECEIPT_BYTES if isinstance(record, ProposalReceipt) else MAX_JOURNAL_RECORD_BYTES
+
+
+def journal_batch_within_bounds(records: tuple[object, ...], *, first_position: int) -> bool:
+    """Check expanded records using the providers' durable serialization."""
+    total_bytes = 0
+    for offset, record in enumerate(records):
+        try:
+            encoded_size = len(serialize_entry(JournalEntry(first_position + offset, record)).encode('utf-8'))
+        except (TypeError, ValueError, UnicodeEncodeError):
+            return False
+        if encoded_size > max_serialized_record_bytes(record):
+            return False
+        total_bytes += encoded_size
+        if total_bytes > MAX_APPEND_BATCH_BYTES:
+            return False
+    return True
 
 
 def _metadata_from_value(value: dict[str, Any]) -> RecordMetadata:

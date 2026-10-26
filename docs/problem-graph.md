@@ -364,6 +364,18 @@ are not authorization capabilities. A graph change invalidates continuation,
 so callers restart without a cursor. Audit-only appends preserve continuation.
 An invalid or mismatched cursor fails explicitly instead of mixing versions.
 A completed page returns `next_cursor=null` and `has_more=false`.
+Pages also stop before the encoded 4 MiB response limit, including the envelope
+and continuation metadata. A byte-limited page may contain fewer entities than
+requested; its cursor resumes at the next entity without skipping it.
+
+Each entity's compact UTF-8 JSON projection, including evidence references and
+creation provenance, is capped at 1 MiB by candidate validation. New creation
+provenance reserves the largest wire-safe journal-position width before the
+provider assigns its actual position. Attachments that exceed this bound reject
+the whole proposal with `invalid_graph_mutation`; evidence is never truncated.
+An oversized entity in an older journal returns explicit `PAYLOAD_TOO_LARGE`
+when queried. The socket boundary also returns encoding errors as protocol
+errors instead of closing a valid request without a response.
 
 For non-C runs, structurally valid proposals commit through `append_graph`.
 Invalid shapes, operation order, protection, or complete graph invariants
@@ -372,6 +384,11 @@ durable `CONFLICT` before structural evaluation. These are P2 structural
 outcomes, not P3 evidence-policy judgments. Configuration C retains
 `P1_GOVERNANCE_NOT_IMPLEMENTED` rejection until P3 supplies its policy.
 Evidence references remain assertions and do not establish trusted provenance.
+Before committing, the application checks the expanded decision/event batch
+against the shared serialized journal record and append limits. An oversized
+batch produces durable `REJECT` with `graph_batch_too_large`, preserving the
+graph version; same-ID retries replay that rejection after restart. This check
+uses the same provider-neutral serialization and bounds as both stores.
 
 Trusted service-owner setup calls
 `ProtocolApplication.bootstrap_root(run_id, proposal_id, label)` for a registered

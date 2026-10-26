@@ -85,6 +85,10 @@ anchors, recovery, public redaction, authorization-before-access, and Python/
 TypeScript socket parity, including restart. They also check pages that
 split batches, immutable projections, audit-only outcomes, run isolation,
 concurrent append boundaries, and explicit failures for invalid histories.
+Size-limit regressions check graph pages against the encoded frame budget,
+entity growth at its exact bound, explicit errors for older oversized entities,
+and durable rejection/restart replay of expanded graph batches that exceed the
+append limit despite fitting within the request limit.
 
 ## Regression evidence and implementation fixtures
 
