@@ -3,7 +3,8 @@
 - Issue: #1
 - Branch: `p0-spec-audit`
 - Date: 2026-09-18
-- Status: Ready for human review; no production implementation started.
+- Status at audit publication: Ready for human review; no production implementation started.
+- Completion: [PR #22](https://github.com/davidruzicka/ProblemForger/pull/22) merged the audit; [issue #1](https://github.com/davidruzicka/ProblemForger/issues/1) is complete.
 
 Historical amendment (2026-09-20): the unpublished A/B/C mechanism draft was
 replaced by the practical P6-AC whole-system contract in `docs/evaluation.md`.
@@ -167,6 +168,10 @@ The following are deliberately deferred and must not be silently decided inside 
 5. **P11 external-validity benchmark.** It is intentionally re-audited close to P11 because coding benchmarks are changing quickly.
 
 ## Files changed
+
+The list below is a partial inventory of the audit changes. The complete
+[PR #22 file listing](https://github.com/davidruzicka/ProblemForger/pull/22/files)
+is authoritative, including changes to license, ADRs, methodology, and checks.
 
 - `.github/workflows/request-codex-review.yml`
 - `.github/workflows/specification-checks.yml`

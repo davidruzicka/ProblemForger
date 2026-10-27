@@ -397,6 +397,11 @@ pages also default to 100 records and stop before either limit, exposing
 continuation through the cursor. Larger evidence belongs in immutable versioned
 references, not inline payloads. The typed provider configuration may lower the
 positive record-count limit.
+`core.journal.journal_batch_within_bounds` owns the expanded-entry byte check
+used by both providers and the application before a graph commit. It counts
+complete serialized entries at their proposed journal positions, including the
+decision and every graph event; the request's input-size bound alone does not
+bound that expansion.
 
 SQLite uses a canonical resolved path, a persistent adjacent path lock, and an
 exclusive OS `flock` on both that lock file and the database inode. The

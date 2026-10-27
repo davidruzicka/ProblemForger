@@ -74,14 +74,21 @@ The package, architecture, and specification-check workflow runs these checks wi
 
 Graph-contract fixtures use the existing finite-schema interpreter to check
 `contracts/graph-v1.json` shapes and valid/invalid vectors, operation/event
-mapping, identifier parity, and the lifecycle table. These shape fixtures cannot
+mapping, identifier parity, and the lifecycle table. These graph-contract fixtures cannot
 verify stateful graph validation, replay, authorization, or evidence trust;
 those behaviors require P2/P3 runtime tests.
 The generator embeds the graph contract for provider-neutral application replay
 without runtime file I/O. Wire clients keep their opaque graph payload envelope.
-Replay tests cover both providers and SQLite reopen. They also check pages that
+Replay and graph-service tests cover both providers and SQLite reopen.
+Service tests exercise real bounded graph pages, structural commits, protected
+anchors, recovery, public redaction, authorization-before-access, and Python/
+TypeScript socket parity, including restart. They also check pages that
 split batches, immutable projections, audit-only outcomes, run isolation,
 concurrent append boundaries, and explicit failures for invalid histories.
+Size-limit regressions check graph pages against the encoded frame budget,
+entity growth at its exact bound, explicit errors for older oversized entities,
+and durable rejection/restart replay of expanded graph batches that exceed the
+append limit despite fitting within the request limit.
 
 ## Regression evidence and implementation fixtures
 

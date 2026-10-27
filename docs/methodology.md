@@ -20,8 +20,9 @@ The acceptable evidence standard is therefore:
 5. let a human make the practical next-step decision.
 
 The six-task size, one planned agent attempt per configuration/task, and one
-evaluator run per produced patch are scope controls. An eligible pre-semantic
-failure may add one mandatory whole-slot retry, so actual agent attempts are
+evaluator run per produced patch are scope controls. An eligible failure before
+a substantive agent response, such as streamed content or a tool call, is
+accepted may add one mandatory whole-slot retry, so actual agent attempts are
 reported separately. These choices are not a claim that six tasks provide
 academic precision.
 

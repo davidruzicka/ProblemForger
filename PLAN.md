@@ -50,7 +50,7 @@ See the [accepted ADRs](docs/adr/).
 
 P1 was unblocked when PR #22 merged on 2026-09-25.
 
-- [ ] **P1: Harness-neutral core contracts and module system**
+- [x] **P1: Harness-neutral core contracts and module system**
   - Python package/tooling and dependency boundaries;
   - durable journal and graph-version implementation under [MODULES.EVENTSTORE-PORT](docs/modules.md#spec-modules-eventstore-port), [PROTOCOL.PROPOSAL-RECOVERY](docs/protocol.md#spec-protocol-proposal-recovery), and ADR 0006;
   - `EventStore` providers and contract tests, including exclusive ownership, serialized proposal recovery, and restart-safe replay;
@@ -58,6 +58,8 @@ P1 was unblocked when PR #22 merged on 2026-09-25.
   - observation/telemetry contract;
   - local service transport decision and protocol skeleton;
   - graph command/query contract needed by later adapters.
+
+P1 completed in [PR #39](https://github.com/davidruzicka/ProblemForger/pull/39); [issue #2](https://github.com/davidruzicka/ProblemForger/issues/2) records verification evidence.
 
 - [ ] **P2: Event-sourced ProblemGraph**
   - implementation sequence: [schema #41](https://github.com/davidruzicka/ProblemForger/issues/41), [replay #42](https://github.com/davidruzicka/ProblemForger/issues/42), [service integration #43](https://github.com/davidruzicka/ProblemForger/issues/43);

@@ -412,7 +412,7 @@ def validate_request(value: Any) -> ProtocolRequest:
     _json_tree(value, "request")
     _validate_shape(value, "Request", "request")
     _validate_shape(value["params"], CONTRACT["x-operations"][value["operation"]]["params"], "params")
-    return cast(ProtocolRequest, value)
+    return cast(ProtocolRequest, _normalize_decoded_numbers(value))
 
 
 def _validate_graph_result(result: dict[str, Any], limit: int | None) -> None:

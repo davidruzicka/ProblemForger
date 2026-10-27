@@ -59,6 +59,17 @@ def proposal(
 
 
 class ApplicationServiceTests(unittest.TestCase):
+    def test_direct_integral_float_protocol_numbers_match_decoded_requests(self) -> None:
+        self.create_run()
+        graph = self.application.handle(message('get_graph', {'run_id': 'run-1', 'limit': 1.0}))
+        self.assertEqual(graph['result']['graph_version'], 0)
+        audit = self.application.handle(message('get_audit_timeline', {
+            'run_id': 'run-1', 'limit': 1.0, 'after_journal_position': 0.0}))
+        self.assertEqual(audit['result']['next_after_journal_position'], 0)
+        request = proposal()
+        request['params']['expected_graph_version'] = 0.0
+        self.assertEqual(self.application.handle(request)['result']['status'], 'REJECT')
+
     def setUp(self) -> None:
         self.store = MemoryEventStore()
         self.telemetry = RecordingTelemetrySink()
@@ -164,7 +175,7 @@ class ApplicationServiceTests(unittest.TestCase):
         request = proposal(evidence=evidence)
         result = self.application.handle(request)
         self.assertEqual("REJECT", result["result"]["status"])
-        self.assertEqual("P1_GOVERNANCE_NOT_IMPLEMENTED", result["result"]["reason_code"])
+        self.assertEqual("invalid_graph_mutation", result["result"]["reason_code"])
         self.assertEqual(0, result["result"]["resulting_graph_version"])
 
         stored = self.store.get_proposal("run-1", "proposal-1")

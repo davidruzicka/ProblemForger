@@ -28,7 +28,7 @@ The same core serves different harnesses; adapters translate the protocol withou
 
 ## Repository status
 
-This repository is in early P1 implementation. It has a Python 3.12+ package with durable journal records, SQLite-backed local service, JSONL-over-Unix-socket worker protocol, Python and TypeScript clients, and optional telemetry sinks. Graph governance is still a placeholder: valid mutation proposals are durably rejected until later graph/governance work is implemented. Claims about reliability improvements, calibration quality, routing efficiency, or benchmark gains remain hypotheses until supported by controlled experiments. See the [local service smoke test](docs/service.md).
+P1 is complete; P2 graph integration is in progress. It has a Python 3.12+ package with durable journal records, SQLite-backed local service, JSONL-over-Unix-socket worker protocol, Python and TypeScript clients, and optional telemetry sinks. The service provides bounded graph queries and structural mutation checks with durable commits, rejection, conflicts, and restart replay. Protected anchors require trusted service-owner initialization. Configuration C still rejects proposals until P3 supplies deterministic evidence/governor policy. Claims about reliability improvements, calibration quality, routing efficiency, or benchmark gains remain hypotheses until supported by controlled experiments. See the [local service smoke test](docs/service.md).
 
 ## Documentation
 
