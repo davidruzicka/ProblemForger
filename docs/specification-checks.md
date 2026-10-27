@@ -74,7 +74,7 @@ The package, architecture, and specification-check workflow runs these checks wi
 
 Graph-contract fixtures use the existing finite-schema interpreter to check
 `contracts/graph-v1.json` shapes and valid/invalid vectors, operation/event
-mapping, identifier parity, and the lifecycle table. These shape fixtures cannot
+mapping, identifier parity, and the lifecycle table. These graph-contract fixtures cannot
 verify stateful graph validation, replay, authorization, or evidence trust;
 those behaviors require P2/P3 runtime tests.
 The generator embeds the graph contract for provider-neutral application replay
