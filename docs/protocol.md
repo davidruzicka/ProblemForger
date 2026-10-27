@@ -436,9 +436,9 @@ receipt; the association does not finalize the proposal or compare graph
 versions. Non-terminal records may be appended before or after a proposal's
 terminal outcome.
 
-The second shape contains exactly one non-`COMMIT` terminal record: `REJECT`,
-`RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`. It requires non-null `run_id`
-and `proposal_id`, and the record must explicitly reference that same
+The proposal-finalization audit batch contains exactly one non-`COMMIT` terminal
+record: `REJECT`, `RETRY`, `ESCALATE`, `CONFLICT`, or `ABANDONED`. It requires
+non-null `run_id` and `proposal_id`, and the record must explicitly reference that same
 `(run_id, proposal_id)`. P1 rejects empty or mixed terminal/non-terminal
 batches, proposal receipts, graph events, and `COMMIT` through `append_audit`.
 Reject missing/null arguments, mismatched identity, duplicate record IDs, or
@@ -449,9 +449,9 @@ order, and assign consecutive journal positions atomically. Independent audit
 appends never advance `graph_version`, even when a scoped proposal is stale;
 `AppendResult.new_graph_version` reports the unchanged current version.
 
-For the terminal shape, resolve authority from the owning service and the
-stored receipt for the supplied `(run_id, proposal_id)`, not from
-caller-supplied worker metadata. In one transaction, validate the complete
+For a proposal-finalization audit batch, resolve authority from the owning
+service and the stored receipt for the supplied `(run_id, proposal_id)`, not
+from caller-supplied worker metadata. In one transaction, validate the complete
 batch and require that the proposal has no existing terminal outcome. An
 unknown run/proposal returns `NOT_FOUND`; an already-finalized proposal is
 replayed or rejected without a second write. On success, atomically append the

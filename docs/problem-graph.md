@@ -315,13 +315,13 @@ pagination, and domain error handling over replay from #42. Wire clients
 continue to carry opaque graph payloads; schema-only issue #41 changed no
 client or service behavior.
 
-The shape tests reuse the existing finite-schema interpreter. Lifecycle vectors
+The graph-contract tests reuse the existing finite-schema interpreter. Lifecycle vectors
 check the finite table; they do not prove runtime transition enforcement.
 Replay tests must cover duplicate IDs, missing/inactive targets, same-batch
 references, whole-batch rollback, provenance paths, protected worker operations,
 unsupported event histories, and provider/restart equivalence. Service tests
 must prove authorization, redaction, bounds, and durable outcomes. None of
-these shape fixtures replaces the P3 evidence/governance tests or freezes
+these graph-contract fixtures replaces the P3 evidence/governance tests or freezes
 `graph-intervention-v1`.
 
 

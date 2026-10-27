@@ -31,7 +31,7 @@ each produced candidate patch, except when trusted validation rejects it as
 `CANDIDATE_PATCH_INVALID`: that terminal outcome records
 `evaluator_invocation: NOT_DISPATCHED` and has no evaluator run. The planned
 size is therefore twelve A/C slots and at most twelve candidate-patch
-evaluations; invalid-patch terminalizations are counted separately. An eligible
+evaluations; final outcomes for invalid patches are counted separately. An eligible
 first-attempt
 failure can require one clean whole-slot retry, so the actual agent attempt
 count can exceed twelve and must be reported separately from the planned slot
@@ -416,8 +416,8 @@ A retry is eligible only when durable state explicitly says
 `PRE_SEMANTIC_FAILURE`, records every dispatched operation as terminal, and
 proves that no semantic response was accepted, and the reason-code mapping
 above classifies the terminal failure as `PRE_SEMANTIC_FAILURE`. An explicit
-dispatched pre-semantic transport failure is therefore retryable only when its
-reason code is in the allowlist above; dispatch alone neither grants nor
+dispatched transport failure before a semantic response is accepted is
+retryable only when its reason code is in the allowlist above; dispatch alone neither grants nor
 removes eligibility. A reservation is released only by a durable `NOT_DISPATCHED`
 settlement; without that proof it remains consumed in budget accounting. The
 rule is: an outstanding reservation alone does not make a terminal
@@ -477,9 +477,9 @@ restart occurs first, the coordinator restart finalizes it as
 reservation/operation/phase records, and marks the slot missing; it launches no
 evaluator. Then reconcile terminal evaluator evidence and finish the slot when
 all bound terminal evidence is valid. A started slot may resume only its one
-durably recorded eligible pre-semantic retry while the coordinator remains
-live; after a coordinator restart, no active slot or retry resumes and no later
-slot dispatch is allowed.
+durably recorded eligible retry after a failure before a semantic response was
+accepted while the coordinator remains live; after a coordinator restart, no
+active slot or retry resumes and no later slot dispatch is allowed.
 A nonterminal slot with a bound evaluator remains open until that evaluator
 reaches terminal state or its evaluator or experiment deadline expires while
 the coordinator remains live; on restart, the finalization above applies.
@@ -500,14 +500,15 @@ state. For new work, the agent deadline fences agent attempts and operations;
 the evaluator deadline fences evaluator writes. A terminal agent result does
 not close the evaluator phase, and a bound first evaluator may finish after the
 agent deadline but before its own deadline or the experiment-wide stop. The
-slot remains nonterminal while that evaluator phase is active. Terminalize
-atomically at the applicable phase deadline or explicit terminal outcome,
+slot remains nonterminal while that evaluator phase is active. Mark the slot
+final atomically at the applicable phase deadline or explicit terminal outcome,
 recording timeout/missing before accepting late outcome-changing work. The
-terminal fence rejects new dispatch, semantic results, and outcome-changing
-writes. The trusted coordinator may still append idempotent usage settlements
-and cancellation/interruption records for operations reserved before the
-fence; these records cannot reopen the slot or change the outcome. If
-terminalization cannot be committed, stop new work as shared evidence failure.
+final-state restrictions reject new dispatch, semantic results, and
+outcome-changing writes. The trusted coordinator may still append idempotent
+usage settlements and cancellation/interruption records for operations reserved
+before the slot became final; these records cannot reopen the slot or change
+the outcome. If the final state cannot be committed, stop new work as shared
+evidence failure.
 
 For an eligible first-attempt failure, the runner must take that retry unless
 a recorded deadline, exhausted budget, shared integrity failure, or operator
@@ -1073,7 +1074,7 @@ A coordinator restart with any nonterminal active attempt or evaluator is also
 clock-ambiguous even when every provider/tool operation is terminal: local
 agent work after the last settled operation and evaluator execution can consume
 unrecorded elapsed time. Record `INCOMPLETE_COVERAGE`. The active agent attempt
-is terminalized as `RUN_INTERRUPTED`; the active evaluator is terminalized as
+is marked final with `RUN_INTERRUPTED`; the active evaluator is marked final with
 `EVALUATION_INCOMPLETE`; in either case, mark the slot missing, retain
 reservations, operations, and active phase/deadline records, and do not launch
 later slots.
@@ -1084,7 +1085,7 @@ later than the watermark: a backward UTC shift during downtime can still
 refund elapsed time, and the process-monotonic clock resets. Fail closed on
 every coordinator restart: record `INCOMPLETE_COVERAGE`, retain all
 reservations, operations, and active phase/deadline records, apply the active
-phase terminalization above, and do not launch later slots. In this contract, phase
+phase finalization above, and do not launch later slots. In this contract, phase
 deadlines are elapsed-domain values: `absolute_slot_deadline` is the effective
 elapsed value at slot start plus the frozen agent allowance, and
 `absolute_evaluator_deadline` is the effective elapsed value at evaluator start
