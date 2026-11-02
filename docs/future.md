@@ -34,3 +34,11 @@ cost. Explore whether audit quality should constrain selection alongside the
 existing success and budget target in [model routing](model-routing.md). The
 paper's reported efficiency gains are not evidence of gains on ProblemForger's
 tasks; this comparison needs its own frozen evaluation design.
+
+## Experience-guided graph execution
+
+Explore whether verified experience from earlier problem-graph executions can improve decisions on new, related tasks. Store reusable lessons from successful and failed runs, retaining their provenance, verification status, applicable constraints, and known limitations. Retrieve potentially relevant lessons before planning or executing similar work, but treat them as advisory context rather than trusted evidence or authority to change graph state.
+
+Start with a controlled comparison of the same worker, tasks, tools, and budgets with and without experience retrieval. Separate repeated-task performance from transfer to unseen related tasks. Measure verified success, recurring failures, invalid transfers, and token, latency, and storage costs. Require evidence that retrieval helps before considering automatic memory updates, graph-based experience abstractions, or broader procedural learning.
+
+Research leads include the agentic memory and self-evolving reasoning approaches surveyed in [A Survey of Agentic Reasoning for Large Language Models](https://arxiv.org/abs/2601.12538), including ReasoningBank, SEDM, and ACE. Their reported results do not establish effectiveness within ProblemForger. Any future mechanism must preserve the external graph's authority, evidence checks, and the frozen evaluation contract.
