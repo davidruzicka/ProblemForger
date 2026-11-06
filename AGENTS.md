@@ -93,6 +93,8 @@ For research-facing changes:
 
 Use the [contract ownership map](docs/specification-checks.md#contract-ownership) to find the normative source. ADRs retain decision authority; operational specifications own algorithms. Plans, audit notes, and issues summarize scope and reference requirements without restating policy.
 
+Before claiming a task complete, inspect the working tree, including untracked files. Report remaining changes and distinguish task changes from pre-existing or unrelated work. Remove temporary files created by the task when they are no longer needed. Do not commit, delete, or ignore pre-existing or unrelated files without authorization.
+
 ## Before you commit
 
 1. Review the net diff against the branch you will merge into, not only your own edits: `git diff $(git merge-base origin/<target> HEAD)` runs from the merge base to your working tree, so it covers uncommitted work. Lines disappearing that you never wrote mean you dropped someone else's merged work.
