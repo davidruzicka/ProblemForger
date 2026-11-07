@@ -1,10 +1,12 @@
 """Replay real journals through both EventStore providers."""
 
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -174,6 +176,44 @@ class GraphReplayTests(unittest.TestCase):
             with patch.object(store, 'read_journal', side_effect=append_during_read):
                 self.assertEqual(replay_graph(store, 'run').to_value(), before)
             self.assertEqual(replay_graph(store, 'run').graph_version, 2)
+
+    def test_query_during_multievent_append_never_returns_partial_batch(self):
+        for store in self.providers():
+            with self.subTest(provider=type(store).__name__):
+                commit(store, INITIAL)
+                paused, release, reader_started = Event(), Event(), Event()
+                original = store._append
+
+                def pause_after_first_event(candidate, record):
+                    entry = original(candidate, record)
+                    if isinstance(record, GraphChangedEvent):
+                        paused.set()
+                        if not release.wait(5):
+                            raise TimeoutError('append was not released')
+                    return entry
+
+                def read_graph():
+                    reader_started.set()
+                    return replay_graph(store, 'run', page_size=1).to_value()
+
+                changes = [('node_created', {'node': {**TASK, 'node_id': 'new'}}),
+                           ('edge_created', {'edge': {**EDGE, 'edge_id': 'new-edge', 'source_id': 'new'}})]
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    with patch.object(store, '_append', side_effect=pause_after_first_event):
+                        writer = executor.submit(commit, store, changes, proposal_id='p2')
+                        try:
+                            self.assertTrue(paused.wait(5))
+                            reader = executor.submit(read_graph)
+                            self.assertTrue(reader_started.wait(5))
+                            with self.assertRaises(TimeoutError):
+                                reader.result(timeout=0.1)
+                        finally:
+                            release.set()
+                        writer.result(timeout=5)
+                        graph = reader.result(timeout=5)
+                self.assertEqual(graph['graph_version'], 2)
+                self.assertIn('new', {node['node_id'] for node in graph['nodes']})
+                self.assertIn('new-edge', {edge['edge_id'] for edge in graph['edges']})
 
     def test_corrupt_versions_and_batch_boundaries_fail_closed(self):
         with closing(MemoryEventStore()) as store:
