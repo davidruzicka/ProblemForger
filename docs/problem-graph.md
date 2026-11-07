@@ -8,6 +8,10 @@ The problem graph explicitly represents evolving problem state. It is neither th
 
 The graph exists to make goals, requirements, work units, artifacts, evidence, dependencies, and provenance explicit enough to govern and inspect.
 
+The [goal-oriented acceptance scenarios](goal-oriented-acceptance.md) translate
+these requirements into observable P2/P3 outcomes. Structural contract checks
+support those scenarios but do not establish that the original problem is solved.
+
 ## Minimal initial node categories
 
 Keep the initial ontology small:

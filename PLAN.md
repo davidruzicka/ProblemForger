@@ -63,6 +63,7 @@ P1 completed in [PR #39](https://github.com/davidruzicka/ProblemForger/pull/39);
 
 - [ ] **P2: Event-sourced ProblemGraph**
   - implementation sequence: [schema #41](https://github.com/davidruzicka/ProblemForger/issues/41), [replay #42](https://github.com/davidruzicka/ProblemForger/issues/42), [service integration #43](https://github.com/davidruzicka/ProblemForger/issues/43);
+  - use the [goal-oriented P2 acceptance scenarios](docs/goal-oriented-acceptance.md#p2-recoverable-and-consistent-authoritative-state) to assess replay and service behavior;
   - minimal node/edge schema;
   - deterministic replay/projection;
   - graph versions and provenance;
@@ -70,6 +71,7 @@ P1 completed in [PR #39](https://github.com/davidruzicka/ProblemForger/pull/39);
   - provider-agnostic replay/projection tests over the EventStore contract.
 
 - [ ] **P3: Governed mutations and deterministic evidence**
+  - define executable policy acceptance from the [goal-oriented P3 scenarios](docs/goal-oriented-acceptance.md#p3-evidence-backed-progress-toward-the-actual-goal), including local passes that fail the root requirement;
   - proposed vs committed mutations;
   - preconditions/invariants;
   - deterministic/external evidence;

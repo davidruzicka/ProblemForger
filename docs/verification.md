@@ -106,6 +106,11 @@ Global checks ask whether the evolving graph still satisfies root goals/anchors.
 
 A graph can contain locally valid entities while failing the original task. Both levels are required.
 
+The [P3 acceptance scenarios](goal-oriented-acceptance.md#p3-evidence-backed-progress-toward-the-actual-goal)
+exercise this distinction with independently expected outcomes, faulty candidates,
+and supported controls. They are a test-design checklist; executable governance
+acceptance remains P3 work under the evidence contracts above.
+
 ## Deterministic governance phase
 
 P3/P6 should begin with claims for which mechanically evaluable evidence exists.
