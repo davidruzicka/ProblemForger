@@ -56,6 +56,97 @@ def propose_request() -> dict:
     )
 
 
+def expected_node(
+    node_id: str,
+    kind: str,
+    label: str,
+    protected: bool,
+    proposal_id: str,
+    journal_position: int,
+    graph_version: int,
+    lifecycle: str = "active",
+) -> dict:
+    return {
+        "node_id": node_id,
+        "kind": kind,
+        "label": label,
+        "lifecycle": lifecycle,
+        "evidence_refs": [],
+        "created_by": {
+            "proposal_id": proposal_id,
+            "journal_position": journal_position,
+            "graph_version": graph_version,
+        },
+        "protected": protected,
+    }
+
+
+def expected_edge(
+    edge_id: str,
+    kind: str,
+    source_id: str,
+    target_id: str,
+    proposal_id: str,
+    journal_position: int,
+    graph_version: int,
+) -> dict:
+    return {
+        "edge_id": edge_id,
+        "kind": kind,
+        "source_id": source_id,
+        "target_id": target_id,
+        "lifecycle": "active",
+        "evidence_refs": [],
+        "created_by": {
+            "proposal_id": proposal_id,
+            "journal_position": journal_position,
+            "graph_version": graph_version,
+        },
+    }
+
+
+# Fixed before the service is invoked. The second graph reuses every entity ID
+# while giving each entity different observable state.
+RECOVERY_ORACLE = {
+    "primary-run": {
+        "graph_version": 3,
+        "nodes": [
+            expected_node("root", "RootGoal", "Primary objective", True, "setup-primary-root", 3, 1),
+            expected_node("requirement", "Requirement", "Record the source", False, "populate-primary", 6, 2),
+            expected_node("task-a", "Task", "Collect source", False, "populate-primary", 7, 2, "superseded"),
+            expected_node("task-b", "Task", "Validate source", False, "populate-primary", 8, 2),
+            expected_node("artifact", "Artifact", "Validation report", False, "populate-primary", 9, 2),
+        ],
+        "edges": [
+            expected_edge("requirement-origin", "derived_from", "requirement", "root", "populate-primary", 10, 2),
+            expected_edge("task-a-origin", "derived_from", "task-a", "requirement", "populate-primary", 11, 2),
+            expected_edge("task-b-origin", "derived_from", "task-b", "requirement", "populate-primary", 12, 2),
+            expected_edge("task-b-depends-a", "depends_on", "task-b", "task-a", "populate-primary", 13, 2),
+            expected_edge("task-b-produces-report", "produces", "task-b", "artifact", "populate-primary", 14, 2),
+            expected_edge("report-origin", "derived_from", "artifact", "task-b", "populate-primary", 15, 2),
+        ],
+    },
+    "counterexample-run": {
+        "graph_version": 2,
+        "nodes": [
+            expected_node("root", "RootGoal", "Control objective", True, "setup-counterexample-root", 3, 1),
+            expected_node("requirement", "Requirement", "Control requirement", False, "populate-counterexample", 6, 2),
+            expected_node("task-a", "Task", "Control collection", False, "populate-counterexample", 7, 2),
+            expected_node("task-b", "Task", "Control validation", False, "populate-counterexample", 8, 2),
+            expected_node("artifact", "Artifact", "Control report", False, "populate-counterexample", 9, 2),
+        ],
+        "edges": [
+            expected_edge("requirement-origin", "derived_from", "requirement", "root", "populate-counterexample", 10, 2),
+            expected_edge("task-a-origin", "derived_from", "task-a", "requirement", "populate-counterexample", 11, 2),
+            expected_edge("task-b-origin", "derived_from", "task-b", "requirement", "populate-counterexample", 12, 2),
+            expected_edge("task-b-depends-a", "depends_on", "task-b", "task-a", "populate-counterexample", 13, 2),
+            expected_edge("task-b-produces-report", "produces", "task-b", "artifact", "populate-counterexample", 14, 2),
+            expected_edge("report-origin", "derived_from", "artifact", "task-b", "populate-counterexample", 15, 2),
+        ],
+    },
+}
+
+
 class ServiceProcessTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -285,6 +376,170 @@ with SqliteEventStore(sys.argv[1]) as store:
         self.start_service()
         self.assertEqual(self.client().call(mutation)['result'], committed)
         self.assertEqual(self.client().call(continued)['result'], page['result'])
+
+    def test_public_recovery_history_and_run_isolation_match_fixed_oracle(self) -> None:
+        seed = r'''import sys
+from problemforger.application.service import ProtocolApplication
+from problemforger.modules.persistence import SqliteEventStore
+from problemforger.modules.telemetry import NullTelemetrySink
+from problemforger.ports.event_store import RunMetadata
+with SqliteEventStore(sys.argv[1]) as store:
+    application = ProtocolApplication(store, NullTelemetrySink())
+    for run_id, proposal_id, label in (
+        ("primary-run", "setup-primary-root", "Primary objective"),
+        ("counterexample-run", "setup-counterexample-root", "Control objective"),
+    ):
+        store.create_run(run_id, RunMetadata.from_value({}))
+        application.bootstrap_root(run_id, proposal_id, label)
+'''
+        subprocess.run(
+            [sys.executable, "-c", seed, str(self.database)],
+            cwd=ROOT,
+            env=self.environment,
+            check=True,
+        )
+
+        operations = [
+            {"graph_schema_version": 1, "op": "create_node", "node": {
+                "node_id": "requirement", "kind": "Requirement", "label": "Record the source", "protected": False}},
+            {"graph_schema_version": 1, "op": "create_node", "node": {
+                "node_id": "task-a", "kind": "Task", "label": "Collect source", "protected": False}},
+            {"graph_schema_version": 1, "op": "create_node", "node": {
+                "node_id": "task-b", "kind": "Task", "label": "Validate source", "protected": False}},
+            {"graph_schema_version": 1, "op": "create_node", "node": {
+                "node_id": "artifact", "kind": "Artifact", "label": "Validation report", "protected": False}},
+            {"graph_schema_version": 1, "op": "create_edge", "edge": {
+                "edge_id": "requirement-origin", "kind": "derived_from", "source_id": "requirement", "target_id": "root"}},
+            {"graph_schema_version": 1, "op": "create_edge", "edge": {
+                "edge_id": "task-a-origin", "kind": "derived_from", "source_id": "task-a", "target_id": "requirement"}},
+            {"graph_schema_version": 1, "op": "create_edge", "edge": {
+                "edge_id": "task-b-origin", "kind": "derived_from", "source_id": "task-b", "target_id": "requirement"}},
+            {"graph_schema_version": 1, "op": "create_edge", "edge": {
+                "edge_id": "task-b-depends-a", "kind": "depends_on", "source_id": "task-b", "target_id": "task-a"}},
+            {"graph_schema_version": 1, "op": "create_edge", "edge": {
+                "edge_id": "task-b-produces-report", "kind": "produces", "source_id": "task-b", "target_id": "artifact"}},
+            {"graph_schema_version": 1, "op": "create_edge", "edge": {
+                "edge_id": "report-origin", "kind": "derived_from", "source_id": "artifact", "target_id": "task-b"}},
+        ]
+        counterexample_operations = json.loads(json.dumps(operations))
+        counterexample_labels = {
+            "requirement": "Control requirement",
+            "task-a": "Control collection",
+            "task-b": "Control validation",
+            "artifact": "Control report",
+        }
+        for operation in counterexample_operations[:4]:
+            node = operation["node"]
+            node["label"] = counterexample_labels[node["node_id"]]
+
+        self.start_service()
+        client = self.client()
+        private_claim = "private-proposal-metadata-must-not-be-returned"
+        committed = {}
+        for run_id, proposal_id, graph_operations in (
+            ("primary-run", "populate-primary", operations),
+            ("counterexample-run", "populate-counterexample", counterexample_operations),
+        ):
+            response = client.call(request(
+                "propose_mutation",
+                {
+                    "run_id": run_id,
+                    "proposal_id": proposal_id,
+                    "request_schema_version": 1,
+                    "expected_graph_version": 1,
+                    "operations": graph_operations,
+                    "evidence": [{"source": "private", "claim": private_claim}],
+                },
+                f"populate-{run_id}",
+            ))
+            self.assertEqual(response["result"]["status"], "COMMIT")
+            self.assertEqual(response["result"]["resulting_graph_version"], 2)
+            committed[run_id] = response["result"]
+
+        lifecycle = client.call(request(
+            "propose_mutation",
+            {
+                "run_id": "primary-run",
+                "proposal_id": "supersede-primary-task",
+                "request_schema_version": 1,
+                "expected_graph_version": 2,
+                "operations": [{
+                    "graph_schema_version": 1,
+                    "op": "change_lifecycle",
+                    "entity_kind": "node",
+                    "entity_id": "task-a",
+                    "lifecycle": "superseded",
+                    "reason": "A later collection task replaced it",
+                }],
+                "evidence": [],
+            },
+            "supersede-primary-task",
+        ))
+        self.assertEqual(lifecycle["result"]["status"], "COMMIT")
+        self.assertEqual(lifecycle["result"]["resulting_graph_version"], 3)
+
+        def read_public_graph(request_prefix: str) -> dict:
+            results = {}
+            for run_id in RECOVERY_ORACLE:
+                results[run_id] = client.call(request(
+                    "get_graph",
+                    {"run_id": run_id, "limit": 100},
+                    f"{request_prefix}-{run_id}",
+                ))["result"]
+                self.assertFalse(results[run_id]["has_more"])
+            return results
+
+        before_restart = read_public_graph("before-restart")
+        self.stop_service()
+        self.start_service()
+        client = self.client()
+        after_restart = read_public_graph("after-restart")
+
+        def facts(graph: dict) -> dict:
+            value = {
+                "run_id": graph["run_id"],
+                "graph_schema_version": graph["graph_schema_version"],
+                "graph_version": graph["graph_version"],
+                "nodes": {},
+                "edges": {},
+            }
+            for collection, identifier in (("nodes", "node_id"), ("edges", "edge_id")):
+                for entity in graph[collection]:
+                    normalized = json.loads(json.dumps(entity))
+                    record_id = normalized["created_by"].pop("record_id")
+                    self.assertTrue(record_id)
+                    value[collection][normalized[identifier]] = normalized
+            return value
+
+        for run_id, expected in RECOVERY_ORACLE.items():
+            self.assertEqual(before_restart[run_id], after_restart[run_id])
+            actual = facts(after_restart[run_id])
+            self.assertEqual(actual["run_id"], run_id)
+            self.assertEqual(actual["graph_schema_version"], 1)
+            self.assertEqual(actual["graph_version"], expected["graph_version"])
+            self.assertEqual(
+                actual["nodes"],
+                {node["node_id"]: node for node in expected["nodes"]},
+            )
+            self.assertEqual(
+                actual["edges"],
+                {edge["edge_id"]: edge for edge in expected["edges"]},
+            )
+
+        primary = facts(after_restart["primary-run"])
+        counterexample = facts(after_restart["counterexample-run"])
+        self.assertNotEqual(primary["nodes"], counterexample["nodes"])
+        self.assertEqual(primary["nodes"]["task-a"]["lifecycle"], "superseded")
+        self.assertEqual(counterexample["nodes"]["task-a"]["lifecycle"], "active")
+        self.assertEqual(primary["edges"]["task-b-depends-a"]["lifecycle"], "active")
+        self.assertEqual(counterexample["edges"]["task-b-depends-a"]["lifecycle"], "active")
+
+        audit = client.call(request(
+            "get_audit_timeline",
+            {"run_id": "primary-run", "limit": 100},
+            "read-primary-audit",
+        ))["result"]
+        self.assertNotIn(private_claim, json.dumps((committed, lifecycle, before_restart, after_restart, audit)))
 
     def test_malformed_frame_is_distinguished_and_does_not_stop_service(self) -> None:
         self.start_service()
